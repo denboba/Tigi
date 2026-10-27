@@ -34,6 +34,16 @@ else:
         "configuration_version": "1",
     }
 
+# The TMessagesProj library module keeps the namespace org.telegram.messenger, and the
+# google-services plugin looks that name up too, so every file lists both packages.
+import copy
+LIB_PACKAGE = "org.telegram.messenger"
+have = [c["client_info"]["android_client_info"]["package_name"] for c in data["client"]]
+if LIB_PACKAGE not in have:
+    extra = copy.deepcopy(data["client"][0])
+    extra["client_info"]["android_client_info"]["package_name"] = LIB_PACKAGE
+    data["client"].append(extra)
+
 for t in targets:
     with open(t, "w") as f:
         json.dump(data, f, indent=2)

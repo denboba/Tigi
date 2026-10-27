@@ -73,8 +73,16 @@ jobs:
       - name: Build release APK
         run: |
           pw=$(cat ~/tigi-signing/pw)
-          ./gradlew --no-daemon :TMessagesProj_App:assembleAfatRelease \
-            -PRELEASE_STORE_PASSWORD="$pw" -PRELEASE_KEY_PASSWORD="$pw" -PRELEASE_KEY_ALIAS=tigi
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace :TMessagesProj_App:assembleAfatRelease \
+            -PRELEASE_STORE_PASSWORD="$pw" -PRELEASE_KEY_PASSWORD="$pw" -PRELEASE_KEY_ALIAS=tigi 2>&1 | tee build.log
+
+      - name: Report build errors
+        if: failure()
+        run: |
+          msg=$(grep -n -m1 -B2 -A25 "What went wrong" build.log | head -c 3500 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          [ -z "$msg" ] && msg=$(tail -n 40 build.log | head -c 3500 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Gradle failure::$msg"
 
       - uses: actions/upload-artifact@v4
         with:

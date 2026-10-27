@@ -1,0 +1,82 @@
+name: Build Tigi APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [tigi-rebrand]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
+            echo "::error::Add repository secrets TG_API_ID and TG_API_HASH (from my.telegram.org) and re-run."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK, NDK and CMake
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Inject Telegram API credentials
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          f=TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+          sed -i "s|public static int APP_ID = 0;.*|public static int APP_ID = ${TG_API_ID};|" "$f"
+          sed -i "s|public static String APP_HASH = \"\";.*|public static String APP_HASH = \"${TG_API_HASH}\";|" "$f"
+          grep -q "APP_ID = ${TG_API_ID};" "$f"
+
+      - name: Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: python3 .github/scripts/make_google_services.py TMessagesProj/google-services.json TMessagesProj_App/google-services.json
+
+      - name: Restore signing key
+        id: keycache
+        uses: actions/cache@v4
+        with:
+          path: ~/tigi-signing
+          key: tigi-signing-v1
+
+      - name: Create signing key if missing
+        run: |
+          mkdir -p ~/tigi-signing
+          if [ ! -f ~/tigi-signing/tigi.keystore ]; then
+            pw=$(openssl rand -hex 16)
+            echo "$pw" > ~/tigi-signing/pw
+            keytool -genkeypair -keystore ~/tigi-signing/tigi.keystore -storepass "$pw" -keypass "$pw" \
+              -alias tigi -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Tigi"
+            echo "Generated a new signing key."
+          fi
+          cp ~/tigi-signing/tigi.keystore TMessagesProj/config/release.keystore
+
+      - name: Build release APK
+        run: |
+          pw=$(cat ~/tigi-signing/pw)
+          ./gradlew --no-daemon :TMessagesProj_App:assembleAfatRelease \
+            -PRELEASE_STORE_PASSWORD="$pw" -PRELEASE_KEY_PASSWORD="$pw" -PRELEASE_KEY_ALIAS=tigi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tigi-apk
+          path: TMessagesProj_App/build/outputs/apk/afat/release/*.apk

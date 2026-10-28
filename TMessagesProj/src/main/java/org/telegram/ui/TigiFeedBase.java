@@ -115,8 +115,16 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         return hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 32) : dp(24);
     }
 
+    /** The avatar or name on a card: the person who posted (groups) or the channel. */
     protected void onHeaderClicked(FeedPost post) {
-        openChannelFeed(post.chat);
+        if (post == null || post.chat == null) {
+            return;
+        }
+        if (post.author != null) {
+            TigiNavigation.openProfile(this, post.author.id);
+        } else {
+            TigiNavigation.openProfile(this, -post.chat.id);
+        }
     }
 
     /** A plain tap on a card. mediaIndex is the photo that was tapped, or -1 for the rest of the card. */

@@ -123,6 +123,11 @@ public class ChannelFeedActivity extends TigiFeedBase {
         names.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         names.addView(subtitleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         row.addView(names, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 10, 0, 0, 0));
+        // avatar and name open Telegram's info screen: members, notifications, admin tools, shared media
+        final View.OnClickListener openInfo = v -> TigiNavigation.openChatInfo(this, chatId);
+        avatar.setOnClickListener(openInfo);
+        names.setOnClickListener(openInfo);
+        names.setContentDescription(chat.title);
 
         joinButton = new TextView(context);
         joinButton.setText(LocaleController.getString(R.string.TigiJoin));
@@ -207,7 +212,11 @@ public class ChannelFeedActivity extends TigiFeedBase {
 
     @Override
     protected void onHeaderClicked(FeedPost post) {
-        // already inside this channel
+        if (post != null && post.author != null) {
+            // a member's post in a group's photo feed
+            TigiNavigation.openProfile(this, post.author.id);
+        }
+        // a channel's own post: already on its page
     }
 
     @Override

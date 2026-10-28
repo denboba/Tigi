@@ -8111,6 +8111,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
                     final TLRPC.Dialog dialog = getMessagesController().getDialog(dialogId);
                     final boolean isChannel = ChatObject.isChannelAndNotMegaGroup(chat);
+                    // Tigi: channels open as an Instagram-style feed; the classic chat is one tap away
+                    if (isChannel && message_id == 0 && communityId == 0 && !chat.forum && !chat.monoforum) {
+                        final Bundle feedArgs = new Bundle();
+                        feedArgs.putLong("chat_id", chat.id);
+                        presentFragment(new ChannelFeedActivity(feedArgs));
+                        return;
+                    }
                     boolean needOpenChatActivity = dialog != null && dialog.view_forum_as_messages;
 
                     CommunityChatType communityChatType = null;

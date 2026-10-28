@@ -10620,6 +10620,9 @@
     <string name="MainTabsHome">Home</string>
     <string name="TigiFeedEmpty">Your feed is empty. Join some channels and their posts will show up here.</string>
     <string name="TigiFeedLoading">Loading your feed…</string>
+    <string name="TigiMore">more</string>
+    <string name="TigiLess">less</string>
+    <string name="TigiChannelLabel">Channel</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>
     <string name="SwitchThemeToDay">Day Mode</string>

@@ -1575,7 +1575,7 @@ public class ReactionsLayoutInBubble {
         long dialogId;
 
         private static boolean isHeart(ReactionButton button) {
-            return button.visibleReaction != null && button.visibleReaction.emojicon != null && button.visibleReaction.emojicon.startsWith("\u2764");
+            return button.visibleReaction != null && org.telegram.messenger.TigiHeart.isHeart(button.visibleReaction.emojicon);
         }
 
         @Override

@@ -9,6 +9,7 @@ import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -751,7 +752,7 @@ public class HomeFeedActivity extends BaseFragment implements MainTabsActivity.T
             void bind(MessageObject message, int position) {
                 this.position = position;
                 final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, AndroidUtilities.getPhotoSize());
-                imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "800_800", null, message.photoThumbsObject);
+                imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "800_800", (Drawable) null, message.photoThumbsObject);
                 playView.setVisibility(message.isVideo() ? VISIBLE : GONE);
             }
         }

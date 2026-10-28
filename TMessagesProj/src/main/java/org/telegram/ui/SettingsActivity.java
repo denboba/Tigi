@@ -759,6 +759,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
         items.add(UItem.asHeader(getString(R.string.SettingsHelp)));
         items.add(SettingCell.Factory.of(19, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_policy, getString(R.string.PrivacyPolicy)));
+        items.add(SettingCell.Factory.of(95, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_features, getString(R.string.TigiAbout)));
 
         if (SharedSettings.experimentalSettingsAllowed.get()) {
             items.add(UItem.asShadow(null));
@@ -888,7 +889,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 Browser.openUrl(getParentActivity(), LocaleController.getString(R.string.TelegramFaqUrl));
                 break;
             case 19:
-                Browser.openUrl(getParentActivity(), LocaleController.getString(R.string.PrivacyPolicyUrl));
+                // Tigi's own policy when the owner has set one; Telegram's covers the messaging service itself
+                Browser.openUrl(getParentActivity(), !TextUtils.isEmpty(BuildVars.TIGI_PRIVACY_POLICY_URL) ? BuildVars.TIGI_PRIVACY_POLICY_URL : LocaleController.getString(R.string.PrivacyPolicyUrl));
+                break;
+            case 95:
+                presentFragment(new TigiAboutActivity());
                 break;
 
             case 20:

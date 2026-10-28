@@ -10645,6 +10645,15 @@
     <string name="TigiPostUnsupported">This post can\'t be shown here.</string>
     <string name="TigiMute">Mute</string>
     <string name="TigiRetry">Try again</string>
+    <string name="TigiAbout">About Tigi</string>
+    <string name="TigiAboutVersion">Version</string>
+    <string name="TigiAboutNotice">Tigi is an unofficial app that uses the Telegram API. It is not made by or affiliated with Telegram. Your account, chats and posts are Telegram\'s and work in every Telegram app.</string>
+    <string name="TigiAboutSource">Source code</string>
+    <string name="TigiAboutLicense">License: GNU GPL v2 or later</string>
+    <string name="TigiAboutPrivacy">Tigi privacy policy</string>
+    <string name="TigiAboutTelegramPrivacy">Telegram privacy policy</string>
+    <string name="TigiAboutReport">Report a problem</string>
+    <string name="TigiAboutReportInfo">Reports include the app version and device model, nothing from your chats. To report a post, channel or person, use Report in its menu.</string>
     <string name="TigiLiveBadge">LIVE</string>
     <string name="TigiLiveJoin">Join the live stream</string>
     <string name="TigiLiveNoRights">You can\'t start a live stream in this channel.</string>

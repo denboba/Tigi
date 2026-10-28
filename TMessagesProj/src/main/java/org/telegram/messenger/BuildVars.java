@@ -65,6 +65,11 @@ public class BuildVars {
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.
     public static boolean TIGI_PAID_FEATURES = false;
 
+    // Tigi links (owner: fill these in before a store release)
+    public static String TIGI_SOURCE_URL = "https://github.com/denboba/Tigi"; // GPL: where the full source lives
+    public static String TIGI_PRIVACY_POLICY_URL = ""; // Tigi's own policy; empty = only Telegram's is shown
+    public static String TIGI_SUPPORT_EMAIL = "";      // empty = "Report a problem" opens a GitHub issue
+
     static {
         if (ApplicationLoader.applicationContext != null) {
             SharedPreferences sharedPreferences = ApplicationLoader.applicationContext.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);

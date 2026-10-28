@@ -18,6 +18,7 @@ import android.widget.TextView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
+import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AvatarDrawable;
@@ -38,6 +39,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
     private int oldestId;
     private boolean loading;
     private boolean reachedEnd;
+    private boolean mediaOnly;
 
     public ChannelFeedActivity(Bundle args) {
         super(args);
@@ -47,6 +49,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
     public boolean onFragmentCreate() {
         if (arguments != null) {
             chatId = arguments.getLong("chat_id", 0);
+            mediaOnly = arguments.getBoolean("media_only", false);
         }
         chat = getMessagesController().getChat(chatId);
         return chat != null && super.onFragmentCreate();
@@ -87,7 +90,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
         final TextView subtitle = new TextView(context);
-        subtitle.setText(LocaleController.getString(R.string.TigiChannelLabel));
+        subtitle.setText(LocaleController.getString(mediaOnly ? R.string.TigiMediaFeed : R.string.TigiChannelLabel));
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
         subtitle.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         names.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -139,11 +142,23 @@ public class ChannelFeedActivity extends TigiFeedBase {
         }
         loading = true;
         updateEmptyView();
-        final TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
-        req.peer = getMessagesController().getInputPeer(-chatId);
-        req.limit = PAGE_SIZE;
-        req.offset_id = oldestId;
-        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+        final TLObject request;
+        if (mediaOnly) {
+            final TLRPC.TL_messages_search search = new TLRPC.TL_messages_search();
+            search.peer = getMessagesController().getInputPeer(-chatId);
+            search.q = "";
+            search.filter = new TLRPC.TL_inputMessagesFilterPhotoVideo();
+            search.limit = PAGE_SIZE;
+            search.offset_id = oldestId;
+            request = search;
+        } else {
+            final TLRPC.TL_messages_getHistory history = new TLRPC.TL_messages_getHistory();
+            history.peer = getMessagesController().getInputPeer(-chatId);
+            history.limit = PAGE_SIZE;
+            history.offset_id = oldestId;
+            request = history;
+        }
+        getConnectionsManager().sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
             loading = false;
             if (response instanceof TLRPC.messages_Messages) {
                 final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;

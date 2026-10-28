@@ -36,6 +36,7 @@ import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
+import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -63,6 +64,7 @@ public abstract class TigiFeedBase extends BaseFragment {
 
     protected static class FeedPost {
         TLRPC.Chat chat;
+        TLRPC.User author;
         final ArrayList<MessageObject> messages = new ArrayList<>();
         final ArrayList<MessageObject> media = new ArrayList<>();
         CharSequence text;
@@ -205,6 +207,9 @@ public abstract class TigiFeedBase extends BaseFragment {
                 post = new FeedPost();
                 post.chat = chat;
                 post.date = message.date;
+                if (!chat.broadcast && message.from_id instanceof TLRPC.TL_peerUser) {
+                    post.author = getMessagesController().getUser(message.from_id.user_id);
+                }
                 out.add(post);
                 if (groupId != 0) {
                     albums.put(groupId, post);
@@ -320,7 +325,8 @@ public abstract class TigiFeedBase extends BaseFragment {
         pickerLayout = new ReactionsContainerLayout(ReactionsContainerLayout.TYPE_DEFAULT, this, context, currentAccount, getResourceProvider());
         pickerLayout.setClipChildren(false);
         pickerLayout.setClipToPadding(false);
-        pickerLayout.setPadding(dp(4), dp(4), dp(4), dp(22));
+        pickerLayout.setFlippedVertically(true);
+        pickerLayout.setPadding(dp(4), dp(22), dp(4), dp(4));
         pickerLayout.setDelegate(new ReactionsContainerLayout.ReactionsContainerDelegate() {
             @Override
             public void onReactionClicked(View view, ReactionsLayoutInBubble.VisibleReaction visibleReaction, boolean longpress, boolean addToRecent) {
@@ -339,7 +345,7 @@ public abstract class TigiFeedBase extends BaseFragment {
         final int pickerHeight = dp(70 + 22);
         final int minTop = AndroidUtilities.statusBarHeight + dp(8);
         final int maxTop = Math.max(minTop, overlay.getHeight() - pickerHeight - dp(8));
-        final int top = Math.max(minTop, Math.min(maxTop, (int) (pressRawY - overlayLocation[1]) - pickerHeight - dp(4)));
+        final int top = Math.max(minTop, Math.min(maxTop, (int) (pressRawY - overlayLocation[1]) + dp(8)));
         final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, pickerHeight);
         params.gravity = Gravity.TOP | Gravity.LEFT;
         params.leftMargin = dp(8);
@@ -635,9 +641,15 @@ public abstract class TigiFeedBase extends BaseFragment {
             captionExpanded = false;
 
             final AvatarDrawable avatarDrawable = new AvatarDrawable();
-            avatarDrawable.setInfo(currentAccount, post.chat);
-            avatarView.setForUserOrChat(post.chat, avatarDrawable);
-            nameView.setText(post.chat.title);
+            if (post.author != null) {
+                avatarDrawable.setInfo(currentAccount, post.author);
+                avatarView.setForUserOrChat(post.author, avatarDrawable);
+                nameView.setText(UserObject.getUserName(post.author));
+            } else {
+                avatarDrawable.setInfo(currentAccount, post.chat);
+                avatarView.setForUserOrChat(post.chat, avatarDrawable);
+                nameView.setText(post.chat.title);
+            }
             timeView.setText(LocaleController.stringForMessageListDate(post.date));
 
             if (post.media.isEmpty()) {

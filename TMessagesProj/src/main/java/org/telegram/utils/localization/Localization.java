@@ -24,6 +24,7 @@ public class Localization {
     public static final Localization EMPTY = new Localization();
 
     private final SparseArray<String> localizations;
+    private final java.util.concurrent.ConcurrentHashMap<Integer, String> brandedCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     private Localization() {
         localizations = new SparseArray<>();
@@ -68,7 +69,16 @@ public class Localization {
     }
 
     public String get(int resNameHash) {
-        return localizations.get(resNameHash);
+        final String value = localizations.get(resNameHash);
+        if (value == null || value.indexOf("Telegram") < 0 || TigiBranding.isProtectedKey(resNameHash)) {
+            return value;
+        }
+        String branded = brandedCache.get(resNameHash);
+        if (branded == null) {
+            branded = TigiBranding.apply(value);
+            brandedCache.put(resNameHash, branded);
+        }
+        return branded;
     }
 
 

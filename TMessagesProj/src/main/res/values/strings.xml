@@ -10623,6 +10623,7 @@
     <string name="TigiMore">more</string>
     <string name="TigiLess">less</string>
     <string name="TigiChannelLabel">Channel</string>
+    <string name="TigiMediaFeed">Photos &amp; videos</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>
     <string name="SwitchThemeToDay">Day Mode</string>

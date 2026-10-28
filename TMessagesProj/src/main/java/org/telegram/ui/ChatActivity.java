@@ -1687,6 +1687,13 @@ public class ChatActivity extends BaseFragment implements
     private final static int search = 40;
     private final static int tigi_media_feed = 9101;
 
+    // Tigi "+" > Post / Text: open Telegram's own composer right away and go back once the post is sent
+    public static final int TIGI_COMPOSE_MEDIA = 1;
+    public static final int TIGI_COMPOSE_TEXT = 2;
+    private int tigiCompose;
+    private boolean tigiComposeStarted;
+    private boolean tigiComposeSent;
+
     private final static int topic_close = 60;
     private final static int open_forum = 61;
 
@@ -2763,6 +2770,7 @@ public class ChatActivity extends BaseFragment implements
         scrollToTopOnResume = arguments.getBoolean("scrollToTopOnResume", false);
         needRemovePreviousSameChatActivity = arguments.getBoolean("need_remove_previous_same_chat_activity", true);
         justCreatedChat = arguments.getBoolean("just_created_chat", false);
+        tigiCompose = arguments.getInt("tigi_compose", 0);
         wallpaperRandomSeed = Utilities.random.nextLong();
         if (quickReplyShortcut != null) {
             QuickRepliesController.QuickReply quickReply = QuickRepliesController.getInstance(currentAccount).findReply(quickReplyShortcut);
@@ -12951,6 +12959,15 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void afterMessageSend() {
+        if (tigiCompose != 0 && !tigiComposeSent) {
+            tigiComposeSent = true;
+            // the upload goes on in SendMessagesHelper; the feeds show the post while it is sending
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!isFinishing() && getParentActivity() != null) {
+                    finishFragment();
+                }
+            }, 300);
+        }
         messageSuggestionParams = null;
         if (threadMessageId == 0 || isTopic) {
             if (isTopic) {
@@ -27585,6 +27602,14 @@ public class ChatActivity extends BaseFragment implements
             AndroidUtilities.cancelRunOnUIThread(cancelFixedPositionRunnable);
         }
         fixedKeyboardHeight = -1;
+        if (isOpen && !backward && tigiCompose != 0 && !tigiComposeStarted && chatActivityEnterView != null) {
+            tigiComposeStarted = true;
+            if (tigiCompose == TIGI_COMPOSE_MEDIA) {
+                AndroidUtilities.runOnUIThread(this::openAttachMenu, 50);
+            } else if (tigiCompose == TIGI_COMPOSE_TEXT) {
+                chatActivityEnterView.openKeyboard();
+            }
+        }
         if (isOpen) {
             checkShowBlur(false);
             openAnimationEnded = true;

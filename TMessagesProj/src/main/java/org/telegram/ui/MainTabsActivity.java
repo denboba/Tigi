@@ -100,7 +100,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     public static final boolean NEW_NAV = BuildVars.TIGI_NEW_NAV;
     // the Reels page and the Create sheet exist only from their phases on; until then their flags do nothing
     private static final boolean REELS_READY = false;
-    private static final boolean CREATE_READY = false;
+    private static final boolean CREATE_READY = true;
 
     public static final int TABS_COUNT;
     private static final int POSITION_HOME;
@@ -903,6 +903,15 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         return true;
     }
 
+    /** Selects the Home tab when this layout has one. */
+    public void openHomeTab() {
+        if (viewPager == null || POSITION_HOME < 0) {
+            return;
+        }
+        selectTab(POSITION_HOME, true);
+        viewPager.scrollToPosition(POSITION_HOME);
+    }
+
     /** Selects the Chats tab. */
     public void openChatsTab() {
         if (viewPager == null) {
@@ -916,7 +925,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (getParentActivity() == null) {
             return;
         }
-        // Phase 2: the Create sheet
+        TigiCreateSheet.show(this);
     }
 
     private DialogsActivity dialogsActivity;

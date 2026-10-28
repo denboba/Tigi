@@ -143,6 +143,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
         getNotificationCenter().addObserver(this, NotificationCenter.didUpdateReactions);
         getNotificationCenter().addObserver(this, NotificationCenter.messagesDeleted);
+        getNotificationCenter().addObserver(this, NotificationCenter.didReceiveNewMessages);
+        getNotificationCenter().addObserver(this, NotificationCenter.messageReceivedByServer);
+        getNotificationCenter().addObserver(this, NotificationCenter.messageSendError);
         return super.onFragmentCreate();
     }
 
@@ -150,6 +153,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     public void onFragmentDestroy() {
         getNotificationCenter().removeObserver(this, NotificationCenter.didUpdateReactions);
         getNotificationCenter().removeObserver(this, NotificationCenter.messagesDeleted);
+        getNotificationCenter().removeObserver(this, NotificationCenter.didReceiveNewMessages);
+        getNotificationCenter().removeObserver(this, NotificationCenter.messageReceivedByServer);
+        getNotificationCenter().removeObserver(this, NotificationCenter.messageSendError);
         super.onFragmentDestroy();
     }
 
@@ -185,6 +191,24 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 MessageObject.updateReactions(post.primary().messageOwner, (TLRPC.TL_messageReactions) args[2]);
                 refreshPost(post);
             }
+        } else if (id == NotificationCenter.didReceiveNewMessages) {
+            final boolean scheduled = (Boolean) args[2];
+            final int mode = args.length > 3 && args[3] instanceof Integer ? (Integer) args[3] : 0;
+            if (scheduled || mode != 0) {
+                return;
+            }
+            onNewMessages((Long) args[0], (ArrayList<MessageObject>) args[1]);
+        } else if (id == NotificationCenter.messageReceivedByServer || id == NotificationCenter.messageSendError) {
+            // the message object is updated in place by SendMessagesHelper; only the card needs a redraw
+            if (listView == null) {
+                return;
+            }
+            for (int i = 0; i < listView.getChildCount(); i++) {
+                final View child = listView.getChildAt(i);
+                if (child instanceof FeedCell) {
+                    ((FeedCell) child).bindStatus();
+                }
+            }
         } else if (id == NotificationCenter.messagesDeleted) {
             if ((Boolean) args[2]) {
                 return; // scheduled
@@ -213,6 +237,109 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 updateEmptyView();
             }
         }
+    }
+
+    /** Whether a message that just arrived (or that the user just sent) belongs on this feed. */
+    protected boolean acceptsNewMessage(long dialogId, MessageObject message) {
+        return false;
+    }
+
+    private void onNewMessages(long dialogId, ArrayList<MessageObject> messages) {
+        if (messages == null || messages.isEmpty() || dialogId >= 0 || adapter == null) {
+            return;
+        }
+        final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+        if (chat == null) {
+            return;
+        }
+        final ArrayList<FeedPost> added = new ArrayList<>();
+        // oldest first, so album photos keep their order
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            final MessageObject message = messages.get(i);
+            if (message == null || message.messageOwner == null || message.messageOwner instanceof TLRPC.TL_messageService || !acceptsNewMessage(dialogId, message)) {
+                continue;
+            }
+            if (findPostContaining(dialogId, message.getId()) != null) {
+                continue;
+            }
+            final long groupId = message.getGroupId();
+            FeedPost post = null;
+            if (groupId != 0) {
+                for (int p = 0; p < Math.min(posts.size(), 5) && post == null; p++) {
+                    if (posts.get(p).groupId == groupId && posts.get(p).chat != null && posts.get(p).chat.id == chat.id) {
+                        post = posts.get(p);
+                    }
+                }
+                for (int p = 0; p < added.size() && post == null; p++) {
+                    if (added.get(p).groupId == groupId) {
+                        post = added.get(p);
+                    }
+                }
+            }
+            if (post == null) {
+                post = new FeedPost();
+                post.chat = chat;
+                post.groupId = groupId;
+                post.date = message.messageOwner.date;
+                if (!chat.broadcast && message.messageOwner.from_id instanceof TLRPC.TL_peerUser) {
+                    post.author = getMessagesController().getUser(message.messageOwner.from_id.user_id);
+                }
+                added.add(post);
+            }
+            post.messages.add(message);
+            if (message.photoThumbs != null && !message.photoThumbs.isEmpty() && (message.isPhoto() || message.isVideo() || message.isGif())) {
+                post.media.add(message);
+            }
+            if (TextUtils.isEmpty(post.text)) {
+                post.text = !TextUtils.isEmpty(message.caption) ? message.caption : (post.media.isEmpty() && !TextUtils.isEmpty(message.messageText) ? message.messageText : null);
+            }
+        }
+        boolean atTop = layoutManager == null || layoutManager.findFirstVisibleItemPosition() <= 0;
+        int insertedCount = 0;
+        for (int i = added.size() - 1; i >= 0; i--) {
+            final FeedPost post = added.get(i);
+            if (post.isValid() || post.primary().isSending()) {
+                posts.add(0, post);
+                insertedCount++;
+            }
+        }
+        if (insertedCount > 0) {
+            adapter.notifyItemRangeInserted(0, insertedCount);
+            if (atTop && listView != null) {
+                listView.scrollToPosition(0);
+            }
+            updateEmptyView();
+        } else {
+            // photos added to an album card that is already shown
+            adapter.notifyDataSetChanged();
+        }
+    }
+
+    protected FeedPost findPostContaining(long dialogId, int msgId) {
+        for (int i = 0; i < posts.size(); i++) {
+            final FeedPost post = posts.get(i);
+            if (post.chat == null || -post.chat.id != dialogId) {
+                continue;
+            }
+            for (int m = 0; m < post.messages.size(); m++) {
+                if (post.messages.get(m).getId() == msgId) {
+                    return post;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Posts that are still uploading or failed; a reload must keep them, the server does not know them yet. */
+    protected ArrayList<FeedPost> unsentPosts() {
+        final ArrayList<FeedPost> out = new ArrayList<>();
+        for (int i = 0; i < posts.size(); i++) {
+            final FeedPost post = posts.get(i);
+            if (!post.messages.isEmpty() && (post.primary().isSending() || post.primary().isSendError())) {
+                out.add(post);
+            }
+        }
+        return out;
     }
 
     protected FeedPost findPost(long dialogId, int msgId) {
@@ -662,6 +789,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final LinearLayout chipsRow;
         private final TextView captionView;
         private final TextView moreView;
+        private final TextView statusView;
         FeedPost post;
         private int currentPage;
         private boolean captionExpanded;
@@ -710,6 +838,18 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 }
             });
             addView(headerRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+            statusView = new TextView(context);
+            statusView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            statusView.setPadding(dp(12), 0, dp(12), dp(8));
+            statusView.setVisibility(GONE);
+            statusView.setOnClickListener(v -> {
+                if (post != null && !post.messages.isEmpty() && post.primary().isSendError()) {
+                    // Telegram's chat has the retry and delete actions for unsent messages
+                    openPostInChat(post, post.primary());
+                }
+            });
+            addView(statusView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             mediaFrame = new FrameLayout(context);
             pager = new RecyclerView(context);
@@ -911,6 +1051,26 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
             updateCaption();
             bindActions();
+            bindStatus();
+        }
+
+        void bindStatus() {
+            if (post == null || post.messages.isEmpty()) {
+                statusView.setVisibility(GONE);
+                return;
+            }
+            final MessageObject message = post.primary();
+            if (message.isSendError()) {
+                statusView.setVisibility(VISIBLE);
+                statusView.setTextColor(Theme.getColor(Theme.key_text_RedRegular));
+                statusView.setText(LocaleController.getString(R.string.TigiPostFailed));
+            } else if (message.isSending()) {
+                statusView.setVisibility(VISIBLE);
+                statusView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                statusView.setText(LocaleController.getString(R.string.TigiPostSending));
+            } else {
+                statusView.setVisibility(GONE);
+            }
         }
 
         private void updateCaption() {

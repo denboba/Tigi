@@ -18,6 +18,7 @@ import android.widget.TextView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -195,6 +196,14 @@ public class ChannelFeedActivity extends TigiFeedBase {
             joinButton.setEnabled(true);
             return true;
         });
+    }
+
+    @Override
+    protected boolean acceptsNewMessage(long dialogId, MessageObject message) {
+        if (dialogId != -chatId) {
+            return false;
+        }
+        return !mediaOnly || message.isPhoto() || message.isVideo();
     }
 
     @Override

@@ -15,6 +15,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
@@ -73,6 +74,13 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (titleView != null) {
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
         }
+    }
+
+    @Override
+    protected boolean acceptsNewMessage(long dialogId, MessageObject message) {
+        // the user's own new posts go straight to the top; other channels' new posts wait for the next refresh
+        final TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+        return message.isOut() && ChatObject.isChannelAndNotMegaGroup(chat);
     }
 
     @Override
@@ -193,7 +201,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             return;
         }
         Collections.sort(result, (a, b) -> b.date - a.date);
+        final ArrayList<FeedPost> unsent = unsentPosts();
         posts.clear();
+        posts.addAll(unsent);
         posts.addAll(result.size() > MAX_POSTS ? result.subList(0, MAX_POSTS) : result);
         adapter.notifyDataSetChanged();
         updateEmptyView();

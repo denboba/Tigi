@@ -1693,6 +1693,12 @@ public class ChatActivity extends BaseFragment implements
     private int tigiCompose;
     private boolean tigiComposeStarted;
     private boolean tigiComposeSent;
+    private MessageObject tigiEditMessage;
+
+    /** Tigi feed card > Edit caption: start editing this message as soon as the chat is open. */
+    public void setTigiEditMessage(MessageObject message) {
+        tigiEditMessage = message;
+    }
 
     private final static int topic_close = 60;
     private final static int open_forum = 61;
@@ -27602,6 +27608,11 @@ public class ChatActivity extends BaseFragment implements
             AndroidUtilities.cancelRunOnUIThread(cancelFixedPositionRunnable);
         }
         fixedKeyboardHeight = -1;
+        if (isOpen && !backward && tigiEditMessage != null && chatActivityEnterView != null) {
+            final MessageObject toEdit = messagesDict[0].get(tigiEditMessage.getId()) != null ? messagesDict[0].get(tigiEditMessage.getId()) : tigiEditMessage;
+            tigiEditMessage = null;
+            startEditingMessageObject(toEdit);
+        }
         if (isOpen && !backward && tigiCompose != 0 && !tigiComposeStarted && chatActivityEnterView != null) {
             tigiComposeStarted = true;
             if (tigiCompose == TIGI_COMPOSE_MEDIA) {

@@ -725,6 +725,86 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         presentFragment(new ChatActivity(args));
     }
 
+    /** The card's three-dot menu: everything Telegram allows for this post, plus report for other people's posts. */
+    protected void showPostMenu(FeedPost post, View anchor) {
+        if (post == null || post.messages.isEmpty() || post.chat == null || anchor == null || isDead()) {
+            return;
+        }
+        final MessageObject primary = post.primary();
+        // the caption lives on one message of an album; that is the one to edit
+        MessageObject captionMessage = primary;
+        for (int i = 0; i < post.messages.size(); i++) {
+            if (!TextUtils.isEmpty(post.messages.get(i).caption)) {
+                captionMessage = post.messages.get(i);
+                break;
+            }
+        }
+        final MessageObject editTarget = captionMessage;
+        final TLRPC.Chat chat = getMessagesController().getChat(post.chat.id) != null ? getMessagesController().getChat(post.chat.id) : post.chat;
+        final boolean sent = primary.getId() > 0 && !primary.isSending() && !primary.isSendError();
+        final TLRPC.ChatFull full = getMessagesController().getChatFull(chat.id);
+        final org.telegram.ui.Components.ItemOptions options = org.telegram.ui.Components.ItemOptions.makeOptions(this, anchor);
+        options.add(R.drawable.msg_openin, LocaleController.getString(R.string.ViewInChat), () -> openPostInChat(post, primary));
+        if (sent) {
+            options.add(R.drawable.msg_link, LocaleController.getString(R.string.CopyLink), () -> {
+                final String username = ChatObject.getPublicUsername(chat);
+                final String link = !TextUtils.isEmpty(username)
+                    ? "https://t.me/" + username + "/" + primary.getId()
+                    : "https://t.me/c/" + chat.id + "/" + primary.getId();
+                AndroidUtilities.addToClipboard(link);
+                BulletinFactory.of(this).createCopyLinkBulletin(TextUtils.isEmpty(username)).show();
+            });
+        }
+        if (sent && editTarget.canEditMessage(chat)) {
+            options.add(R.drawable.msg_edit, LocaleController.getString(post.media.isEmpty() ? R.string.Edit : R.string.EditCaption), () -> {
+                final Bundle args = new Bundle();
+                args.putLong("chat_id", chat.id);
+                args.putInt("message_id", editTarget.getId());
+                final ChatActivity chatActivity = new ChatActivity(args);
+                chatActivity.setTigiEditMessage(editTarget);
+                presentFragment(chatActivity);
+            });
+        }
+        if (sent && ChatObject.canPinMessages(chat)) {
+            final boolean pinned = primary.messageOwner.pinned;
+            options.add(pinned ? R.drawable.msg_unpin : R.drawable.msg_pin, LocaleController.getString(pinned ? R.string.UnpinMessage : R.string.PinMessage), () -> {
+                getMessagesController().pinMessage(chat, null, primary.getId(), pinned, false, false);
+                primary.messageOwner.pinned = !pinned;
+            });
+        }
+        if (sent && full != null && full.can_view_stats) {
+            options.add(R.drawable.msg_stats, LocaleController.getString(R.string.Statistics), () -> presentFragment(new MessageStatisticActivity(primary)));
+        }
+        if (sent && !primary.isOut() && !ChatObject.canPost(chat)) {
+            // other people's content must stay reportable (Google Play user-generated content policy)
+            options.add(R.drawable.msg_report, LocaleController.getString(R.string.ReportChat), () -> ReportBottomSheet.openMessage(this, primary));
+        }
+        if (primary.canDeleteMessage(false, chat)) {
+            options.add(R.drawable.msg_delete, LocaleController.getString(R.string.Delete), true, () -> confirmDelete(post, chat));
+        }
+        options.show();
+    }
+
+    private void confirmDelete(FeedPost post, TLRPC.Chat chat) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity(), getResourceProvider())
+            .setTitle(LocaleController.getString(R.string.TigiDeletePostTitle))
+            .setMessage(LocaleController.getString(R.string.TigiDeletePostText))
+            .setPositiveButton(LocaleController.getString(R.string.Delete), (dialog, which) -> {
+                final ArrayList<Integer> ids = new ArrayList<>();
+                for (int i = 0; i < post.messages.size(); i++) {
+                    ids.add(post.messages.get(i).getId());
+                }
+                // the feeds drop the card when the messagesDeleted notification comes back
+                getMessagesController().deleteMessages(ids, null, null, -chat.id, 0, true, 0);
+            })
+            .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+            .makeRed(org.telegram.ui.ActionBar.AlertDialog.BUTTON_POSITIVE)
+            .show();
+    }
+
     protected void sharePost(FeedPost post) {
         final String username = ChatObject.getPublicUsername(post.chat);
         if (getParentActivity() == null) {
@@ -837,6 +917,14 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                     onHeaderClicked(post);
                 }
             });
+            final ImageView moreButton = new ImageView(context);
+            moreButton.setScaleType(ImageView.ScaleType.CENTER);
+            moreButton.setImageResource(R.drawable.ic_ab_other);
+            moreButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), PorterDuff.Mode.SRC_IN));
+            moreButton.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
+            moreButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+            moreButton.setOnClickListener(v -> showPostMenu(post, v));
+            headerRow.addView(moreButton, LayoutHelper.createLinear(44, 44, Gravity.CENTER_VERTICAL, 4, 0, -8, 0));
             addView(headerRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             statusView = new TextView(context);

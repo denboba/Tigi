@@ -262,7 +262,8 @@ public class AndroidUtilities {
     public static Typeface bold() {
         if (mediumTypeface == null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                mediumTypeface = Typeface.create(null, 650, false);
+                // Tigi: a bolder 650 by default; the debug option "system bold font" gives Telegram's 500 back
+                mediumTypeface = Typeface.create(null, SharedConfig.useSystemBoldFont ? 500 : 650, false);
             } else {
                 mediumTypeface = getTypeface(TYPEFACE_ROBOTO_MEDIUM);
             }

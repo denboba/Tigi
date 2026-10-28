@@ -28,15 +28,7 @@ public class TigiBranding {
         if (value == null || value.indexOf("Telegram") < 0) {
             return value;
         }
-        String result = value;
-        result = result.replace("Telegram Premium", "Premium");
-        result = result.replace("Telegram Stars", "Stars");
-        result = result.replace("Telegram Business", "Business");
-        result = result.replace("Telegram Passport", "Passport");
-        result = result.replace("Telegram Ads", "Ads");
-        result = result.replace("Telegram Ad", "Ad");
-        result = result.replace("Telegram FAQ", "FAQ");
-        result = result.replace("Telegram Support", "Support");
-        return WORD.matcher(result).replaceAll("Tigi");
+        // "Telegram Premium", "Telegram Stars", "Telegram FAQ" ... become "Tigi Premium", "Tigi Stars", "Tigi FAQ" ...
+        return WORD.matcher(value).replaceAll("Tigi");
     }
 }

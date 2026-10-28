@@ -569,7 +569,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 primaryButton.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.getColor(Theme.key_featuredStickers_addButton)));
             }
             // a personal channel's owner is messaged directly, and "Following" opens the channel
-            messageButton.setVisibility(user != null || !member ? VISIBLE : GONE);
+            messageButton.setVisibility((user != null && !UserObject.isUserSelf(user)) || !member ? VISIBLE : GONE);
         }
     }
 

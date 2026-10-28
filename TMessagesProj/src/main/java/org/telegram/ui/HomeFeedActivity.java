@@ -59,6 +59,11 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     }
 
     @Override
+    protected void onPostTapped(FeedPost post, int mediaIndex) {
+        openChannelFeed(post.chat);
+    }
+
+    @Override
     public void onResume() {
         super.onResume();
         if (posts.isEmpty() || System.currentTimeMillis() - lastLoadTime > RELOAD_AFTER_MS) {

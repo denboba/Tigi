@@ -45,6 +45,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.ReactionsContainerLayout;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.PhotoViewer;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -106,6 +107,13 @@ public abstract class TigiFeedBase extends BaseFragment {
 
     protected void onHeaderClicked(FeedPost post) {
         openChannelFeed(post.chat);
+    }
+
+    /** A plain tap on a card. mediaIndex is the photo that was tapped, or -1 for the rest of the card. */
+    protected void onPostTapped(FeedPost post, int mediaIndex) {
+        if (mediaIndex >= 0) {
+            openMediaViewer(post, mediaIndex);
+        }
     }
 
     /* view */
@@ -291,7 +299,8 @@ public abstract class TigiFeedBase extends BaseFragment {
         }
     }
 
-    protected void showReactionPicker(FeedPost post, View anchor) {
+    /** Shows Telegram's reaction bar right above the point (screen coordinates) that was pressed. */
+    protected void showReactionPicker(FeedPost post, float pressRawX, float pressRawY) {
         if (overlay == null || fragmentView == null || post == null) {
             return;
         }
@@ -325,13 +334,13 @@ public abstract class TigiFeedBase extends BaseFragment {
             }
         });
 
-        final int[] anchorLocation = new int[2];
         final int[] overlayLocation = new int[2];
-        anchor.getLocationInWindow(anchorLocation);
         overlay.getLocationInWindow(overlayLocation);
+        final int pickerHeight = dp(70 + 22);
         final int minTop = AndroidUtilities.statusBarHeight + dp(8);
-        final int top = Math.max(minTop, anchorLocation[1] - overlayLocation[1] - dp(70));
-        final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(70 + 22));
+        final int maxTop = Math.max(minTop, overlay.getHeight() - pickerHeight - dp(8));
+        final int top = Math.max(minTop, Math.min(maxTop, (int) (pressRawY - overlayLocation[1]) - pickerHeight - dp(4)));
+        final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, pickerHeight);
         params.gravity = Gravity.TOP | Gravity.LEFT;
         params.leftMargin = dp(8);
         params.topMargin = top;
@@ -361,6 +370,14 @@ public abstract class TigiFeedBase extends BaseFragment {
         final Bundle args = new Bundle();
         args.putLong("chat_id", chat.id);
         presentFragment(new ChannelFeedActivity(args));
+    }
+
+    protected void openMediaViewer(FeedPost post, int index) {
+        if (getParentActivity() == null || post.media.isEmpty()) {
+            return;
+        }
+        PhotoViewer.getInstance().setParentActivity(this);
+        PhotoViewer.getInstance().openPhoto(new ArrayList<>(post.media), Math.max(0, Math.min(index, post.media.size() - 1)), -post.chat.id, 0, 0, new PhotoViewer.EmptyPhotoViewerProvider());
     }
 
     protected void openPostInChat(FeedPost post, MessageObject message) {
@@ -443,6 +460,11 @@ public abstract class TigiFeedBase extends BaseFragment {
                 }
             });
             setClipToOutline(true);
+            setOnClickListener(v -> {
+                if (post != null) {
+                    onPostTapped(post, -1);
+                }
+            });
 
             final LinearLayout headerRow = new LinearLayout(context);
             headerRow.setOrientation(HORIZONTAL);
@@ -526,7 +548,9 @@ public abstract class TigiFeedBase extends BaseFragment {
             });
             heartButton.setOnLongClickListener(v -> {
                 if (post != null) {
-                    showReactionPicker(post, heartButton);
+                    final int[] location = new int[2];
+                    heartButton.getLocationOnScreen(location);
+                    showReactionPicker(post, location[0] + heartButton.getWidth() / 2f, location[1]);
                 }
                 return true;
             });
@@ -744,9 +768,15 @@ public abstract class TigiFeedBase extends BaseFragment {
             showBigHeart();
         }
 
-        private void onPhotoTap() {
+        private void onPhotoTap(int position) {
             if (post != null) {
-                showReactionPicker(post, mediaFrame);
+                onPostTapped(post, position);
+            }
+        }
+
+        private void onPhotoLongPress(float rawX, float rawY) {
+            if (post != null) {
+                showReactionPicker(post, rawX, rawY);
             }
         }
 
@@ -773,13 +803,14 @@ public abstract class TigiFeedBase extends BaseFragment {
 
             @Override
             public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-                ((PhotoPage) holder.itemView).bind(items.get(position));
+                ((PhotoPage) holder.itemView).bind(items.get(position), position);
             }
         }
 
         private class PhotoPage extends FrameLayout {
             private final BackupImageView imageView;
             private final ImageView playView;
+            private int position;
 
             PhotoPage(Context context) {
                 super(context);
@@ -801,13 +832,13 @@ public abstract class TigiFeedBase extends BaseFragment {
 
                     @Override
                     public boolean onSingleTapConfirmed(MotionEvent e) {
-                        onPhotoTap();
+                        onPhotoTap(position);
                         return true;
                     }
 
                     @Override
                     public void onLongPress(MotionEvent e) {
-                        onPhotoTap();
+                        onPhotoLongPress(e.getRawX(), e.getRawY());
                     }
 
                     @Override
@@ -819,7 +850,8 @@ public abstract class TigiFeedBase extends BaseFragment {
                 setOnTouchListener((v, event) -> detector.onTouchEvent(event));
             }
 
-            void bind(MessageObject message) {
+            void bind(MessageObject message, int position) {
+                this.position = position;
                 final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, AndroidUtilities.getPhotoSize());
                 imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "800_800", (Drawable) null, message.photoThumbsObject);
                 playView.setVisibility(message.isVideo() ? VISIBLE : GONE);

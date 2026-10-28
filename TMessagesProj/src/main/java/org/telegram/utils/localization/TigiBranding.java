@@ -15,6 +15,12 @@ public class TigiBranding {
         PROTECTED.add("SentAppCode".hashCode());
         PROTECTED.add("SentAppCodeWithPhone".hashCode());
         PROTECTED.add("SentAppCodeTitle".hashCode());
+        // These mean the official app or another Telegram client, renaming them would say something false
+        PROTECTED.add("OtherLoginCode".hashCode());
+        PROTECTED.add("SessionsListInfo".hashCode());
+        PROTECTED.add("SubscribeToPremiumOfficialAppNeededDescription".hashCode());
+        PROTECTED.add("ProfileUnofficialSecurityRisk".hashCode());
+        PROTECTED.add("AuthAnotherClientInfo1".hashCode());
     }
 
     // The word Telegram, but not inside links, mentions or the names of Telegram's other apps.

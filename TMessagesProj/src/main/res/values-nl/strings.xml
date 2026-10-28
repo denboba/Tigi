@@ -60,7 +60,7 @@
     <string name="CancelLinkExpired">Deze link is ongeldig of verlopen.</string>
     <string name="CancelLinkSuccessTitle">Success!</string>
     <string name="CancelLinkSuccess">De verwijdering van je account %1$s is geannuleerd. Je kunt dit venster sluiten.</string>
-    <string name="OtherLoginCode">Je logincode is **%1$s**. Voer de code in in de Tigi-app waarop je probeert in te loggen.\n\nGeef deze code nooit aan iemand anders.</string>
+    <string name="OtherLoginCode">Je logincode is **%1$s**. Voer de code in in de Telegram-app waarop je probeert in te loggen.\n\nGeef deze code nooit aan iemand anders.</string>
     <string name="SmsAvailableIn">Je kunt een SMS aanvragen in %1$d:%2$02d</string>
     <string name="ResendSmsAvailableIn">Je kunt over %1$d:%2$02d een nieuwe SMS aanvragen</string>
     <string name="RequestSmsButton">Code ontvangen via SMS</string>
@@ -693,7 +693,7 @@
     <string name="AuthAnotherClientOk">Authenticatie gelukt</string>
     <string name="AuthAnotherClientDownloadClientUrl">https://desktop.telegram.org/</string>
     <string name="AuthAnotherWebClientUrl">https://web.telegram.org/</string>
-    <string name="AuthAnotherClientInfo1">Download Tigi op je computer via *desktop.telegram.org*</string>
+    <string name="AuthAnotherClientInfo1">Download Telegram op je computer via *desktop.telegram.org*</string>
     <string name="AuthAnotherClientInfo2">Gebruik Telegram Desktop om de QR-code te krijgen.</string>
     <string name="AuthAnotherClientInfo3">Scan de QR-Code om met je account te verbinden.</string>
     <string name="AuthAnotherClientUrl">Met deze code kun je iemand toestaan om in te loggen op je Tigi-account\n\nOm de login te bevestigen ga naar, Instellingen &gt; Apparaten &gt; Scan QR en scan de code.</string>

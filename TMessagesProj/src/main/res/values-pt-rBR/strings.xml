@@ -60,7 +60,7 @@
     <string name="CancelLinkExpired">O link expirou ou está inválido.</string>
     <string name="CancelLinkSuccessTitle">Sucesso!</string>
     <string name="CancelLinkSuccess">O processo de exclusão da sua conta %1$s foi cancelado. Você pode fechar esta janela agora.</string>
-    <string name="OtherLoginCode">Seu código de login é **%1$s**. Digite ele no app do Tigi no qual você está tentando fazer o login.\n\nNão informe esse código para ninguém.</string>
+    <string name="OtherLoginCode">Seu código de login é **%1$s**. Digite ele no app do Telegram no qual você está tentando fazer o login.\n\nNão informe esse código para ninguém.</string>
     <string name="SmsAvailableIn">Você pode pedir um SMS em %1$d:%2$02d</string>
     <string name="ResendSmsAvailableIn">Você pode pedir um novo SMS em %1$d:%2$02d</string>
     <string name="RequestSmsButton">Obter o código via SMS</string>
@@ -703,7 +703,7 @@
     <string name="AuthAnotherClientOk">Autenticação concluída</string>
     <string name="AuthAnotherClientDownloadClientUrl">https://desktop.telegram.org/</string>
     <string name="AuthAnotherWebClientUrl">https://web.telegram.org/</string>
-    <string name="AuthAnotherClientInfo1">Baixe o Tigi em *desktop.telegram.org* no seu computador.</string>
+    <string name="AuthAnotherClientInfo1">Baixe o Telegram em *desktop.telegram.org* no seu computador.</string>
     <string name="AuthAnotherClientInfo2">Use o Telegram Desktop para obter o código QR.</string>
     <string name="AuthAnotherClientInfo3">Escaneie o código QR para conectar à sua conta.</string>
     <string name="AuthAnotherClientUrl">Esse código pode ser usado para permitir que alguém entre na sua conta do Tigi.\n\nPara confirmar o login no Tigi, acesse Configurações &gt; Dispositivos &gt; Ler Código QR e escaneie o código.</string>

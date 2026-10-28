@@ -60,7 +60,7 @@
     <string name="CancelLinkExpired">Link ist ungültig oder abgelaufen.</string>
     <string name="CancelLinkSuccessTitle">Erfolgreich!</string>
     <string name="CancelLinkSuccess">Löschvorgang für dein Konto %1$s wurde abgebrochen. Du kannst das Fenster nun schließen.</string>
-    <string name="OtherLoginCode">Dein Anmeldecode lautet **%1$s**. Gebe ihn in der Tigi-App ein, bei der du dich anmelden möchtest.\n\nDen Code niemals weitergeben.</string>
+    <string name="OtherLoginCode">Dein Anmeldecode lautet **%1$s**. Gebe ihn in der Telegram-App ein, bei der du dich anmelden möchtest.\n\nDen Code niemals weitergeben.</string>
     <string name="SmsAvailableIn">Du kannst eine SMS anfordern in: %1$d:%2$02d</string>
     <string name="ResendSmsAvailableIn">In %1$d:%2$02d kannst du eine neue SMS anfordern.</string>
     <string name="RequestSmsButton">Code per SMS anfordern</string>

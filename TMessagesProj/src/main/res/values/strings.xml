@@ -61,7 +61,7 @@
     <string name="CancelLinkExpired">Link is invalid or expired.</string>
     <string name="CancelLinkSuccessTitle">Success</string>
     <string name="CancelLinkSuccess">The deletion process was cancelled for your account %1$s. You may close this window now.</string>
-    <string name="OtherLoginCode">Your login code is **%1$s**. Enter it in the Tigi app where you are trying to log in.\n\nDo not give this code to anyone.</string>
+    <string name="OtherLoginCode">Your login code is **%1$s**. Enter it in the Telegram app where you are trying to log in.\n\nDo not give this code to anyone.</string>
     <string name="SmsAvailableIn">You can request an SMS in %1$d:%2$02d</string>
     <string name="ResendSmsAvailableIn">You can request a new SMS in %1$d:%2$02d</string>
     <string name="RequestSmsButton">Get the code via SMS</string>
@@ -2759,7 +2759,7 @@
     <string name="AuthAnotherClientOk">Auth successfull</string>
     <string name="AuthAnotherClientDownloadClientUrl">https://getdesktop.telegram.org/</string>
     <string name="AuthAnotherWebClientUrl">https://web.telegram.org/</string>
-    <string name="AuthAnotherClientInfo1">Download Tigi on your computer from *getdesktop.telegram.org*.</string>
+    <string name="AuthAnotherClientInfo1">Download Telegram on your computer from *getdesktop.telegram.org*.</string>
     <string name="AuthAnotherClientInfo2">Run Telegram Desktop to get the QR code.</string>
     <string name="AuthAnotherClientInfo3">Scan the QR code to connect your account.</string>
     <string name="AuthAnotherClientUrl">This code can be used to allow someone to log in to your Tigi account.\n\nTo confirm Tigi login, please go to Settings &gt; Devices &gt; Scan QR and scan the code.</string>
@@ -5403,7 +5403,7 @@
     <string name="TerminateOldSessionHeader">Automatically terminate old sessions</string>
     <string name="IfInactiveFor">if inactive for</string>
     <string name="AuthAnotherClientInfo5">Go to *getdesktop.telegram.org* or *web.telegram.org* to get a QR code</string>
-    <string name="SessionsListInfo">The official Tigi app is available for Android, iPhone, iPad, Windows, macOS and Linux.</string>
+    <string name="SessionsListInfo">The official Telegram app is available for Android, iPhone, iPad, Windows, macOS and Linux.</string>
     <string name="MigrateOldFolder">Migrate old folder to Scoped Storage</string>
     <string name="SelectThisDay">Select this day</string>
     <string name="NoMessagesForThisDay">No messages for this day</string>
@@ -5693,7 +5693,7 @@
     <string name="SubscribeToPremiumNoPrice">Subscribe</string>
     <string name="SubscribeToPremiumNotAvailable">Subscription not available</string>
     <string name="SubscribeToPremiumOfficialAppNeeded">**Official app needed**</string>
-    <string name="SubscribeToPremiumOfficialAppNeededDescription">You need an official Tigi app to subscribe to **Telegram Premium**.\n\nOnce subscribed, you will be able to use the benefits of Telegram Premium in any apps that support it, including unofficial ones.</string>
+    <string name="SubscribeToPremiumOfficialAppNeededDescription">You need an official Telegram app to subscribe to **Telegram Premium**.\n\nOnce subscribed, you will be able to use the benefits of Telegram Premium in any apps that support it, including unofficial ones.</string>
     <string name="InstallOfficialApp">Install official app</string>
     <string name="GiftSubscriptionFor">Gift Subscription for %1$s</string>
     <string name="GiftSubscriptionCountFor_one">Gift %1$d Subscription for %2$s</string>
@@ -8746,7 +8746,7 @@
     <string name="StoryEditCoverInfo">Choose a frame from the story to show in your Profile.</string>
     <string name="StoryEditCoverMenu">Edit Cover</string>
     <string name="StoryCoverSave">Save Cover</string>
-    <string name="ProfileUnofficialSecurityRisk">%s uses an unofficial Tigi client — messages to this user may be less secure.</string>
+    <string name="ProfileUnofficialSecurityRisk">%s uses an unofficial Telegram client — messages to this user may be less secure.</string>
     <string name="WebBookmarks">Bookmarks</string>
     <string name="WebHistory">History</string>
     <string name="WebNoHistory">No history yet</string>

@@ -19,6 +19,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLObject;
@@ -79,6 +80,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
         }
         getNotificationCenter().addObserver(this, NotificationCenter.groupCallUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().addObserver(this, NotificationCenter.didLoadSponsoredMessages);
         return true;
     }
 
@@ -89,6 +91,12 @@ public class ChannelFeedActivity extends TigiFeedBase {
             updateJoinButton();
             return;
         }
+        if (id == NotificationCenter.didLoadSponsoredMessages) {
+            if ((Long) args[0] == -chatId && args[1] instanceof ArrayList) {
+                insertSponsored((ArrayList<MessageObject>) args[1]);
+            }
+            return;
+        }
         super.didReceivedNotification(id, account, args);
     }
 
@@ -96,6 +104,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
     public void onFragmentDestroy() {
         getNotificationCenter().removeObserver(this, NotificationCenter.groupCallUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().removeObserver(this, NotificationCenter.didLoadSponsoredMessages);
         if (requestId != 0) {
             getConnectionsManager().cancelRequest(requestId, true);
             requestId = 0;
@@ -242,6 +251,23 @@ public class ChannelFeedActivity extends TigiFeedBase {
         });
     }
 
+    private boolean sponsoredShown;
+
+    /** One sponsored card after the first post. */
+    private void insertSponsored(ArrayList<MessageObject> messages) {
+        if (sponsoredShown || messages == null || messages.isEmpty() || isDead() || posts.isEmpty()) {
+            return;
+        }
+        final MessageObject message = messages.get(0);
+        if (message == null || message.sponsoredId == null) {
+            return;
+        }
+        sponsoredShown = true;
+        final int index = Math.min(1, posts.size());
+        posts.add(index, makeSponsoredPost(chat, message));
+        adapter.notifyItemInserted(index);
+    }
+
     @Override
     protected boolean acceptsNewMessage(long dialogId, MessageObject message) {
         if (dialogId != -chatId) {
@@ -341,6 +367,13 @@ public class ChannelFeedActivity extends TigiFeedBase {
                     // like opening the chat: the newest posts are now seen, so the unread badge goes away
                     markedRead = true;
                     getMessagesController().markDialogAsRead(-chatId, maxId, maxId, maxDate, false, 0, 0, true, 0);
+                }
+                if (firstPage && !mediaOnly) {
+                    // channel ads, like in the channel chat (Telegram's API terms)
+                    final MessagesController.SponsoredMessagesInfo info = getMessagesController().getSponsoredMessages(-chatId);
+                    if (info != null && info.messages != null) {
+                        AndroidUtilities.runOnUIThread(() -> insertSponsored(info.messages));
+                    }
                 }
                 final int before = posts.size();
                 final ArrayList<FeedPost> page = buildPosts(chat, res.messages, albums);

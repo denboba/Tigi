@@ -5798,7 +5798,7 @@
     <string name="ReportAd">Report Ad</string>
     <string name="ReportAdLearnMore">Learn more about our [Ad Policies and Guidelines.](https://ads.telegram.org/guidelines)</string>
     <string name="AdReported">We will review this ad to ensure it matches our **Ad Policies and Guidelines.**</string>
-    <string name="AdHidden">You will no longer see ads from Tigi.</string>
+    <string name="AdHidden">You will no longer see ads from Telegram.</string>
     <string name="BioLimitTitle">Bio</string>
     <string name="BioLimitSubtitle">Add more symbols and use links in your bio.</string>
     <string name="AppIcon">App Icon</string>
@@ -10645,6 +10645,8 @@
     <string name="TigiPostUnsupported">This post can\'t be shown here.</string>
     <string name="TigiMute">Mute</string>
     <string name="TigiRetry">Try again</string>
+    <string name="TigiSponsoredInfo">Sponsored messages are shown by Telegram in public channels with many subscribers. Tigi shows them as Telegram requires for apps that use its API.</string>
+    <string name="TigiSponsoredOpen">Open</string>
     <string name="TigiAbout">About Tigi</string>
     <string name="TigiAboutVersion">Version</string>
     <string name="TigiAboutNotice">Tigi is an unofficial app that uses the Telegram API. It is not made by or affiliated with Telegram. Your account, chats and posts are Telegram\'s and work in every Telegram app.</string>

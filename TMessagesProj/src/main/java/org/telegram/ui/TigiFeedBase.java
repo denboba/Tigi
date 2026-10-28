@@ -87,13 +87,15 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         CharSequence fallback;
         int date;
         long groupId;
+        // a sponsored message (Telegram's channel ads): its own card, no reactions or menu actions
+        boolean sponsored;
 
         MessageObject primary() {
             return messages.get(0);
         }
 
         boolean isValid() {
-            return !messages.isEmpty() && (!media.isEmpty() || !TextUtils.isEmpty(text) || !TextUtils.isEmpty(fallback));
+            return !messages.isEmpty() && (sponsored || !media.isEmpty() || !TextUtils.isEmpty(text) || !TextUtils.isEmpty(fallback));
         }
     }
 
@@ -761,6 +763,63 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         inlinePlayer.stop();
     }
 
+    /* sponsored messages (Telegram's API terms: channel ads must be shown and their views/clicks reported) */
+
+    private final java.util.HashSet<String> viewedSponsored = new java.util.HashSet<>();
+
+    protected FeedPost makeSponsoredPost(TLRPC.Chat chat, MessageObject message) {
+        final FeedPost post = new FeedPost();
+        post.chat = chat;
+        post.sponsored = true;
+        post.date = message.messageOwner.date;
+        post.messages.add(message);
+        post.text = message.messageText;
+        return post;
+    }
+
+    private void logSponsoredView(MessageObject message) {
+        if (message == null || message.sponsoredId == null) {
+            return;
+        }
+        final String key = org.telegram.messenger.Utilities.bytesToHex(message.sponsoredId);
+        if (!viewedSponsored.add(key)) {
+            return;
+        }
+        final TLRPC.TL_messages_viewSponsoredMessage req = new TLRPC.TL_messages_viewSponsoredMessage();
+        req.random_id = message.sponsoredId;
+        getConnectionsManager().sendRequest(req, null);
+    }
+
+    private void openSponsored(MessageObject message) {
+        if (message == null || getParentActivity() == null) {
+            return;
+        }
+        final TLRPC.TL_messages_clickSponsoredMessage req = new TLRPC.TL_messages_clickSponsoredMessage();
+        req.random_id = message.sponsoredId;
+        getConnectionsManager().sendRequest(req, null);
+        if (!TextUtils.isEmpty(message.sponsoredUrl)) {
+            Browser.openUrl(getParentActivity(), message.sponsoredUrl);
+        }
+    }
+
+    private void showSponsoredInfo(MessageObject message) {
+        if (message == null || getParentActivity() == null) {
+            return;
+        }
+        final StringBuilder text = new StringBuilder(LocaleController.getString(R.string.TigiSponsoredInfo));
+        if (!TextUtils.isEmpty(message.sponsoredInfo)) {
+            text.append("\n\n").append(message.sponsoredInfo);
+        }
+        if (!TextUtils.isEmpty(message.sponsoredAdditionalInfo)) {
+            text.append("\n").append(message.sponsoredAdditionalInfo);
+        }
+        new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity(), getResourceProvider())
+            .setTitle(LocaleController.getString(R.string.SponsoredMessage2))
+            .setMessage(text.toString())
+            .setPositiveButton(LocaleController.getString(R.string.OK), null)
+            .show();
+    }
+
     /* comments and links */
 
     /** The post's comment thread in the linked discussion group; without one, the post in the channel chat. */
@@ -1157,9 +1216,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final TextView moreView;
         private final TextView statusView;
         private TextView liveBadge;
+        private ImageView moreButton;
+        private LinearLayout actions;
         private final TextView forwardedView;
         private final LinearLayout fallbackBox;
         private final TextView fallbackLabel;
+        private TextView fallbackOpen;
         FeedPost post;
         private int currentPage;
         private boolean captionExpanded;
@@ -1222,13 +1284,19 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 }
             });
             headerRow.addView(liveBadge, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 24, Gravity.CENTER_VERTICAL, 6, 0, 0, 0));
-            final ImageView moreButton = new ImageView(context);
+            moreButton = new ImageView(context);
             moreButton.setScaleType(ImageView.ScaleType.CENTER);
             moreButton.setImageResource(R.drawable.ic_ab_other);
             moreButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), PorterDuff.Mode.SRC_IN));
             moreButton.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
             moreButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
-            moreButton.setOnClickListener(v -> showPostMenu(post, v));
+            moreButton.setOnClickListener(v -> {
+                if (post != null && post.sponsored) {
+                    showSponsoredInfo(post.primary());
+                } else {
+                    showPostMenu(post, v);
+                }
+            });
             headerRow.addView(moreButton, LayoutHelper.createLinear(44, 44, Gravity.CENTER_VERTICAL, 4, 0, -8, 0));
             addView(headerRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
@@ -1265,7 +1333,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             fallbackLabel.setMaxLines(2);
             fallbackLabel.setEllipsize(TextUtils.TruncateAt.END);
             fallbackBox.addView(fallbackLabel, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-            final TextView fallbackOpen = new TextView(context);
+            fallbackOpen = new TextView(context);
             fallbackOpen.setText(LocaleController.getString(R.string.ViewInChat));
             fallbackOpen.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             fallbackOpen.setTypeface(AndroidUtilities.bold());
@@ -1276,7 +1344,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             fallbackBox.addView(fallbackOpen, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
             fallbackBox.setOnClickListener(v -> {
                 if (post != null && !post.messages.isEmpty()) {
-                    openPostInChat(post, post.primary());
+                    if (post.sponsored) {
+                        openSponsored(post.primary());
+                    } else {
+                        openPostInChat(post, post.primary());
+                    }
                 }
             });
             fallbackBox.setVisibility(GONE);
@@ -1322,7 +1394,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             dotsView = new DotsView(context);
             addView(dotsView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 20));
 
-            final LinearLayout actions = new LinearLayout(context);
+            actions = new LinearLayout(context);
             actions.setOrientation(HORIZONTAL);
             actions.setGravity(Gravity.CENTER_VERTICAL);
             actions.setPadding(dp(6), 0, dp(6), 0);
@@ -1473,6 +1545,13 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             if (post == null || post.messages.isEmpty()) {
                 return;
             }
+            if (post.sponsored) {
+                bindSponsored(post);
+                return;
+            }
+            actions.setVisibility(VISIBLE);
+            fallbackOpen.setText(LocaleController.getString(R.string.ViewInChat));
+            moreButton.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
             currentPage = 0;
             captionExpanded = false;
 
@@ -1534,6 +1613,35 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             bindStatus();
         }
 
+        private void bindSponsored(FeedPost post) {
+            final MessageObject message = post.primary();
+            currentPage = 0;
+            captionExpanded = false;
+            final AvatarDrawable avatarDrawable = new AvatarDrawable();
+            avatarDrawable.setInfo(currentAccount, post.chat);
+            if (message.sponsoredPhoto != null) {
+                final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.sponsoredPhoto.sizes, dp(32));
+                avatarView.setImage(ImageLocation.getForPhoto(size, message.sponsoredPhoto), "32_32", avatarDrawable, null);
+            } else {
+                avatarView.setImageDrawable(avatarDrawable);
+            }
+            nameView.setText(!TextUtils.isEmpty(message.sponsoredTitle) ? message.sponsoredTitle : LocaleController.getString(R.string.SponsoredMessage2));
+            timeView.setText(LocaleController.getString(R.string.SponsoredMessage2));
+            liveBadge.setVisibility(GONE);
+            statusView.setVisibility(GONE);
+            forwardedView.setVisibility(GONE);
+            mediaFrame.setVisibility(GONE);
+            dotsView.setVisibility(GONE);
+            actions.setVisibility(GONE);
+            chipsRow.setVisibility(GONE);
+            moreButton.setContentDescription(LocaleController.getString(R.string.SponsoredMessageInfo));
+            fallbackLabel.setText(LocaleController.getString(R.string.SponsoredMessage2));
+            fallbackOpen.setText(!TextUtils.isEmpty(message.sponsoredButtonText) ? message.sponsoredButtonText : LocaleController.getString(R.string.TigiSponsoredOpen));
+            fallbackBox.setVisibility(TextUtils.isEmpty(message.sponsoredUrl) ? GONE : VISIBLE);
+            updateCaption();
+            logSponsoredView(message);
+        }
+
         void bindStatus() {
             if (post == null || post.messages.isEmpty()) {
                 statusView.setVisibility(GONE);
@@ -1584,7 +1692,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
 
         void bindActions() {
-            if (post == null || post.messages.isEmpty()) {
+            if (post == null || post.messages.isEmpty() || post.sponsored) {
                 return;
             }
             final MessageObject message = post.primary();

@@ -21,6 +21,7 @@ public class TigiBranding {
         PROTECTED.add("SubscribeToPremiumOfficialAppNeededDescription".hashCode());
         PROTECTED.add("ProfileUnofficialSecurityRisk".hashCode());
         PROTECTED.add("AuthAnotherClientInfo1".hashCode());
+        PROTECTED.add("AdHidden".hashCode());
     }
 
     // The word Telegram, but not inside links, mentions or the names of Telegram's other apps.

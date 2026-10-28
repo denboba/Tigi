@@ -50,7 +50,7 @@ Built: run 15 green (`fcc2e767c`).
 
 | Item | Status |
 |---|---|
-| Compiles | Phase 0: built (run 15). Phases 1–3: run 16; 4–7: run 17 — see the PR / chat for results |
+| Compiles | Built: Phase 0 in run 15; all phases (1–7 + sponsored) in run 20 (`819446990`), after two compile fixes found by runs 16 and 18 |
 | Translation files valid, placeholders intact | Verified (script over all locales) |
 | Tab index mapping in both layouts | Reasoned (traced every INDEX_/POSITION_ use) |
 | Everything user-facing (feeds, video, reels, posting, live, profile, navigation, permissions, RTL, tablets, TalkBack, theme switch, process death, memory) | Reasoned only. Needs the manual checklist |

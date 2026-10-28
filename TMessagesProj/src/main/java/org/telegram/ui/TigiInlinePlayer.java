@@ -38,6 +38,7 @@ public class TigiInlinePlayer {
     private Listener listener;
     private boolean muted;
     private boolean looping = true;
+    private boolean fitInside;
 
     public TigiInlinePlayer(int account) {
         this(account, KEY_MUTED);
@@ -58,6 +59,11 @@ public class TigiInlinePlayer {
         if (player != null) {
             player.setLooping(looping);
         }
+    }
+
+    /** true: letterbox wide videos instead of cropping them (full screen reels). */
+    public void setFitInside(boolean fitInside) {
+        this.fitInside = fitInside;
     }
 
     public boolean isMuted() {
@@ -187,7 +193,7 @@ public class TigiInlinePlayer {
         if (hostW <= 0 || hostH <= 0) {
             return;
         }
-        final float scale = Math.max(hostW / width, hostH / height);
+        final float scale = fitInside ? Math.min(hostW / width, hostH / height) : Math.max(hostW / width, hostH / height);
         final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) textureView.getLayoutParams();
         params.width = (int) Math.ceil(width * scale);
         params.height = (int) Math.ceil(height * scale);

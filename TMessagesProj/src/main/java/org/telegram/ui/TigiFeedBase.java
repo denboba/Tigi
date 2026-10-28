@@ -262,9 +262,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                     posts.remove(i);
                 }
             }
-            if (changed && adapter != null) {
-                adapter.notifyDataSetChanged();
-                updateEmptyView();
+            if (changed) {
+                notifyPostsChanged();
             }
         }
     }
@@ -445,13 +444,26 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
         root.addView(content, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        overlay = new FrameLayout(context);
-        overlay.setVisibility(View.GONE);
-        root.addView(overlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        installOverlay(root);
 
         updateEmptyView();
         fragmentView = root;
         return fragmentView;
+    }
+
+    /** The layer the reaction picker opens in; screens with their own layout call this on their root. */
+    protected void installOverlay(FrameLayout root) {
+        overlay = new FrameLayout(root.getContext());
+        overlay.setVisibility(View.GONE);
+        root.addView(overlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+    }
+
+    /** Redraws everything after posts were added or removed. */
+    protected void notifyPostsChanged() {
+        if (listView != null && listView.getAdapter() != null) {
+            listView.getAdapter().notifyDataSetChanged();
+        }
+        updateEmptyView();
     }
 
     @Override
@@ -664,6 +676,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     protected void refreshPost(FeedPost post) {
+        onPostRefreshed(post);
         if (listView == null) {
             return;
         }
@@ -894,6 +907,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             return null;
         }
         return LocaleController.getString(R.string.TigiPostUnsupported);
+    }
+
+    /** A post's reactions or state changed; screens with their own cells redraw them here. */
+    protected void onPostRefreshed(FeedPost post) {
     }
 
     /** Shows Telegram's reaction bar right above the point (screen coordinates) that was pressed. */

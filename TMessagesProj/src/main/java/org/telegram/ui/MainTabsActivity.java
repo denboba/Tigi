@@ -99,7 +99,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     // POSITION_* are pager pages, INDEX_* are views in tabs[]; -1 means "not in this layout".
     public static final boolean NEW_NAV = BuildVars.TIGI_NEW_NAV;
     // the Reels page and the Create sheet exist only from their phases on; until then their flags do nothing
-    private static final boolean REELS_READY = false;
+    private static final boolean REELS_READY = true;
     private static final boolean CREATE_READY = true;
 
     public static final int TABS_COUNT;
@@ -965,6 +965,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             Bundle args = new Bundle();
             args.putBoolean("hasMainTabs", true);
             return new HomeFeedActivity(args);
+        } else if (position == POSITION_REELS) {
+            Bundle args = new Bundle();
+            args.putBoolean("hasMainTabs", true);
+            return new ReelsActivity(args);
         } else if (position == POSITION_CONTACTS) {
             Bundle args = new Bundle();
             args.putBoolean("needPhonebook", true);

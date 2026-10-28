@@ -25,6 +25,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.PagerSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
@@ -35,13 +38,17 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.TigiHeart;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.ReactionsContainerLayout;
@@ -57,9 +64,8 @@ import java.util.List;
  * Shared base of the Tigi Instagram-style feeds (Home and a single channel):
  * post cards, photo carousel, hearts, the full Telegram reaction picker and long captions.
  */
-public abstract class TigiFeedBase extends BaseFragment {
+public abstract class TigiFeedBase extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
-    protected static final String HEART_PREFIX = "❤";
     private static final int CAPTION_LINES = 3;
 
     protected static class FeedPost {
@@ -69,6 +75,7 @@ public abstract class TigiFeedBase extends BaseFragment {
         final ArrayList<MessageObject> media = new ArrayList<>();
         CharSequence text;
         int date;
+        long groupId;
 
         MessageObject primary() {
             return messages.get(0);
@@ -87,6 +94,7 @@ public abstract class TigiFeedBase extends BaseFragment {
     protected boolean hasMainTabs;
 
     private FrameLayout overlay;
+    private FrameLayout rootView;
     private ReactionsContainerLayout pickerLayout;
     private View pickerScrim;
 
@@ -125,7 +133,98 @@ public abstract class TigiFeedBase extends BaseFragment {
         if (arguments != null) {
             hasMainTabs = arguments.getBoolean("hasMainTabs", false);
         }
+        getNotificationCenter().addObserver(this, NotificationCenter.didUpdateReactions);
+        getNotificationCenter().addObserver(this, NotificationCenter.messagesDeleted);
         return super.onFragmentCreate();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        getNotificationCenter().removeObserver(this, NotificationCenter.didUpdateReactions);
+        getNotificationCenter().removeObserver(this, NotificationCenter.messagesDeleted);
+        super.onFragmentDestroy();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        hideReactionPicker();
+    }
+
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        if (pickerLayout != null) {
+            if (invoked) {
+                hideReactionPicker();
+            }
+            return false;
+        }
+        return super.onBackPressed(invoked);
+    }
+
+    /** True once the fragment is gone; network callbacks must not touch views after that. */
+    protected boolean isDead() {
+        return isFinishing() || fragmentView == null || getParentActivity() == null;
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.didUpdateReactions) {
+            final long dialogId = (Long) args[0];
+            final int msgId = (Integer) args[1];
+            final FeedPost post = findPost(dialogId, msgId);
+            if (post != null && args[2] instanceof TLRPC.TL_messageReactions) {
+                MessageObject.updateReactions(post.primary().messageOwner, (TLRPC.TL_messageReactions) args[2]);
+                refreshPost(post);
+            }
+        } else if (id == NotificationCenter.messagesDeleted) {
+            if ((Boolean) args[2]) {
+                return; // scheduled
+            }
+            final ArrayList<Integer> ids = (ArrayList<Integer>) args[0];
+            final long channelId = (Long) args[1];
+            boolean changed = false;
+            for (int i = posts.size() - 1; i >= 0; i--) {
+                final FeedPost post = posts.get(i);
+                if (post.chat == null || (channelId != 0 && post.chat.id != channelId)) {
+                    continue;
+                }
+                for (int m = post.messages.size() - 1; m >= 0; m--) {
+                    if (ids.contains(post.messages.get(m).getId())) {
+                        post.media.remove(post.messages.get(m));
+                        post.messages.remove(m);
+                        changed = true;
+                    }
+                }
+                if (!post.isValid()) {
+                    posts.remove(i);
+                }
+            }
+            if (changed && adapter != null) {
+                adapter.notifyDataSetChanged();
+                updateEmptyView();
+            }
+        }
+    }
+
+    protected FeedPost findPost(long dialogId, int msgId) {
+        for (int i = 0; i < posts.size(); i++) {
+            final FeedPost post = posts.get(i);
+            if (post.chat != null && -post.chat.id == dialogId && !post.messages.isEmpty() && post.primary().getId() == msgId) {
+                return post;
+            }
+        }
+        return null;
+    }
+
+    /** Puts the header below the status bar using the real window insets (statusBarHeight can still be 0 here). */
+    protected void applyTopInset(View header) {
+        header.setPadding(header.getPaddingLeft(), AndroidUtilities.statusBarHeight, header.getPaddingRight(), header.getPaddingBottom());
+        ViewCompat.setOnApplyWindowInsetsListener(header, (v, insets) -> {
+            final Insets bars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
+            v.setPadding(v.getPaddingLeft(), Math.max(bars.top, 0), v.getPaddingRight(), v.getPaddingBottom());
+            return insets;
+        });
     }
 
     @Override
@@ -133,6 +232,7 @@ public abstract class TigiFeedBase extends BaseFragment {
         actionBar.setAddToContainer(false);
 
         final FrameLayout root = new FrameLayout(context);
+        rootView = root;
         root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
 
         final LinearLayout content = new LinearLayout(context);
@@ -177,6 +277,41 @@ public abstract class TigiFeedBase extends BaseFragment {
         return fragmentView;
     }
 
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        final ArrayList<ThemeDescription> list = new ArrayList<>();
+        final ThemeDescription.ThemeDescriptionDelegate delegate = this::updateColors;
+        list.add(new ThemeDescription(null, 0, null, null, null, delegate, Theme.key_windowBackgroundWhite));
+        list.add(new ThemeDescription(null, 0, null, null, null, delegate, Theme.key_windowBackgroundGray));
+        list.add(new ThemeDescription(null, 0, null, null, null, delegate, Theme.key_windowBackgroundWhiteBlackText));
+        return list;
+    }
+
+    /** Re-applies theme colors after a theme or night mode switch. */
+    protected void updateColors() {
+        if (rootView == null) {
+            return;
+        }
+        rootView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        if (emptyView != null) {
+            emptyView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        }
+        updateHeaderColors();
+        if (listView != null) {
+            for (int i = 0; i < listView.getChildCount(); i++) {
+                final View child = listView.getChildAt(i);
+                if (child instanceof FeedCell) {
+                    ((FeedCell) child).updateColors();
+                }
+            }
+            // cached cells were built with the old colors
+            listView.getRecycledViewPool().clear();
+        }
+    }
+
+    protected void updateHeaderColors() {
+    }
+
     protected void updateEmptyView() {
         if (emptyView == null) {
             return;
@@ -192,8 +327,18 @@ public abstract class TigiFeedBase extends BaseFragment {
     /* posts from messages */
 
     protected ArrayList<FeedPost> buildPosts(TLRPC.Chat chat, ArrayList<TLRPC.Message> messages) {
+        return buildPosts(chat, messages, new HashMap<>());
+    }
+
+    /**
+     * albums maps grouped_id to posts already shown; photos of an album that continues from the previous page are
+     * appended to that post instead of making a second card (the post object is then not in the returned list).
+     */
+    protected ArrayList<FeedPost> buildPosts(TLRPC.Chat chat, ArrayList<TLRPC.Message> messages, HashMap<Long, FeedPost> albums) {
         final ArrayList<FeedPost> out = new ArrayList<>();
-        final HashMap<Long, FeedPost> albums = new HashMap<>();
+        if (chat == null || messages == null) {
+            return out;
+        }
         // history comes newest first, albums are shown oldest photo first
         for (int i = messages.size() - 1; i >= 0; i--) {
             final TLRPC.Message message = messages.get(i);
@@ -203,10 +348,22 @@ public abstract class TigiFeedBase extends BaseFragment {
             final MessageObject object = new MessageObject(currentAccount, message, true, false);
             final long groupId = message.grouped_id;
             FeedPost post = groupId != 0 ? albums.get(groupId) : null;
+            if (post != null && !out.contains(post)) {
+                // the rest of an album from an earlier page: those messages are older, they go first
+                post.messages.add(0, object);
+                if (object.photoThumbs != null && !object.photoThumbs.isEmpty() && (object.isPhoto() || object.isVideo() || object.isGif())) {
+                    post.media.add(0, object);
+                }
+                if (TextUtils.isEmpty(post.text) && !TextUtils.isEmpty(object.caption)) {
+                    post.text = object.caption;
+                }
+                continue;
+            }
             if (post == null) {
                 post = new FeedPost();
                 post.chat = chat;
                 post.date = message.date;
+                post.groupId = groupId;
                 if (!chat.broadcast && message.from_id instanceof TLRPC.TL_peerUser) {
                     post.author = getMessagesController().getUser(message.from_id.user_id);
                 }
@@ -236,22 +393,37 @@ public abstract class TigiFeedBase extends BaseFragment {
     /* hearts and reactions */
 
     protected String heartEmoji() {
-        final List<TLRPC.TL_availableReaction> list = getMediaDataController().getReactionsList();
-        for (int i = 0; i < list.size(); i++) {
-            final String reaction = list.get(i).reaction;
-            if (reaction != null && reaction.startsWith(HEART_PREFIX)) {
-                return reaction;
-            }
-        }
-        return HEART_PREFIX + "️";
+        final String heart = TigiHeart.find(getMediaDataController().getReactionsList());
+        return heart != null ? heart : TigiHeart.HEART;
     }
 
     protected static boolean isHeart(TLRPC.Reaction reaction) {
-        if (!(reaction instanceof TLRPC.TL_reactionEmoji)) {
+        return TigiHeart.isHeart(reaction);
+    }
+
+    /** Whether the channel allows this reaction at all. Unknown (no full info yet) counts as allowed. */
+    protected boolean isReactionAllowed(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction) {
+        final TLRPC.ChatFull full = getMessagesController().getChatFull(post.chat.id);
+        if (full == null || full.available_reactions == null || reaction == null) {
+            return true;
+        }
+        if (full.available_reactions instanceof TLRPC.TL_chatReactionsNone) {
             return false;
         }
-        final String emoticon = ((TLRPC.TL_reactionEmoji) reaction).emoticon;
-        return emoticon != null && emoticon.startsWith(HEART_PREFIX);
+        if (full.available_reactions instanceof TLRPC.TL_chatReactionsSome) {
+            if (reaction.emojicon == null) {
+                return false;
+            }
+            final ArrayList<TLRPC.Reaction> list = ((TLRPC.TL_chatReactionsSome) full.available_reactions).reactions;
+            for (int i = 0; i < list.size(); i++) {
+                final TLRPC.Reaction r = list.get(i);
+                if (r instanceof TLRPC.TL_reactionEmoji && reaction.emojicon.equals(((TLRPC.TL_reactionEmoji) r).emoticon)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return reaction.emojicon != null || ((TLRPC.TL_chatReactionsAll) full.available_reactions).allow_custom;
     }
 
     protected static int heartCount(MessageObject message) {
@@ -280,16 +452,32 @@ public abstract class TigiFeedBase extends BaseFragment {
         return false;
     }
 
-    protected void applyReaction(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction, boolean big, boolean addToRecent) {
+    /** Returns false when the reaction could not be sent at all (not allowed in this channel). */
+    protected boolean applyReaction(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction, boolean big, boolean addToRecent) {
+        if (post == null || post.messages.isEmpty() || reaction == null) {
+            return false;
+        }
+        if (!isReactionAllowed(post, reaction)) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionsOff)).show();
+            return false;
+        }
         final MessageObject message = post.primary();
         final boolean added = message.selectReaction(reaction, big, false);
         final ArrayList<ReactionsLayoutInBubble.VisibleReaction> chosen = new ArrayList<>(message.getChoosenReactions());
-        getSendMessagesHelper().sendReaction(message, chosen, added ? reaction : null, big, addToRecent, this, () -> {});
+        getSendMessagesHelper().sendReaction(message, chosen, added ? reaction : null, big, addToRecent, this, null, error -> {
+            // the server said no (limit, reactions turned off meanwhile, flood): undo the local change
+            message.selectReaction(reaction, big, false);
+            refreshPost(post);
+            if (!isDead()) {
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionFailed)).show();
+            }
+        });
         refreshPost(post);
+        return true;
     }
 
-    protected void toggleHeart(FeedPost post) {
-        applyReaction(post, ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(heartEmoji()), false, false);
+    protected boolean toggleHeart(FeedPost post) {
+        return applyReaction(post, ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(heartEmoji()), false, false);
     }
 
     protected void refreshPost(FeedPost post) {
@@ -306,7 +494,7 @@ public abstract class TigiFeedBase extends BaseFragment {
 
     /** Shows Telegram's reaction bar right above the point (screen coordinates) that was pressed. */
     protected void showReactionPicker(FeedPost post, float pressRawX, float pressRawY) {
-        if (overlay == null || fragmentView == null || post == null) {
+        if (overlay == null || isDead() || post == null || post.messages.isEmpty()) {
             return;
         }
         hideReactionPicker();
@@ -343,7 +531,7 @@ public abstract class TigiFeedBase extends BaseFragment {
         final int[] overlayLocation = new int[2];
         overlay.getLocationInWindow(overlayLocation);
         final int pickerHeight = dp(70 + 22);
-        final int minTop = AndroidUtilities.statusBarHeight + dp(8);
+        final int minTop = Math.max(AndroidUtilities.statusBarHeight, dp(24)) + dp(8);
         final int maxTop = Math.max(minTop, overlay.getHeight() - pickerHeight - dp(8));
         final int top = Math.max(minTop, Math.min(maxTop, (int) (pressRawY - overlayLocation[1]) + dp(8)));
         final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, pickerHeight);
@@ -373,13 +561,16 @@ public abstract class TigiFeedBase extends BaseFragment {
     /* navigation */
 
     protected void openChannelFeed(TLRPC.Chat chat) {
+        if (chat == null) {
+            return;
+        }
         final Bundle args = new Bundle();
         args.putLong("chat_id", chat.id);
         presentFragment(new ChannelFeedActivity(args));
     }
 
     protected void openMediaViewer(FeedPost post, int index) {
-        if (getParentActivity() == null || post.media.isEmpty()) {
+        if (getParentActivity() == null || post == null || post.media.isEmpty()) {
             return;
         }
         PhotoViewer.getInstance().setParentActivity(this);
@@ -387,6 +578,9 @@ public abstract class TigiFeedBase extends BaseFragment {
     }
 
     protected void openPostInChat(FeedPost post, MessageObject message) {
+        if (post == null || post.chat == null || message == null) {
+            return;
+        }
         final Bundle args = new Bundle();
         args.putLong("chat_id", post.chat.id);
         args.putInt("message_id", message.getId());
@@ -395,7 +589,11 @@ public abstract class TigiFeedBase extends BaseFragment {
 
     protected void sharePost(FeedPost post) {
         final String username = ChatObject.getPublicUsername(post.chat);
-        if (TextUtils.isEmpty(username) || getParentActivity() == null) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        if (TextUtils.isEmpty(username)) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiSharePrivate)).show();
             return;
         }
         final Intent intent = new Intent(Intent.ACTION_SEND);
@@ -448,6 +646,8 @@ public abstract class TigiFeedBase extends BaseFragment {
         private final ImageView heartButton;
         private final TextView heartCountView;
         private final TextView commentCountView;
+        private final ImageView commentButton;
+        private final ImageView shareButton;
         private final LinearLayout chipsRow;
         private final TextView captionView;
         private final TextView moreView;
@@ -545,12 +745,14 @@ public abstract class TigiFeedBase extends BaseFragment {
 
             heartButton = new ImageView(context);
             heartButton.setScaleType(ImageView.ScaleType.CENTER);
+            heartButton.setContentDescription(LocaleController.getString(R.string.TigiLike));
             heartButton.setOnClickListener(v -> {
                 if (post == null) {
                     return;
                 }
-                toggleHeart(post);
-                popHeart();
+                if (toggleHeart(post)) {
+                    popHeart();
+                }
             });
             heartButton.setOnLongClickListener(v -> {
                 if (post != null) {
@@ -560,33 +762,35 @@ public abstract class TigiFeedBase extends BaseFragment {
                 }
                 return true;
             });
-            actions.addView(heartButton, LayoutHelper.createLinear(44, 44));
+            actions.addView(heartButton, LayoutHelper.createLinear(48, 48));
             heartCountView = makeCountView(context);
             actions.addView(heartCountView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 0, 0, 12, 0));
 
-            final ImageView commentButton = new ImageView(context);
+            commentButton = new ImageView(context);
             commentButton.setScaleType(ImageView.ScaleType.CENTER);
             commentButton.setImageResource(R.drawable.tigi_comment_24);
+            commentButton.setContentDescription(LocaleController.getString(R.string.TigiComments));
             commentButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
             commentButton.setOnClickListener(v -> {
                 if (post != null) {
                     openPostInChat(post, post.primary());
                 }
             });
-            actions.addView(commentButton, LayoutHelper.createLinear(44, 44));
+            actions.addView(commentButton, LayoutHelper.createLinear(48, 48));
             commentCountView = makeCountView(context);
             actions.addView(commentCountView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 0, 0, 12, 0));
 
-            final ImageView shareButton = new ImageView(context);
+            shareButton = new ImageView(context);
             shareButton.setScaleType(ImageView.ScaleType.CENTER);
             shareButton.setImageResource(R.drawable.tigi_share_24);
+            shareButton.setContentDescription(LocaleController.getString(R.string.ShareFile));
             shareButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
             shareButton.setOnClickListener(v -> {
                 if (post != null) {
                     sharePost(post);
                 }
             });
-            actions.addView(shareButton, LayoutHelper.createLinear(44, 44));
+            actions.addView(shareButton, LayoutHelper.createLinear(48, 48));
             addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
 
             chipsRow = new LinearLayout(context);
@@ -616,6 +820,26 @@ public abstract class TigiFeedBase extends BaseFragment {
             addView(captionBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }
 
+        void updateColors() {
+            setBackground(Theme.createRoundRectDrawable(dp(20), Theme.getColor(Theme.key_windowBackgroundWhite)));
+            final int text = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+            final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
+            nameView.setTextColor(text);
+            timeView.setTextColor(gray);
+            heartCountView.setTextColor(text);
+            commentCountView.setTextColor(text);
+            captionView.setTextColor(text);
+            moreView.setTextColor(gray);
+            commentButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
+            shareButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
+            for (int i = 0; i < pager.getChildCount(); i++) {
+                pager.getChildAt(i).setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+            }
+            pager.getRecycledViewPool().clear();
+            dotsView.invalidate();
+            bindActions();
+        }
+
         private TextView makeCountView(Context context) {
             final TextView view = new TextView(context);
             view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -637,6 +861,9 @@ public abstract class TigiFeedBase extends BaseFragment {
 
         void bind(FeedPost post) {
             this.post = post;
+            if (post == null || post.messages.isEmpty()) {
+                return;
+            }
             currentPage = 0;
             captionExpanded = false;
 
@@ -701,17 +928,18 @@ public abstract class TigiFeedBase extends BaseFragment {
         private void updatePageIndicators() {
             final int count = post == null ? 0 : post.media.size();
             counterView.setVisibility(count > 1 ? VISIBLE : GONE);
-            counterView.setText((currentPage + 1) + "/" + count);
+            counterView.setText(LocaleController.formatString(R.string.TigiPageCounter, currentPage + 1, count));
             dotsView.set(count, currentPage);
         }
 
         void bindActions() {
-            if (post == null) {
+            if (post == null || post.messages.isEmpty()) {
                 return;
             }
             final MessageObject message = post.primary();
             final boolean liked = heartChosen(message);
             heartButton.setImageResource(liked ? R.drawable.tigi_heart_filled_24 : R.drawable.tigi_heart_outline_24);
+            heartButton.setContentDescription(LocaleController.getString(liked ? R.string.TigiUnlike : R.string.TigiLike));
             if (liked) {
                 heartButton.clearColorFilter();
             } else {
@@ -736,7 +964,7 @@ public abstract class TigiFeedBase extends BaseFragment {
                     chip.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
                     chip.setGravity(Gravity.CENTER);
                     chip.setPadding(dp(10), 0, dp(10), 0);
-                    chip.setBackground(Theme.createRoundRectDrawable(dp(15), count.chosen ? 0xFFEDE9FE : Theme.getColor(Theme.key_windowBackgroundGray)));
+                    chip.setBackground(Theme.createRoundRectDrawable(dp(15), count.chosen ? Theme.multAlpha(Theme.getColor(Theme.key_featuredStickers_addButton), 0.18f) : Theme.getColor(Theme.key_windowBackgroundGray)));
                     chip.setText(((TLRPC.TL_reactionEmoji) count.reaction).emoticon + " " + count.count);
                     final TLRPC.Reaction reaction = count.reaction;
                     chip.setOnClickListener(v -> {
@@ -774,7 +1002,9 @@ public abstract class TigiFeedBase extends BaseFragment {
                 return;
             }
             if (!heartChosen(post.primary())) {
-                toggleHeart(post);
+                if (!toggleHeart(post)) {
+                    return;
+                }
                 popHeart();
             }
             showBigHeart();
@@ -901,7 +1131,7 @@ public abstract class TigiFeedBase extends BaseFragment {
             final float cy = getHeight() / 2f;
             for (int i = 0; i < count; i++) {
                 final boolean active = i == selected;
-                paint.setColor(active ? Theme.getColor(Theme.key_windowBackgroundWhiteBlueText) : 0xFFD1D5DB);
+                paint.setColor(active ? Theme.getColor(Theme.key_windowBackgroundWhiteBlueText) : Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 0.4f));
                 final float w = active ? wide : dot;
                 canvas.drawRoundRect(x, cy - dot / 2f, x + w, cy + dot / 2f, dot / 2f, dot / 2f, paint);
                 x += w + gap;

@@ -4013,7 +4013,7 @@ public class ChatActivity extends BaseFragment implements
                 } else if (id == tigi_media_feed) {
                     final Bundle feedArgs = new Bundle();
                     feedArgs.putLong("chat_id", currentChat.id);
-                    feedArgs.putBoolean("media_only", true);
+                    feedArgs.putBoolean("media_only", !ChatObject.isChannelAndNotMegaGroup(currentChat));
                     presentFragment(new ChannelFeedActivity(feedArgs));
                 } else if (id == search) {
                     openSearchWithText(isSupportedTags() ? "" : null);
@@ -4472,8 +4472,9 @@ public class ChatActivity extends BaseFragment implements
             if (searchItem != null) {
                 headerItem.lazilyAddSubItem(search, R.drawable.msg_search, LocaleController.getString(R.string.Search));
             }
-            if (currentChat != null && !ChatObject.isChannelAndNotMegaGroup(currentChat)) {
-                headerItem.lazilyAddSubItem(tigi_media_feed, R.drawable.msg_media, LocaleController.getString(R.string.TigiMediaFeed));
+            if (BuildVars.TIGI_HOME && currentChat != null && chatMode == 0) {
+                // channels: the card feed (on tablets channels open as chats, so this is the way in); groups: photos & videos
+                headerItem.lazilyAddSubItem(tigi_media_feed, R.drawable.msg_media, LocaleController.getString(ChatObject.isChannelAndNotMegaGroup(currentChat) ? R.string.TigiFeedView : R.string.TigiMediaFeed));
             }
             if (ChatObject.isBoostSupported(currentChat) && (getUserConfig().isPremium() || ChatObject.isBoosted(chatInfo) || ChatObject.hasAdminRights(currentChat))) {
                 RLottieDrawable drawable = new RLottieDrawable(R.raw.boosts, dp(24), dp(24));

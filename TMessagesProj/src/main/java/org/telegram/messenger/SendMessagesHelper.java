@@ -3983,6 +3983,20 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         BaseFragment parentFragment,
         Runnable callback
     ) {
+        sendReaction(messageObject, visibleReactions, addedReaction, big, addToRecent, parentFragment, callback, null);
+    }
+
+    // Tigi: same as above, onError runs on the UI thread when the server refuses the reaction
+    public void sendReaction(
+        MessageObject messageObject,
+        ArrayList<ReactionsLayoutInBubble.VisibleReaction> visibleReactions,
+        ReactionsLayoutInBubble.VisibleReaction addedReaction,
+        boolean big,
+        boolean addToRecent,
+        BaseFragment parentFragment,
+        Runnable callback,
+        Utilities.Callback<TLRPC.TL_error> onError
+    ) {
         if (messageObject == null || parentFragment == null) {
             return;
         }
@@ -4024,6 +4038,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (callback != null) {
                     AndroidUtilities.runOnUIThread(callback);
                 }
+            } else if (error != null && onError != null) {
+                AndroidUtilities.runOnUIThread(() -> onError.run(error));
             }
         });
     }

@@ -10624,6 +10624,17 @@
     <string name="TigiLess">less</string>
     <string name="TigiChannelLabel">Channel</string>
     <string name="TigiMediaFeed">Photos &amp; videos</string>
+    <string name="TigiFeedView">Feed view</string>
+    <string name="TigiFeedError">Could not load posts. Check your connection and try again.</string>
+    <string name="TigiOpenChatView">Open as chat</string>
+    <string name="TigiJoin">Join</string>
+    <string name="TigiLike">Like</string>
+    <string name="TigiUnlike">Remove like</string>
+    <string name="TigiComments">Comments</string>
+    <string name="TigiPageCounter">%1$d/%2$d</string>
+    <string name="TigiReactionsOff">Reactions are turned off for this post.</string>
+    <string name="TigiReactionFailed">Could not send the reaction.</string>
+    <string name="TigiSharePrivate">This channel is private, so its posts have no public link.</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>
     <string name="SwitchThemeToDay">Day Mode</string>

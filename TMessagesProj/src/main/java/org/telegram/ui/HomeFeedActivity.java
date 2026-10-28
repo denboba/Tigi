@@ -14,6 +14,8 @@ import android.widget.TextView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.LayoutHelper;
@@ -30,8 +32,11 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     private static final int POSTS_PER_CHANNEL = 12;
     private static final int MAX_POSTS = 60;
     private static final long RELOAD_AFTER_MS = 2 * 60 * 1000L;
+    private static final int PARALLEL_REQUESTS = 3;
 
     private boolean loading;
+    private int loadGeneration;
+    private TextView titleView;
     private long lastLoadTime;
 
     public HomeFeedActivity(Bundle args) {
@@ -42,15 +47,31 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     protected View createHeaderView(Context context) {
         final FrameLayout header = new FrameLayout(context);
         header.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        header.setPadding(0, AndroidUtilities.statusBarHeight, 0, 0);
+        applyTopInset(header);
+        headerView = header;
         final TextView title = new TextView(context);
-        title.setText("Tigi");
+        titleView = title;
+        title.setText(LocaleController.getString(R.string.AppName));
+        title.setFocusable(true);
+        androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 26);
         title.setTypeface(AndroidUtilities.bold());
         title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
         title.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | Gravity.LEFT, 16, 0, 16, 0));
+        header.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
         return header;
+    }
+
+    private View headerView;
+
+    @Override
+    protected void updateHeaderColors() {
+        if (headerView != null) {
+            headerView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
+        if (titleView != null) {
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+        }
     }
 
     @Override
@@ -109,7 +130,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 continue;
             }
             final TLRPC.Chat chat = getMessagesController().getChat(-dialog.id);
-            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.left) {
+            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.left && !ChatObject.isNotInChat(chat)) {
                 channels.add(chat);
             }
         }
@@ -119,36 +140,68 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         }
 
         loading = true;
+        final int generation = ++loadGeneration;
         updateEmptyView();
         final ArrayList<FeedPost> result = new ArrayList<>();
+        final int[] next = {0};
         final int[] pending = {channels.size()};
-        for (int c = 0; c < channels.size(); c++) {
-            final TLRPC.Chat chat = channels.get(c);
+        // A few requests at a time: 25 parallel getHistory calls can trigger FLOOD_WAIT for the whole account.
+        final Runnable[] startNext = new Runnable[1];
+        startNext[0] = () -> {
+            if (generation != loadGeneration || isDead()) {
+                return;
+            }
+            if (next[0] >= channels.size()) {
+                return;
+            }
+            final TLRPC.Chat chat = channels.get(next[0]++);
             final TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
             req.peer = getMessagesController().getInputPeer(-chat.id);
             req.limit = POSTS_PER_CHANNEL;
             getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                if (generation != loadGeneration) {
+                    return;
+                }
                 if (response instanceof TLRPC.messages_Messages) {
                     final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
                     getMessagesController().putUsers(res.users, false);
                     getMessagesController().putChats(res.chats, false);
                     result.addAll(buildPosts(chat, res.messages));
+                } else if (error != null && error.text != null && error.text.startsWith("FLOOD_WAIT")) {
+                    // stop asking; show what we have
+                    pending[0] -= channels.size() - next[0];
+                    next[0] = channels.size();
                 }
                 pending[0]--;
-                if (pending[0] == 0) {
+                if (pending[0] <= 0) {
                     finishLoad(result);
+                } else {
+                    startNext[0].run();
                 }
             }));
+        };
+        for (int i = 0; i < PARALLEL_REQUESTS; i++) {
+            startNext[0].run();
         }
     }
 
     private void finishLoad(ArrayList<FeedPost> result) {
         loading = false;
         lastLoadTime = System.currentTimeMillis();
+        if (isDead()) {
+            return;
+        }
         Collections.sort(result, (a, b) -> b.date - a.date);
         posts.clear();
         posts.addAll(result.size() > MAX_POSTS ? result.subList(0, MAX_POSTS) : result);
         adapter.notifyDataSetChanged();
         updateEmptyView();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        loadGeneration++;
+        loading = false;
+        super.onFragmentDestroy();
     }
 }

@@ -10642,6 +10642,9 @@
     <string name="TigiPostErrorGeneric">Something went wrong. Please try again.</string>
     <string name="TigiPostSending">Posting…</string>
     <string name="TigiPostFailed">Not posted. Tap to retry or delete it.</string>
+    <string name="TigiPostUnsupported">This post can\'t be shown here.</string>
+    <string name="TigiMute">Mute</string>
+    <string name="TigiUnmute">Turn sound on</string>
     <string name="TigiDeletePostTitle">Delete post?</string>
     <string name="TigiDeletePostText">The post is deleted for everyone in the channel. This can\'t be undone.</string>
     <string name="TigiTryAgainMinutes_one">Too many attempts. Try again in %1$d minute.</string>

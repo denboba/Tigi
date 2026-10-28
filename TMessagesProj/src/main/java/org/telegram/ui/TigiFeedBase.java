@@ -12,6 +12,10 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.Layout;
+import android.text.Spannable;
+import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
+import android.text.style.URLSpan;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.GestureDetector;
@@ -34,7 +38,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
+import org.telegram.messenger.DownloadController;
 import org.telegram.messenger.FileLoader;
+import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
@@ -53,6 +60,8 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.ReactionsContainerLayout;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Components.URLSpanNoUnderline;
+import org.telegram.ui.Components.URLSpanUserMention;
 import org.telegram.ui.PhotoViewer;
 
 import java.util.ArrayList;
@@ -74,6 +83,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         final ArrayList<MessageObject> messages = new ArrayList<>();
         final ArrayList<MessageObject> media = new ArrayList<>();
         CharSequence text;
+        // a post the cards can't show (voice, file, poll, sticker...): a short label and a "View in chat" button
+        CharSequence fallback;
         int date;
         long groupId;
 
@@ -82,7 +93,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
 
         boolean isValid() {
-            return !messages.isEmpty() && (!media.isEmpty() || !TextUtils.isEmpty(text));
+            return !messages.isEmpty() && (!media.isEmpty() || !TextUtils.isEmpty(text) || !TextUtils.isEmpty(fallback));
         }
     }
 
@@ -95,6 +106,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     private FrameLayout overlay;
     private FrameLayout rootView;
+    protected TigiInlinePlayer inlinePlayer;
+    private boolean paused = true;
     private ReactionsContainerLayout pickerLayout;
     private View pickerScrim;
 
@@ -156,13 +169,30 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         getNotificationCenter().removeObserver(this, NotificationCenter.didReceiveNewMessages);
         getNotificationCenter().removeObserver(this, NotificationCenter.messageReceivedByServer);
         getNotificationCenter().removeObserver(this, NotificationCenter.messageSendError);
+        if (inlinePlayer != null) {
+            inlinePlayer.stop();
+        }
         super.onFragmentDestroy();
     }
 
     @Override
     public void onPause() {
         super.onPause();
+        paused = true;
         hideReactionPicker();
+        if (inlinePlayer != null) {
+            // nothing plays from a screen that is not visible (another screen on top, app in background, screen off)
+            inlinePlayer.stop();
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        paused = false;
+        if (listView != null) {
+            listView.post(this::checkAutoplay);
+        }
     }
 
     @Override
@@ -291,7 +321,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 post.media.add(message);
             }
             if (TextUtils.isEmpty(post.text)) {
-                post.text = !TextUtils.isEmpty(message.caption) ? message.caption : (post.media.isEmpty() && !TextUtils.isEmpty(message.messageText) ? message.messageText : null);
+                post.text = !TextUtils.isEmpty(message.caption) ? message.caption : (post.media.isEmpty() && !TextUtils.isEmpty(message.messageText) && describeUnsupported(message) == null ? message.messageText : null);
+            }
+            if (post.media.isEmpty() && post.fallback == null) {
+                post.fallback = describeUnsupported(message);
             }
         }
         boolean atTop = layoutManager == null || layoutManager.findFirstVisibleItemPosition() <= 0;
@@ -384,11 +417,20 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         listView.setPadding(0, dp(5), 0, bottomPadding());
         adapter = new FeedAdapter();
         listView.setAdapter(adapter);
+        inlinePlayer = new TigiInlinePlayer(currentAccount);
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
                 if (dy > 0 && layoutManager.findLastVisibleItemPosition() >= posts.size() - 3) {
                     onNearEnd();
+                }
+                stopIfScrolledAway();
+            }
+
+            @Override
+            public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    checkAutoplay();
                 }
             }
         });
@@ -512,7 +554,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 post.media.add(object);
             }
             if (post.text == null || post.text.length() == 0) {
-                post.text = !TextUtils.isEmpty(object.caption) ? object.caption : (post.media.isEmpty() && !TextUtils.isEmpty(object.messageText) ? object.messageText : null);
+                post.text = !TextUtils.isEmpty(object.caption) ? object.caption : (post.media.isEmpty() && !TextUtils.isEmpty(object.messageText) && describeUnsupported(object) == null ? object.messageText : null);
+            }
+            if (post.media.isEmpty() && post.fallback == null) {
+                post.fallback = describeUnsupported(object);
             }
         }
         final ArrayList<FeedPost> valid = new ArrayList<>();
@@ -630,6 +675,227 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
     }
 
+    /* video */
+
+    /** Autoplay follows Telegram's own settings: autoplay videos/GIFs and the auto-download rules for this network. */
+    protected boolean canAutoplay(MessageObject message) {
+        if (message == null || message.isRoundVideo()) {
+            return false;
+        }
+        if (message.isGif()) {
+            return SharedConfig.isAutoplayGifs() && DownloadController.getInstance(currentAccount).canDownloadMedia(message);
+        }
+        if (message.isVideo()) {
+            return SharedConfig.isAutoplayVideo() && DownloadController.getInstance(currentAccount).canDownloadMedia(message);
+        }
+        return false;
+    }
+
+    private float visibleFraction(View cell, View part) {
+        if (listView == null || cell == null || part == null || part.getHeight() <= 0 || part.getVisibility() != View.VISIBLE) {
+            return 0;
+        }
+        final int top = cell.getTop() + part.getTop();
+        final int bottom = top + part.getHeight();
+        final int visibleTop = Math.max(top, listView.getPaddingTop());
+        final int visibleBottom = Math.min(bottom, listView.getHeight() - listView.getPaddingBottom());
+        return Math.max(0, visibleBottom - visibleTop) / (float) part.getHeight();
+    }
+
+    /** Plays the video of the most visible card (if autoplay is allowed) and stops any other. */
+    protected void checkAutoplay() {
+        if (listView == null || inlinePlayer == null || paused || isDead()) {
+            return;
+        }
+        FeedCell best = null;
+        float bestFraction = 0;
+        for (int i = 0; i < listView.getChildCount(); i++) {
+            final View child = listView.getChildAt(i);
+            if (child instanceof FeedCell) {
+                final float fraction = visibleFraction(child, ((FeedCell) child).mediaFrame);
+                if (fraction > bestFraction) {
+                    bestFraction = fraction;
+                    best = (FeedCell) child;
+                }
+            }
+        }
+        final FeedCell.PhotoPage page = best != null && bestFraction >= 0.6f ? best.visiblePage() : null;
+        final MessageObject message = page != null ? page.message : null;
+        if (message != null && inlinePlayer.isPlaying(message)) {
+            return;
+        }
+        if (message != null && canAutoplay(message)) {
+            page.startPlayback();
+        } else if (inlinePlayer.getMessage() != null && (best == null || !best.hosts(inlinePlayer.getMessage()))) {
+            inlinePlayer.stop();
+        }
+    }
+
+    private void stopIfScrolledAway() {
+        if (listView == null || inlinePlayer == null || inlinePlayer.getMessage() == null) {
+            return;
+        }
+        for (int i = 0; i < listView.getChildCount(); i++) {
+            final View child = listView.getChildAt(i);
+            if (child instanceof FeedCell && ((FeedCell) child).hosts(inlinePlayer.getMessage())) {
+                if (visibleFraction(child, ((FeedCell) child).mediaFrame) < 0.3f) {
+                    inlinePlayer.stop();
+                }
+                return;
+            }
+        }
+        // its card was recycled
+        inlinePlayer.stop();
+    }
+
+    /* comments and links */
+
+    /** The post's comment thread in the linked discussion group; without one, the post in the channel chat. */
+    protected void openComments(FeedPost post) {
+        if (post == null || post.messages.isEmpty() || post.chat == null || isDead()) {
+            return;
+        }
+        final MessageObject message = post.primary();
+        final TLRPC.MessageReplies replies = message.messageOwner.replies;
+        if (replies == null || !replies.comments || message.getId() <= 0) {
+            openPostInChat(post, message);
+            return;
+        }
+        final TLRPC.Chat chat = post.chat;
+        final TLRPC.TL_messages_getDiscussionMessage req = new TLRPC.TL_messages_getDiscussionMessage();
+        req.peer = getMessagesController().getInputPeer(-chat.id);
+        req.msg_id = message.getId();
+        final int requestId = getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (isDead()) {
+                return;
+            }
+            if (response instanceof TLRPC.TL_messages_discussionMessage) {
+                final TLRPC.TL_messages_discussionMessage res = (TLRPC.TL_messages_discussionMessage) response;
+                getMessagesController().putUsers(res.users, false);
+                getMessagesController().putChats(res.chats, false);
+                final ArrayList<MessageObject> thread = new ArrayList<>();
+                for (int i = 0; i < res.messages.size(); i++) {
+                    thread.add(new MessageObject(currentAccount, res.messages.get(i), true, true));
+                }
+                if (!thread.isEmpty()) {
+                    // the same way Telegram opens a comments link
+                    final Bundle args = new Bundle();
+                    args.putLong("chat_id", -thread.get(0).getDialogId());
+                    args.putInt("message_id", Math.max(1, message.getId()));
+                    final ChatActivity chatActivity = new ChatActivity(args);
+                    chatActivity.setThreadMessages(thread, chat, req.msg_id, res.read_inbox_max_id, res.read_outbox_max_id, null);
+                    presentFragment(chatActivity);
+                    return;
+                }
+            }
+            openPostInChat(post, message);
+        }));
+        getConnectionsManager().bindRequestToGuid(requestId, classGuid);
+    }
+
+    /** Taps on links, @mentions and #hashtags in captions go where they go in a chat. */
+    protected void onCaptionLinkClicked(ClickableSpan span) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        if (span instanceof URLSpanUserMention) {
+            final long userId = org.telegram.messenger.Utilities.parseLong(((URLSpanUserMention) span).getURL());
+            if (userId != 0) {
+                TigiNavigation.openProfile(this, userId);
+            }
+        } else if (span instanceof URLSpan) {
+            final String url = ((URLSpan) span).getURL();
+            if (url == null) {
+                return;
+            }
+            if (url.startsWith("@")) {
+                getMessagesController().openByUserName(url.substring(1), this, 1);
+            } else if (url.startsWith("#") || url.startsWith("$")) {
+                presentFragment(new org.telegram.ui.Components.HashtagActivity(url, getResourceProvider()));
+            } else if (url.startsWith("/")) {
+                // bot commands mean nothing outside the chat
+            } else {
+                Browser.openUrl(getParentActivity(), url);
+            }
+        } else {
+            span.onClick(fragmentView);
+        }
+    }
+
+    private final LinkMovementMethod captionLinks = new LinkMovementMethod() {
+        @Override
+        public boolean onTouchEvent(TextView widget, Spannable buffer, MotionEvent event) {
+            final int action = event.getAction();
+            if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_DOWN) {
+                return false;
+            }
+            final Layout layout = widget.getLayout();
+            if (layout == null) {
+                return false;
+            }
+            final int x = (int) event.getX() - widget.getTotalPaddingLeft() + widget.getScrollX();
+            final int y = (int) event.getY() - widget.getTotalPaddingTop() + widget.getScrollY();
+            final int line = layout.getLineForVertical(y);
+            if (x < layout.getLineLeft(line) || x > layout.getLineRight(line)) {
+                return false;
+            }
+            final int offset = layout.getOffsetForHorizontal(line, x);
+            final ClickableSpan[] spans = buffer.getSpans(offset, offset, ClickableSpan.class);
+            if (spans.length == 0) {
+                return false;
+            }
+            if (action == MotionEvent.ACTION_UP) {
+                onCaptionLinkClicked(spans[0]);
+            }
+            return true;
+        }
+    };
+
+    /** A label for posts the cards can't show; null when the post is shown normally. */
+    protected CharSequence describeUnsupported(MessageObject message) {
+        if (message == null || message.messageOwner == null) {
+            return null;
+        }
+        final TLRPC.MessageMedia media = MessageObject.getMedia(message.messageOwner);
+        if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {
+            return null;
+        }
+        if (message.isRoundVideo()) {
+            return LocaleController.getString(R.string.AttachRound);
+        }
+        if (message.isVoice()) {
+            return LocaleController.getString(R.string.AttachAudio);
+        }
+        if (message.isMusic()) {
+            return LocaleController.getString(R.string.AttachMusic);
+        }
+        if (message.isSticker() || message.isAnimatedSticker()) {
+            return LocaleController.getString(R.string.AttachSticker);
+        }
+        if (media instanceof TLRPC.TL_messageMediaPoll) {
+            final TLRPC.TL_messageMediaPoll poll = (TLRPC.TL_messageMediaPoll) media;
+            final String question = poll.poll != null && poll.poll.question != null ? poll.poll.question.text : null;
+            return TextUtils.isEmpty(question) ? LocaleController.getString(R.string.Poll) : LocaleController.getString(R.string.Poll) + ": " + question;
+        }
+        if (media instanceof TLRPC.TL_messageMediaGeo || media instanceof TLRPC.TL_messageMediaGeoLive || media instanceof TLRPC.TL_messageMediaVenue) {
+            return LocaleController.getString(R.string.AttachLocation);
+        }
+        if (media instanceof TLRPC.TL_messageMediaContact) {
+            return LocaleController.getString(R.string.AttachContact);
+        }
+        if (media instanceof TLRPC.TL_messageMediaGame) {
+            return LocaleController.getString(R.string.AttachGame);
+        }
+        if (message.getDocument() != null && !message.isVideo() && !message.isGif()) {
+            final String name = FileLoader.getDocumentFileName(message.getDocument());
+            return TextUtils.isEmpty(name) ? LocaleController.getString(R.string.AttachDocument) : LocaleController.getString(R.string.AttachDocument) + ": " + name;
+        }
+        if (message.isPhoto() || message.isVideo() || message.isGif()) {
+            return null;
+        }
+        return LocaleController.getString(R.string.TigiPostUnsupported);
+    }
+
     /** Shows Telegram's reaction bar right above the point (screen coordinates) that was pressed. */
     protected void showReactionPicker(FeedPost post, float pressRawX, float pressRawY) {
         if (overlay == null || isDead() || post == null || post.messages.isEmpty()) {
@@ -710,6 +976,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     protected void openMediaViewer(FeedPost post, int index) {
         if (getParentActivity() == null || post == null || post.media.isEmpty()) {
             return;
+        }
+        if (inlinePlayer != null) {
+            inlinePlayer.stop();
         }
         PhotoViewer.getInstance().setParentActivity(this);
         PhotoViewer.getInstance().openPhoto(new ArrayList<>(post.media), Math.max(0, Math.min(index, post.media.size() - 1)), -post.chat.id, 0, 0, new PhotoViewer.EmptyPhotoViewerProvider());
@@ -870,6 +1139,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final TextView captionView;
         private final TextView moreView;
         private final TextView statusView;
+        private final TextView forwardedView;
+        private final LinearLayout fallbackBox;
+        private final TextView fallbackLabel;
         FeedPost post;
         private int currentPage;
         private boolean captionExpanded;
@@ -939,6 +1211,44 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             });
             addView(statusView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
+            forwardedView = new TextView(context);
+            forwardedView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            forwardedView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            forwardedView.setSingleLine(true);
+            forwardedView.setEllipsize(TextUtils.TruncateAt.END);
+            forwardedView.setPadding(dp(12), 0, dp(12), dp(8));
+            forwardedView.setVisibility(GONE);
+            addView(forwardedView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+            // posts the cards can't show: what it is, and the way to the classic chat
+            fallbackBox = new LinearLayout(context);
+            fallbackBox.setOrientation(HORIZONTAL);
+            fallbackBox.setGravity(Gravity.CENTER_VERTICAL);
+            fallbackBox.setPadding(dp(14), dp(10), dp(10), dp(10));
+            fallbackBox.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
+            fallbackLabel = new TextView(context);
+            fallbackLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            fallbackLabel.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            fallbackLabel.setMaxLines(2);
+            fallbackLabel.setEllipsize(TextUtils.TruncateAt.END);
+            fallbackBox.addView(fallbackLabel, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+            final TextView fallbackOpen = new TextView(context);
+            fallbackOpen.setText(LocaleController.getString(R.string.ViewInChat));
+            fallbackOpen.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            fallbackOpen.setTypeface(AndroidUtilities.bold());
+            fallbackOpen.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+            fallbackOpen.setGravity(Gravity.CENTER);
+            fallbackOpen.setMinHeight(dp(44));
+            fallbackOpen.setPadding(dp(10), 0, dp(6), 0);
+            fallbackBox.addView(fallbackOpen, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+            fallbackBox.setOnClickListener(v -> {
+                if (post != null && !post.messages.isEmpty()) {
+                    openPostInChat(post, post.primary());
+                }
+            });
+            fallbackBox.setVisibility(GONE);
+            addView(fallbackBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 8));
+
             mediaFrame = new FrameLayout(context);
             pager = new RecyclerView(context);
             pagerManager = new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false);
@@ -953,6 +1263,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                     if (page >= 0 && page != currentPage) {
                         currentPage = page;
                         updatePageIndicators();
+                        // swiped to another photo or video of the album
+                        TigiFeedBase.this.listView.post(TigiFeedBase.this::checkAutoplay);
                     }
                 }
             });
@@ -1011,8 +1323,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             commentButton.setContentDescription(LocaleController.getString(R.string.TigiComments));
             commentButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
             commentButton.setOnClickListener(v -> {
-                if (post != null) {
-                    openPostInChat(post, post.primary());
+                if (post != null && !post.messages.isEmpty()) {
+                    openComments(post);
                 }
             });
             actions.addView(commentButton, LayoutHelper.createLinear(48, 48));
@@ -1044,6 +1356,15 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             captionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             captionView.setLineSpacing(dp(2), 1f);
+            captionView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText));
+            captionView.setMovementMethod(captionLinks);
+            // a tap that is not on a link opens or closes a long caption
+            captionView.setOnClickListener(v -> {
+                if (moreView.getVisibility() == VISIBLE) {
+                    captionExpanded = !captionExpanded;
+                    updateCaption();
+                }
+            });
             captionBox.addView(captionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             moreView = new TextView(context);
             moreView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -1071,6 +1392,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             moreView.setTextColor(gray);
             commentButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
             shareButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
+            forwardedView.setTextColor(gray);
+            fallbackLabel.setTextColor(text);
+            fallbackBox.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
+            captionView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText));
             for (int i = 0; i < pager.getChildCount(); i++) {
                 pager.getChildAt(i).setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
             }
@@ -1085,6 +1410,18 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             view.setTypeface(AndroidUtilities.bold());
             view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             return view;
+        }
+
+        PhotoPage visiblePage() {
+            if (post == null || post.media.isEmpty() || mediaFrame.getVisibility() != VISIBLE) {
+                return null;
+            }
+            final View view = pagerManager.findViewByPosition(currentPage);
+            return view instanceof PhotoPage ? (PhotoPage) view : null;
+        }
+
+        boolean hosts(MessageObject message) {
+            return post != null && message != null && post.media.contains(message);
         }
 
         boolean isOverMultiPhoto(MotionEvent ev) {
@@ -1135,6 +1472,21 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 pager.scrollToPosition(0);
                 dotsView.setVisibility(post.media.size() > 1 ? VISIBLE : GONE);
                 updatePageIndicators();
+            }
+
+            if (post.media.isEmpty() && !TextUtils.isEmpty(post.fallback)) {
+                fallbackLabel.setText(post.fallback);
+                fallbackBox.setVisibility(VISIBLE);
+            } else {
+                fallbackBox.setVisibility(GONE);
+            }
+            final MessageObject first = post.primary();
+            final String forwardedFrom = first.isForwarded() ? first.getForwardedName() : null;
+            if (!TextUtils.isEmpty(forwardedFrom)) {
+                forwardedView.setText(LocaleController.getString(R.string.ForwardedFrom) + " " + forwardedFrom);
+                forwardedView.setVisibility(VISIBLE);
+            } else {
+                forwardedView.setVisibility(GONE);
             }
 
             updateCaption();
@@ -1311,19 +1663,33 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private class PhotoPage extends FrameLayout {
             private final BackupImageView imageView;
             private final ImageView playView;
+            private final ImageView muteButton;
+            private final ImageView fullscreenButton;
             private int position;
+            MessageObject message;
 
             PhotoPage(Context context) {
                 super(context);
                 setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
                 imageView = new BackupImageView(context);
                 addView(imageView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                // index 1 is kept free for the player's TextureView (above the image, below the controls)
                 playView = new ImageView(context);
                 playView.setScaleType(ImageView.ScaleType.CENTER);
                 playView.setImageResource(R.drawable.tigi_play_24);
                 playView.setBackground(Theme.createRoundRectDrawable(dp(30), 0x99111827));
                 playView.setVisibility(GONE);
+                playView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
                 addView(playView, LayoutHelper.createFrame(60, 60, Gravity.CENTER));
+
+                muteButton = makeControl(context, R.drawable.media_mute);
+                muteButton.setOnClickListener(v -> toggleMute());
+                addView(muteButton, LayoutHelper.createFrame(36, 36, Gravity.BOTTOM | Gravity.RIGHT, 0, 0, 10, 10));
+
+                fullscreenButton = makeControl(context, R.drawable.msg_expand);
+                fullscreenButton.setContentDescription(LocaleController.getString(R.string.AccDescrOpenInPhotoViewer));
+                fullscreenButton.setOnClickListener(v -> onPhotoTap(position));
+                addView(fullscreenButton, LayoutHelper.createFrame(36, 36, Gravity.BOTTOM | Gravity.RIGHT, 0, 0, 54, 10));
 
                 final GestureDetector detector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
                     @Override
@@ -1333,7 +1699,16 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
                     @Override
                     public boolean onSingleTapConfirmed(MotionEvent e) {
-                        onPhotoTap(position);
+                        if (isPlayable()) {
+                            // videos: tap plays, tap again toggles the sound; the corner button goes full screen
+                            if (inlinePlayer != null && inlinePlayer.isPlaying(message)) {
+                                toggleMute();
+                            } else {
+                                startPlayback();
+                            }
+                        } else {
+                            onPhotoTap(position);
+                        }
                         return true;
                     }
 
@@ -1351,11 +1726,75 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 setOnTouchListener((v, event) -> detector.onTouchEvent(event));
             }
 
+            private ImageView makeControl(Context context, int icon) {
+                final ImageView view = new ImageView(context);
+                view.setScaleType(ImageView.ScaleType.CENTER);
+                view.setImageResource(icon);
+                view.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
+                view.setBackground(Theme.createRoundRectDrawable(dp(18), 0x99111827));
+                view.setVisibility(GONE);
+                return view;
+            }
+
+            boolean isPlayable() {
+                return message != null && (message.isVideo() || message.isGif()) && !message.isRoundVideo() && message.getDocument() != null;
+            }
+
             void bind(MessageObject message, int position) {
+                if (this.message != message && inlinePlayer != null && inlinePlayer.isPlaying(this.message)) {
+                    inlinePlayer.stop();
+                }
+                this.message = message;
                 this.position = position;
                 final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, AndroidUtilities.getPhotoSize());
                 imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "800_800", (Drawable) null, message.photoThumbsObject);
-                playView.setVisibility(message.isVideo() ? VISIBLE : GONE);
+                setContentDescription(LocaleController.getString(message.isVideo() ? R.string.AttachVideo : message.isGif() ? R.string.AttachGif : R.string.AttachPhoto));
+                updateControls();
+            }
+
+            void startPlayback() {
+                if (inlinePlayer == null || !isPlayable()) {
+                    return;
+                }
+                if (inlinePlayer.play(this, message, (msg, rendering, failed) -> {
+                    if (msg == message) {
+                        updateControls();
+                    }
+                })) {
+                    updateControls();
+                }
+            }
+
+            private void toggleMute() {
+                if (inlinePlayer == null || message == null || message.isGif()) {
+                    return;
+                }
+                inlinePlayer.setMuted(!inlinePlayer.isMuted());
+                updateControls();
+            }
+
+            void updateControls() {
+                final boolean playable = isPlayable();
+                final boolean playing = playable && inlinePlayer != null && inlinePlayer.isPlaying(message);
+                playView.setVisibility(playable && !playing ? VISIBLE : GONE);
+                fullscreenButton.setVisibility(playable ? VISIBLE : GONE);
+                // GIFs have no sound
+                final boolean showMute = playing && !message.isGif();
+                muteButton.setVisibility(showMute ? VISIBLE : GONE);
+                if (showMute) {
+                    final boolean muted = inlinePlayer.isMuted();
+                    muteButton.setImageResource(muted ? R.drawable.media_mute : R.drawable.media_unmute);
+                    muteButton.setContentDescription(LocaleController.getString(muted ? R.string.TigiUnmute : R.string.TigiMute));
+                }
+            }
+
+            @Override
+            protected void onDetachedFromWindow() {
+                super.onDetachedFromWindow();
+                // recycled or the screen went away: never leave a player running behind a card that is gone
+                if (inlinePlayer != null && inlinePlayer.isPlaying(message)) {
+                    inlinePlayer.stop();
+                }
             }
         }
     }

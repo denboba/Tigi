@@ -1428,6 +1428,9 @@ public class MessageObject {
                 firstSpanAdditionalSize += 50;
             }
 
+            // Tigi: albums in channels and groups are one big photo per row, like an Instagram feed
+            final boolean tigiStack = !isDocuments && count >= 2 && messages.get(0) != null && messages.get(0).getDialogId() < 0;
+
             int minHeight = dp(120);
             int minWidth = (int) (dp(120) / (Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) / (float) maxSizeWidth));
             int paddingsWidth = (int) (dp(40) / (Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) / (float) maxSizeWidth));
@@ -1437,7 +1440,25 @@ public class MessageObject {
 
             float minH = dp(100) / maxSizeHeight;
 
-            if (count == 1) {
+            if (tigiStack) {
+                // keep the real aspect ratio of every photo, between 16:9 and 4:5
+                final float maxHeightPx = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) * 0.5f;
+                final float unitToPx = AndroidUtilities.displaySize.x / 1000f;
+                final float scale = unitToPx * maxSizeHeight / maxHeightPx;
+                for (int a = 0; a < count; a++) {
+                    final GroupedMessagePosition pos = posArray.get(a);
+                    final float rawUnits = maxSizeWidth / Math.max(0.1f, pos.aspectRatio);
+                    final float units = Math.max(maxSizeWidth * 0.56f, Math.min(maxSizeWidth * 1.25f, rawUnits));
+                    int flags = POSITION_FLAG_LEFT | POSITION_FLAG_RIGHT;
+                    if (a == 0) {
+                        flags |= POSITION_FLAG_TOP;
+                    }
+                    if (a == count - 1) {
+                        flags |= POSITION_FLAG_BOTTOM;
+                    }
+                    pos.set(0, 0, a, a, maxSizeWidth, Math.round(units) / maxSizeHeight * scale, flags);
+                }
+            } else if (count == 1) {
                 MessageObject.GroupedMessagePosition position1 = posArray.get(0);
                 float height = Math.round(Math.min(maxSizeWidth / position1.aspectRatio, Math.min(maxSizeWidth / position1.aspectRatio, maxSizeHeight / 2.0f))) / maxSizeHeight;
                 position1.set(0, 0, 0, 0, maxSizeWidth, height, POSITION_FLAG_LEFT | POSITION_FLAG_RIGHT | POSITION_FLAG_TOP | POSITION_FLAG_BOTTOM);

@@ -10645,6 +10645,17 @@
     <string name="TigiPostUnsupported">This post can\'t be shown here.</string>
     <string name="TigiMute">Mute</string>
     <string name="TigiRetry">Try again</string>
+    <string name="TigiProfilePosts">Posts</string>
+    <string name="TigiMyPosts">My posts</string>
+    <string name="TigiProfileFollowers">Followers</string>
+    <string name="TigiProfileFollowing">Following</string>
+    <string name="TigiProfileMessage">Message</string>
+    <string name="TigiProfileShare">Share</string>
+    <string name="TigiProfileNoPosts">No posts yet.</string>
+    <string name="TigiProfilePrivate">This channel is private. Join it to see its posts.</string>
+    <string name="TigiProfileRestricted">This channel is not available.</string>
+    <string name="TigiProfileStories">has stories</string>
+    <string name="TigiProfileAlbum">album</string>
     <string name="TigiReelsLoading">Loading reels…</string>
     <string name="TigiReelsEmpty">No reels yet. Videos from the channels you follow show up here.</string>
     <string name="TigiUnmute">Turn sound on</string>

@@ -22,7 +22,8 @@ public class TigiNavigation {
     /**
      * Opens the profile of a user (dialogId > 0) or chat/channel (dialogId < 0).
      * Own profile: the Profile tab when the caller is one of the main tabs, otherwise Telegram's own profile screen.
-     * Broadcast channels: the channel feed (its info screen is one tap away there). Everything else: ProfileActivity.
+     * Broadcast channels and people with a personal channel: the Tigi profile (posts grid; Telegram's info is one tap
+     * away there). Everything else: ProfileActivity.
      */
     public static boolean openProfile(BaseFragment fragment, long dialogId) {
         if (fragment == null || fragment.getParentActivity() == null || dialogId == 0 || DialogObject.isEncryptedDialog(dialogId)) {
@@ -40,6 +41,19 @@ public class TigiNavigation {
             if (user == null) {
                 return false;
             }
+            // a person with a personal channel gets the posts grid of that channel
+            final TLRPC.UserFull full = MessagesController.getInstance(account).getUserFull(dialogId);
+            if (BuildVars.TIGI_HOME && full != null && full.personal_channel_id != 0) {
+                final TLRPC.Chat personal = MessagesController.getInstance(account).getChat(full.personal_channel_id);
+                if (personal != null && !personal.restricted) {
+                    final Bundle args = new Bundle();
+                    args.putLong("chat_id", personal.id);
+                    args.putLong("user_id", dialogId);
+                    if (fragment.presentFragment(new TigiProfileActivity(args))) {
+                        return true;
+                    }
+                }
+            }
             final Bundle args = new Bundle();
             args.putLong("user_id", dialogId);
             return fragment.presentFragment(new ProfileActivity(args));
@@ -48,10 +62,12 @@ public class TigiNavigation {
         if (chat == null) {
             return false;
         }
-        if (BuildVars.TIGI_HOME && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.forum && !chat.monoforum) {
+        if (BuildVars.TIGI_HOME && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.forum && !chat.monoforum && !chat.restricted) {
             final Bundle args = new Bundle();
             args.putLong("chat_id", chat.id);
-            return fragment.presentFragment(new ChannelFeedActivity(args));
+            if (fragment.presentFragment(new TigiProfileActivity(args))) {
+                return true;
+            }
         }
         return openChatInfo(fragment, chat.id);
     }

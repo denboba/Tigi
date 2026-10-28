@@ -1,0 +1,741 @@
+package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Canvas;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
+import android.graphics.Shader;
+import android.os.Bundle;
+import android.text.TextUtils;
+import android.text.util.Linkify;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ChatObject;
+import org.telegram.messenger.FileLoader;
+import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.R;
+import org.telegram.messenger.UserObject;
+import org.telegram.tgnet.TLObject;
+import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
+import org.telegram.ui.Components.AvatarDrawable;
+import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerListView;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+
+/**
+ * Tigi profile of a channel, or of a person through their personal channel: header with counts and actions, a
+ * 3-column grid of posts and a grid of reels. Telegram's own profile (members, notifications, admin tools, block,
+ * report, shared media) stays one tap away behind "Info".
+ *
+ * Arguments: chat_id (the channel whose posts are shown), optional user_id (the person who owns it as personal channel).
+ */
+public class TigiProfileActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
+
+    private static final int TAB_POSTS = 0;
+    private static final int TAB_REELS = 1;
+    private static final int PAGE = 60;
+
+    private long chatId;
+    private long userId;
+    private TLRPC.Chat chat;
+    private TLRPC.User user;
+
+    private int tab = TAB_POSTS;
+    private final ArrayList<MessageObject>[] tiles = new ArrayList[]{new ArrayList<>(), new ArrayList<>()};
+    private final HashMap<Long, MessageObject>[] albums = new HashMap[]{new HashMap<>(), new HashMap<>()};
+    private final HashMap<MessageObject, Integer> albumSizes = new HashMap<>();
+    private final int[] offsetId = new int[2];
+    private final boolean[] reachedEnd = new boolean[2];
+    private final boolean[] loading = new boolean[2];
+    private final int[] requestId = new int[2];
+    private String errorText;
+    private int postsCount = -1;
+
+    private RecyclerListView listView;
+    private GridLayoutManager gridManager;
+    private Adapter adapter;
+    private HeaderView header;
+
+    public TigiProfileActivity(Bundle args) {
+        super(args);
+    }
+
+    @Override
+    public boolean onFragmentCreate() {
+        chatId = arguments != null ? arguments.getLong("chat_id", 0) : 0;
+        userId = arguments != null ? arguments.getLong("user_id", 0) : 0;
+        chat = getMessagesController().getChat(chatId);
+        user = userId != 0 ? getMessagesController().getUser(userId) : null;
+        if (chat == null) {
+            return false;
+        }
+        getNotificationCenter().addObserver(this, NotificationCenter.chatInfoDidLoad);
+        getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().addObserver(this, NotificationCenter.messagesDeleted);
+        getMessagesController().loadFullChat(chatId, classGuid, false);
+        loadCount();
+        return super.onFragmentCreate();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        getNotificationCenter().removeObserver(this, NotificationCenter.chatInfoDidLoad);
+        getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().removeObserver(this, NotificationCenter.messagesDeleted);
+        for (int i = 0; i < 2; i++) {
+            if (requestId[i] != 0) {
+                getConnectionsManager().cancelRequest(requestId[i], true);
+            }
+        }
+        super.onFragmentDestroy();
+    }
+
+    private boolean isDead() {
+        return isFinishing() || fragmentView == null || getParentActivity() == null;
+    }
+
+    @Override
+    public View createView(Context context) {
+        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        actionBar.setAllowOverlayTitle(true);
+        actionBar.setTitle(user != null ? UserObject.getUserName(user) : chat.title);
+        actionBar.setActionBarMenuOnItemClick(new org.telegram.ui.ActionBar.ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == -1) {
+                    finishFragment();
+                }
+            }
+        });
+
+        final FrameLayout root = new FrameLayout(context);
+        root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        listView = new RecyclerListView(context);
+        gridManager = new GridLayoutManager(context, 3);
+        gridManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+            @Override
+            public int getSpanSize(int position) {
+                return adapter.getItemViewType(position) == Adapter.TYPE_TILE ? 1 : 3;
+            }
+        });
+        listView.setLayoutManager(gridManager);
+        adapter = new Adapter();
+        listView.setAdapter(adapter);
+        listView.setOnItemClickListener((view, position) -> {
+            final int index = position - Adapter.FIRST_TILE;
+            if (index >= 0 && index < tiles[tab].size()) {
+                openPost(tiles[tab].get(index));
+            }
+        });
+        listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                if (gridManager.findLastVisibleItemPosition() >= adapter.getItemCount() - 9) {
+                    load(tab);
+                }
+            }
+        });
+        root.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        fragmentView = root;
+        load(TAB_POSTS);
+        return fragmentView;
+    }
+
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        final ArrayList<ThemeDescription> list = new ArrayList<>();
+        final ThemeDescription.ThemeDescriptionDelegate delegate = () -> {
+            if (fragmentView != null) {
+                fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            }
+            if (header != null) {
+                header.updateColors();
+            }
+            if (listView != null) {
+                listView.getRecycledViewPool().clear();
+                adapter.notifyDataSetChanged();
+            }
+        };
+        list.add(new ThemeDescription(null, 0, null, null, null, delegate, Theme.key_windowBackgroundWhite));
+        list.add(new ThemeDescription(null, 0, null, null, null, delegate, Theme.key_windowBackgroundWhiteBlackText));
+        return list;
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.chatInfoDidLoad) {
+            final TLRPC.ChatFull full = (TLRPC.ChatFull) args[0];
+            if (full != null && full.id == chatId && header != null) {
+                header.bind();
+            }
+        } else if (id == NotificationCenter.updateInterfaces) {
+            final TLRPC.Chat current = getMessagesController().getChat(chatId);
+            if (current != null) {
+                chat = current;
+            }
+            if (header != null) {
+                header.bind();
+            }
+        } else if (id == NotificationCenter.messagesDeleted) {
+            final long channelId = (Long) args[1];
+            if (channelId != chatId) {
+                return;
+            }
+            final ArrayList<Integer> ids = (ArrayList<Integer>) args[0];
+            boolean changed = false;
+            for (int t = 0; t < 2; t++) {
+                for (int i = tiles[t].size() - 1; i >= 0; i--) {
+                    if (ids.contains(tiles[t].get(i).getId())) {
+                        tiles[t].remove(i);
+                        changed = true;
+                    }
+                }
+            }
+            if (changed && adapter != null) {
+                adapter.notifyDataSetChanged();
+            }
+        }
+    }
+
+    /* data */
+
+    private void loadCount() {
+        final TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
+        req.peer = getMessagesController().getInputPeer(-chatId);
+        req.limit = 1;
+        getConnectionsManager().bindRequestToGuid(getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (response instanceof TLRPC.TL_messages_channelMessages) {
+                postsCount = ((TLRPC.TL_messages_channelMessages) response).count;
+            } else if (response instanceof TLRPC.TL_messages_messagesSlice) {
+                postsCount = ((TLRPC.TL_messages_messagesSlice) response).count;
+            } else if (response instanceof TLRPC.messages_Messages) {
+                postsCount = ((TLRPC.messages_Messages) response).messages.size();
+            }
+            if (header != null) {
+                header.bind();
+            }
+        })), classGuid);
+    }
+
+    private void load(int which) {
+        if (loading[which] || reachedEnd[which] || isDead()) {
+            return;
+        }
+        loading[which] = true;
+        final TLRPC.TL_messages_search req = new TLRPC.TL_messages_search();
+        req.peer = getMessagesController().getInputPeer(-chatId);
+        req.q = "";
+        req.filter = which == TAB_REELS ? new TLRPC.TL_inputMessagesFilterVideo() : new TLRPC.TL_inputMessagesFilterPhotoVideo();
+        req.limit = PAGE;
+        req.offset_id = offsetId[which];
+        requestId[which] = getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            requestId[which] = 0;
+            loading[which] = false;
+            if (isDead()) {
+                return;
+            }
+            if (response instanceof TLRPC.messages_Messages) {
+                errorText = null;
+                final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                getMessagesController().putUsers(res.users, false);
+                getMessagesController().putChats(res.chats, false);
+                int minId = offsetId[which];
+                for (int i = 0; i < res.messages.size(); i++) {
+                    final TLRPC.Message message = res.messages.get(i);
+                    if (message.id > 0 && (minId == 0 || message.id < minId)) {
+                        minId = message.id;
+                    }
+                    addTile(which, new MessageObject(currentAccount, message, false, false));
+                }
+                reachedEnd[which] = res.messages.isEmpty() || minId == offsetId[which];
+                offsetId[which] = minId;
+            } else {
+                reachedEnd[which] = true;
+                if (error != null && ("CHANNEL_PRIVATE".equals(error.text) || "CHANNEL_PUBLIC_GROUP_NA".equals(error.text))) {
+                    errorText = LocaleController.getString(R.string.TigiProfilePrivate);
+                } else {
+                    errorText = LocaleController.getString(R.string.TigiFeedError);
+                    // a network error is worth another try when the user comes back
+                    reachedEnd[which] = false;
+                }
+            }
+            if (which == tab && adapter != null) {
+                adapter.notifyDataSetChanged();
+            }
+        }));
+    }
+
+    private void addTile(int which, MessageObject message) {
+        if (message.photoThumbs == null || message.photoThumbs.isEmpty() || message.needDrawBluredPreview()) {
+            return;
+        }
+        if (which == TAB_REELS && (message.isRoundVideo() || message.getDuration() > ReelsActivity.MAX_DURATION_SECONDS)) {
+            return;
+        }
+        final long groupId = message.getGroupId();
+        if (groupId != 0) {
+            final MessageObject first = albums[which].get(groupId);
+            if (first != null) {
+                // one tile per album, it shows the album's first (oldest) photo
+                albumSizes.put(first, (albumSizes.containsKey(first) ? albumSizes.get(first) : 1) + 1);
+                if (message.getId() < first.getId()) {
+                    final int index = tiles[which].indexOf(first);
+                    if (index >= 0) {
+                        tiles[which].set(index, message);
+                    }
+                    albums[which].put(groupId, message);
+                    albumSizes.put(message, albumSizes.remove(first));
+                }
+                return;
+            }
+            albums[which].put(groupId, message);
+        }
+        tiles[which].add(message);
+    }
+
+    private void openPost(MessageObject message) {
+        final Bundle args = new Bundle();
+        args.putLong("chat_id", chatId);
+        // the album's newest message, so the whole album is on the first page
+        int startId = message.getId();
+        if (message.getGroupId() != 0 && albumSizes.containsKey(message)) {
+            startId += albumSizes.get(message) - 1;
+        }
+        args.putInt("start_message_id", startId);
+        presentFragment(new ChannelFeedActivity(args));
+    }
+
+    private void openInfo() {
+        if (user != null) {
+            final Bundle args = new Bundle();
+            args.putLong("user_id", user.id);
+            presentFragment(new ProfileActivity(args));
+        } else {
+            TigiNavigation.openChatInfo(this, chatId);
+        }
+    }
+
+    private void openMessage() {
+        final Bundle args = new Bundle();
+        if (user != null) {
+            args.putLong("user_id", user.id);
+        } else {
+            args.putLong("chat_id", chatId);
+        }
+        presentFragment(new ChatActivity(args));
+    }
+
+    private void shareProfile() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final String username = user != null ? UserObject.getPublicUsername(user) : ChatObject.getPublicUsername(chat);
+        if (TextUtils.isEmpty(username)) {
+            org.telegram.ui.Components.BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiSharePrivate)).show();
+            return;
+        }
+        final Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TEXT, "https://t.me/" + username);
+        getParentActivity().startActivity(Intent.createChooser(intent, user != null ? UserObject.getUserName(user) : chat.title));
+    }
+
+    private void join() {
+        if (!ChatObject.isNotInChat(chat)) {
+            return;
+        }
+        getMessagesController().addUserToChat(chat.id, getUserConfig().getCurrentUser(), 0, null, this, true, () -> {
+            if (header != null) {
+                header.bind();
+            }
+        }, err -> true);
+    }
+
+    private void openStories() {
+        final long dialogId = user != null ? user.id : -chatId;
+        if (getParentActivity() != null && getMessagesController().getStoriesController().hasStories(dialogId)) {
+            getOrCreateStoryViewer().open(getParentActivity(), dialogId, (did, messageId, storyId, type, holder) -> false);
+        }
+    }
+
+    /* views */
+
+    private class HeaderView extends LinearLayout {
+        private final StoryRingAvatar avatar;
+        private final TextView postsValue;
+        private final TextView followersValue;
+        private final TextView postsLabel;
+        private final TextView followersLabel;
+        private final TextView nameView;
+        private final TextView aboutView;
+        private final TextView primaryButton;
+        private final TextView messageButton;
+        private final TextView shareButton;
+        private final ImageView infoButton;
+        private final TextView postsTab;
+        private final TextView reelsTab;
+
+        HeaderView(Context context) {
+            super(context);
+            setOrientation(VERTICAL);
+            setPadding(dp(16), dp(12), dp(16), 0);
+
+            final LinearLayout top = new LinearLayout(context);
+            top.setOrientation(HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            avatar = new StoryRingAvatar(context);
+            avatar.setOnClickListener(v -> openStories());
+            top.addView(avatar, LayoutHelper.createLinear(88, 88));
+            final LinearLayout posts = counter(context);
+            postsValue = (TextView) posts.getChildAt(0);
+            postsLabel = (TextView) posts.getChildAt(1);
+            postsLabel.setText(LocaleController.getString(R.string.TigiProfilePosts));
+            top.addView(posts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+            final LinearLayout followers = counter(context);
+            followersValue = (TextView) followers.getChildAt(0);
+            followersLabel = (TextView) followers.getChildAt(1);
+            followersLabel.setText(LocaleController.getString(R.string.TigiProfileFollowers));
+            top.addView(followers, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+            addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+            nameView = new TextView(context);
+            nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            nameView.setTypeface(AndroidUtilities.bold());
+            nameView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
+            aboutView = new TextView(context);
+            aboutView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            aboutView.setAutoLinkMask(Linkify.WEB_URLS);
+            aboutView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            addView(aboutView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+
+            final LinearLayout buttons = new LinearLayout(context);
+            buttons.setOrientation(HORIZONTAL);
+            primaryButton = button(context);
+            primaryButton.setOnClickListener(v -> {
+                if (ChatObject.isNotInChat(chat)) {
+                    join();
+                } else {
+                    openMessage();
+                }
+            });
+            buttons.addView(primaryButton, LayoutHelper.createLinear(0, 36, 1f, 0, 0, 6, 0));
+            messageButton = button(context);
+            messageButton.setText(LocaleController.getString(user != null ? R.string.TigiProfileMessage : R.string.TigiOpenChatView));
+            messageButton.setOnClickListener(v -> openMessage());
+            buttons.addView(messageButton, LayoutHelper.createLinear(0, 36, 1f, 0, 0, 6, 0));
+            shareButton = button(context);
+            shareButton.setText(LocaleController.getString(R.string.TigiProfileShare));
+            shareButton.setOnClickListener(v -> shareProfile());
+            buttons.addView(shareButton, LayoutHelper.createLinear(0, 36, 1f, 0, 0, 6, 0));
+            infoButton = new ImageView(context);
+            infoButton.setScaleType(ImageView.ScaleType.CENTER);
+            infoButton.setImageResource(R.drawable.msg_info);
+            infoButton.setContentDescription(LocaleController.getString(R.string.Info));
+            infoButton.setOnClickListener(v -> openInfo());
+            buttons.addView(infoButton, LayoutHelper.createLinear(44, 36));
+            addView(buttons, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 10));
+
+            final LinearLayout tabs = new LinearLayout(context);
+            tabs.setOrientation(HORIZONTAL);
+            postsTab = tabView(context, R.string.TigiProfilePosts, TAB_POSTS);
+            reelsTab = tabView(context, R.string.MainTabsReels, TAB_REELS);
+            tabs.addView(postsTab, LayoutHelper.createLinear(0, 44, 1f));
+            tabs.addView(reelsTab, LayoutHelper.createLinear(0, 44, 1f));
+            addView(tabs, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44, -16, 0, -16, 0));
+
+            updateColors();
+            bind();
+        }
+
+        private LinearLayout counter(Context context) {
+            final LinearLayout box = new LinearLayout(context);
+            box.setOrientation(VERTICAL);
+            box.setGravity(Gravity.CENTER);
+            final TextView value = new TextView(context);
+            value.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
+            value.setTypeface(AndroidUtilities.bold());
+            value.setGravity(Gravity.CENTER);
+            final TextView label = new TextView(context);
+            label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            label.setGravity(Gravity.CENTER);
+            box.addView(value);
+            box.addView(label);
+            return box;
+        }
+
+        private TextView button(Context context) {
+            final TextView view = new TextView(context);
+            view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            view.setTypeface(AndroidUtilities.bold());
+            view.setGravity(Gravity.CENTER);
+            view.setSingleLine(true);
+            view.setEllipsize(TextUtils.TruncateAt.END);
+            view.setPadding(dp(6), 0, dp(6), 0);
+            return view;
+        }
+
+        private TextView tabView(Context context, int text, int which) {
+            final TextView view = new TextView(context);
+            view.setText(LocaleController.getString(text));
+            view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            view.setTypeface(AndroidUtilities.bold());
+            view.setGravity(Gravity.CENTER);
+            view.setOnClickListener(v -> {
+                if (tab != which) {
+                    tab = which;
+                    updateColors();
+                    adapter.notifyDataSetChanged();
+                    load(which);
+                }
+            });
+            return view;
+        }
+
+        void updateColors() {
+            final int text = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+            final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
+            postsValue.setTextColor(text);
+            followersValue.setTextColor(text);
+            postsLabel.setTextColor(gray);
+            followersLabel.setTextColor(gray);
+            nameView.setTextColor(text);
+            aboutView.setTextColor(text);
+            aboutView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText));
+            final int buttonBg = Theme.getColor(Theme.key_windowBackgroundGray);
+            messageButton.setTextColor(text);
+            messageButton.setBackground(Theme.createRoundRectDrawable(dp(10), buttonBg));
+            shareButton.setTextColor(text);
+            shareButton.setBackground(Theme.createRoundRectDrawable(dp(10), buttonBg));
+            infoButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
+            infoButton.setBackground(Theme.createRoundRectDrawable(dp(10), buttonBg));
+            postsTab.setTextColor(tab == TAB_POSTS ? text : gray);
+            reelsTab.setTextColor(tab == TAB_REELS ? text : gray);
+            postsTab.setBackground(tab == TAB_POSTS ? underline(text) : null);
+            reelsTab.setBackground(tab == TAB_REELS ? underline(text) : null);
+            bind();
+        }
+
+        private android.graphics.drawable.Drawable underline(int color) {
+            final android.graphics.drawable.GradientDrawable line = new android.graphics.drawable.GradientDrawable();
+            line.setColor(color);
+            final android.graphics.drawable.LayerDrawable layer = new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{line});
+            layer.setLayerInset(0, 0, dp(42), 0, 0);
+            return layer;
+        }
+
+        void bind() {
+            final TLRPC.ChatFull full = getMessagesController().getChatFull(chatId);
+            avatar.bind();
+            nameView.setText(user != null ? UserObject.getUserName(user) : chat.title);
+            final String about = user != null ? (getMessagesController().getUserFull(user.id) != null ? getMessagesController().getUserFull(user.id).about : null) : (full != null ? full.about : null);
+            aboutView.setText(about);
+            aboutView.setVisibility(TextUtils.isEmpty(about) ? GONE : VISIBLE);
+            postsValue.setText(postsCount >= 0 ? LocaleController.formatShortNumber(postsCount, null) : "–");
+            final int followers = full != null && full.participants_count > 0 ? full.participants_count : chat.participants_count;
+            followersValue.setText(followers > 0 ? LocaleController.formatShortNumber(followers, null) : "–");
+            final boolean member = !ChatObject.isNotInChat(chat);
+            primaryButton.setText(LocaleController.getString(member ? R.string.TigiProfileFollowing : R.string.TigiJoin));
+            if (member) {
+                primaryButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                primaryButton.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.getColor(Theme.key_windowBackgroundGray)));
+            } else {
+                primaryButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
+                primaryButton.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.getColor(Theme.key_featuredStickers_addButton)));
+            }
+            // a personal channel's owner is messaged directly, and "Following" opens the channel
+            messageButton.setVisibility(user != null || !member ? VISIBLE : GONE);
+        }
+    }
+
+    /** Avatar with Telegram's story ring when there are stories to watch. */
+    private class StoryRingAvatar extends FrameLayout {
+        private final BackupImageView imageView;
+        private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private boolean hasStories;
+        private boolean unread;
+
+        StoryRingAvatar(Context context) {
+            super(context);
+            setWillNotDraw(false);
+            imageView = new BackupImageView(context);
+            imageView.setRoundRadius(dp(38));
+            addView(imageView, LayoutHelper.createFrame(76, 76, Gravity.CENTER));
+            ringPaint.setStyle(Paint.Style.STROKE);
+            ringPaint.setStrokeWidth(dp(2.5f));
+        }
+
+        void bind() {
+            final AvatarDrawable drawable = new AvatarDrawable();
+            if (user != null) {
+                drawable.setInfo(currentAccount, user);
+                imageView.setForUserOrChat(user, drawable);
+            } else {
+                drawable.setInfo(currentAccount, chat);
+                imageView.setForUserOrChat(chat, drawable);
+            }
+            final long dialogId = user != null ? user.id : -chatId;
+            hasStories = getMessagesController().getStoriesController().hasStories(dialogId);
+            unread = hasStories && getMessagesController().getStoriesController().hasUnreadStories(dialogId);
+            setContentDescription((user != null ? UserObject.getUserName(user) : chat.title) + (hasStories ? ", " + LocaleController.getString(R.string.TigiProfileStories) : ""));
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (!hasStories) {
+                return;
+            }
+            if (unread) {
+                ringPaint.setShader(new LinearGradient(0, getHeight(), getWidth(), 0, 0xFF8B5CF6, 0xFFEC4899, Shader.TileMode.CLAMP));
+            } else {
+                ringPaint.setShader(null);
+                ringPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            }
+            final float r = Math.min(getWidth(), getHeight()) / 2f - dp(2);
+            canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, r, ringPaint);
+        }
+    }
+
+    private class Adapter extends RecyclerListView.SelectionAdapter {
+        static final int TYPE_HEADER = 0;
+        static final int TYPE_TILE = 1;
+        static final int TYPE_STATE = 2;
+        static final int FIRST_TILE = 1;
+
+        @Override
+        public int getItemCount() {
+            final int count = tiles[tab].size();
+            return 1 + (count == 0 ? 1 : count);
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            if (position == 0) {
+                return TYPE_HEADER;
+            }
+            return tiles[tab].isEmpty() ? TYPE_STATE : TYPE_TILE;
+        }
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            return holder.getItemViewType() == TYPE_TILE;
+        }
+
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            final View view;
+            if (viewType == TYPE_HEADER) {
+                if (header == null) {
+                    header = new HeaderView(parent.getContext());
+                }
+                if (header.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) header.getParent()).removeView(header);
+                }
+                view = header;
+                view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else if (viewType == TYPE_STATE) {
+                final TextView state = new TextView(parent.getContext());
+                state.setGravity(Gravity.CENTER);
+                state.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+                state.setPadding(dp(32), dp(48), dp(32), dp(48));
+                view = state;
+                view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else {
+                view = new Tile(parent.getContext());
+            }
+            return new RecyclerListView.Holder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+            if (holder.getItemViewType() == TYPE_TILE) {
+                final MessageObject message = tiles[tab].get(position - FIRST_TILE);
+                ((Tile) holder.itemView).bind(message, albumSizes.containsKey(message));
+            } else if (holder.getItemViewType() == TYPE_STATE) {
+                final TextView state = (TextView) holder.itemView;
+                state.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                if (errorText != null) {
+                    state.setText(errorText);
+                } else if (loading[tab]) {
+                    state.setText(LocaleController.getString(R.string.TigiFeedLoading));
+                } else if (chat.restricted) {
+                    state.setText(LocaleController.getString(R.string.TigiProfileRestricted));
+                } else {
+                    state.setText(LocaleController.getString(R.string.TigiProfileNoPosts));
+                }
+            } else if (header != null) {
+                header.bind();
+            }
+        }
+    }
+
+    private class Tile extends FrameLayout {
+        private final BackupImageView imageView;
+        private final TextView badge;
+        private final ImageView albumIcon;
+
+        Tile(Context context) {
+            super(context);
+            setPadding(dp(1), dp(1), dp(1), dp(1));
+            imageView = new BackupImageView(context);
+            imageView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+            addView(imageView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            badge = new TextView(context);
+            badge.setTextColor(0xFFFFFFFF);
+            badge.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+            badge.setTypeface(AndroidUtilities.bold());
+            badge.setShadowLayer(dp(2), 0, 0, 0x99000000);
+            addView(badge, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.LEFT, 6, 0, 0, 4));
+            albumIcon = new ImageView(context);
+            albumIcon.setImageResource(R.drawable.msg_gallery);
+            albumIcon.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
+            addView(albumIcon, LayoutHelper.createFrame(20, 20, Gravity.TOP | Gravity.RIGHT, 0, 6, 6, 0));
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            // square tiles
+            super.onMeasure(widthMeasureSpec, widthMeasureSpec);
+        }
+
+        void bind(MessageObject message, boolean album) {
+            final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, 320);
+            imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "200_200", (android.graphics.drawable.Drawable) null, message.photoThumbsObject);
+            if (message.isVideo()) {
+                badge.setVisibility(VISIBLE);
+                badge.setText(AndroidUtilities.formatShortDuration((int) message.getDuration()));
+            } else {
+                badge.setVisibility(GONE);
+            }
+            albumIcon.setVisibility(album ? VISIBLE : GONE);
+            setContentDescription(LocaleController.getString(message.isVideo() ? R.string.AttachVideo : R.string.AttachPhoto) + (album ? ", " + LocaleController.getString(R.string.TigiProfileAlbum) : ""));
+        }
+    }
+}

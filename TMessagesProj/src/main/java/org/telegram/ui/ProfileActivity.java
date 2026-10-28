@@ -607,6 +607,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private final static int disable_no_forwards = 47;
     private final static int send_money = 48;
     private final static int tigi_settings = 9301;
+    private final static int tigi_my_posts = 9302;
 
     private Rect rect = new Rect();
 
@@ -2682,6 +2683,17 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 } else if (id == tigi_settings) {
                     presentFragment(new SettingsActivity());
+                } else if (id == tigi_my_posts) {
+                    // the channel the user posts to (last used, or the personal one); none yet: the Create flow
+                    final ArrayList<TLRPC.Chat> mine = TigiPosting.postableChannels(currentAccount);
+                    if (!mine.isEmpty()) {
+                        final Bundle tigiArgs = new Bundle();
+                        tigiArgs.putLong("chat_id", mine.get(0).id);
+                        tigiArgs.putLong("user_id", getUserConfig().getClientUserId());
+                        presentFragment(new TigiProfileActivity(tigiArgs));
+                    } else {
+                        TigiCreateSheet.show(this);
+                    }
                 } else if (id == edit_profile) {
                     presentFragment(new UserInfoActivity());
                 } else if (id == invite_to_group) {
@@ -12173,6 +12185,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (myProfile && hasMainTabs && MainTabsActivity.NEW_NAV) {
                     // Tigi: Settings is not a tab any more, so the own profile also has it in its menu
                     otherItem.addSubItem(tigi_settings, R.drawable.msg_settings_old, getString(R.string.Settings));
+                }
+                if (myProfile && BuildVars.TIGI_HOME) {
+                    otherItem.addSubItem(tigi_my_posts, R.drawable.msg_media, getString(R.string.TigiMyPosts));
                 }
                 if (myProfile) {
                     setUsernameItem = otherItem.addSubItem(set_username, R.drawable.menu_username_change, getString(R.string.ProfileUsernameEdit));

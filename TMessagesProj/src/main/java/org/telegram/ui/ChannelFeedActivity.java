@@ -64,6 +64,12 @@ public class ChannelFeedActivity extends TigiFeedBase {
         if (arguments != null) {
             chatId = arguments.getLong("chat_id", 0);
             mediaOnly = arguments.getBoolean("media_only", false);
+            // from a profile grid tile: start at that post and go back in time from there
+            final int startId = arguments.getInt("start_message_id", 0);
+            if (startId > 0) {
+                oldestId = startId + 1;
+                markedRead = true;
+            }
         }
         chat = getMessagesController().getChat(chatId);
         return chat != null && super.onFragmentCreate();

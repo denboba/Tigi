@@ -15,6 +15,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
@@ -199,9 +200,28 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     }
 
     @Override
+    public boolean onFragmentCreate() {
+        getNotificationCenter().addObserver(this, NotificationCenter.dialogsNeedReload);
+        return super.onFragmentCreate();
+    }
+
+    @Override
     public void onFragmentDestroy() {
+        getNotificationCenter().removeObserver(this, NotificationCenter.dialogsNeedReload);
         loadGeneration++;
         loading = false;
         super.onFragmentDestroy();
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.dialogsNeedReload) {
+            // on a cold start the chat list arrives after this tab was created
+            if (posts.isEmpty() && lastLoadTime == 0 && !loading && !isDead()) {
+                loadFeed();
+            }
+            return;
+        }
+        super.didReceivedNotification(id, account, args);
     }
 }

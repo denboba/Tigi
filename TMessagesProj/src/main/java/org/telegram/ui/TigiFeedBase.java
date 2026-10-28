@@ -423,7 +423,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
             return false;
         }
-        return reaction.emojicon != null || ((TLRPC.TL_chatReactionsAll) full.available_reactions).allow_custom;
+        if (full.available_reactions instanceof TLRPC.TL_chatReactionsAll) {
+            return reaction.emojicon != null || ((TLRPC.TL_chatReactionsAll) full.available_reactions).allow_custom;
+        }
+        return true;
     }
 
     protected static int heartCount(MessageObject message) {

@@ -3,7 +3,7 @@ name: Build Tigi APK
 on:
   workflow_dispatch:
   push:
-    branches: [tigi-rebrand]
+    branches: [tigi-rebrand, tigi-cards]
 
 jobs:
   build:

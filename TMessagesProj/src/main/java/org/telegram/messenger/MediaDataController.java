@@ -8758,6 +8758,13 @@ public class MediaDataController extends BaseController {
                 doubleTapReaction = savedReaction;
                 return doubleTapReaction;
             }
+            // Tigi: the heart is the default like, like on Instagram
+            for (int i = 0; i < getReactionsList().size(); i++) {
+                final String candidate = getReactionsList().get(i).reaction;
+                if (candidate != null && candidate.startsWith("\u2764")) {
+                    return candidate;
+                }
+            }
             return getReactionsList().get(0).reaction;
         }
         return null;

@@ -90,20 +90,22 @@ import me.vkryl.android.animator.FactorAnimator;
 
 public class MainTabsActivity extends ViewPagerActivity implements NotificationCenter.NotificationCenterDelegate, FactorAnimator.Target {
 
-    public static final int TABS_COUNT = 4;
-    private static final int POSITION_CHATS = 0;
-    private static final int POSITION_CONTACTS = 1;
-    private static final int POSITION_CALLS_OR_SETTINGS = 2;
-    private static final int POSITION_PROFILE = 3;
+    public static final int TABS_COUNT = 5;
+    private static final int POSITION_HOME = 0;
+    private static final int POSITION_CHATS = 1;
+    private static final int POSITION_CONTACTS = 2;
+    private static final int POSITION_CALLS_OR_SETTINGS = 3;
+    private static final int POSITION_PROFILE = 4;
 
-    private static final int INDEX_CHATS = 0;
-    private static final int INDEX_CONTACTS = 1;
-    private static final int INDEX_SETTINGS = 2;
-    private static final int INDEX_CALLS = 3;
-    private static final int INDEX_PROFILE = 4;
+    private static final int INDEX_HOME = 0;
+    private static final int INDEX_CHATS = 1;
+    private static final int INDEX_CONTACTS = 2;
+    private static final int INDEX_SETTINGS = 3;
+    private static final int INDEX_CALLS = 4;
+    private static final int INDEX_PROFILE = 5;
 
     private static int indexToPosition(int index) {
-        return index > 2 ? index - 1 : index;
+        return index > 3 ? index - 1 : index;
     }
 
     private static final int ANIMATOR_ID_TABS_VISIBLE = 0;
@@ -309,9 +311,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         tabsView = new MainTabsLayout(context, resourceProvider);
         tabsView.setClipChildren(false);
         tabsView.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4));
-        tabsView.setMaxWidth(dp(328 + DialogsActivity.MAIN_TABS_MARGIN * 2));
+        tabsView.setMaxWidth(dp(400 + DialogsActivity.MAIN_TABS_MARGIN * 2));
 
-        tabs = new GlassTabView[5];
+        tabs = new GlassTabView[6];
+        tabs[INDEX_HOME] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.HOME, R.string.MainTabsHome);
         tabs[INDEX_CHATS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CHATS, R.string.MainTabsChats);
         tabs[INDEX_CONTACTS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CONTACTS, R.string.MainTabsContacts);
         tabs[INDEX_SETTINGS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.SETTINGS, R.string.Settings);
@@ -807,7 +810,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     protected BaseFragment createBaseFragmentAt(int position) {
-        if (position == POSITION_CONTACTS) {
+        if (position == POSITION_HOME) {
+            Bundle args = new Bundle();
+            args.putBoolean("hasMainTabs", true);
+            return new HomeFeedActivity(args);
+        } else if (position == POSITION_CONTACTS) {
             Bundle args = new Bundle();
             args.putBoolean("needPhonebook", true);
             args.putBoolean("needFinishFragment", false);

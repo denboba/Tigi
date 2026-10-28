@@ -325,6 +325,16 @@ public class MessageDrawable extends Drawable {
         return shadowDrawable;
     }
 
+    // Tigi: the bubble nine-patches must be taller than two corners, or the corners get cut to ~19dp
+    // (Telegram's fixed 50x40dp only works for its maximum radius of 17).
+    private int ninePatchWidth(int rad) {
+        return Math.max(dp(50), rad * 2 + dp(14));
+    }
+
+    private int ninePatchHeight(int rad) {
+        return Math.max(dp(40), rad * 2 + dp(6));
+    }
+
     public Drawable getBackgroundDrawable() {
         int newRad;
         if (overrideRoundRadius != 0) {
@@ -368,7 +378,7 @@ public class MessageDrawable extends Drawable {
         if (lastDrawWithShadow != drawWithShadow || currentBackgroundDrawableRadius[idx2][idx] != newRad || (drawWithShadow && shadowDrawableColor[idx] != shadowColor) || backgroundDrawableColor[idx2][idx] != color) {
             currentBackgroundDrawableRadius[idx2][idx] = newRad;
             try {
-                Bitmap bitmap = Bitmap.createBitmap(dp(50), dp(40), Bitmap.Config.ARGB_8888);
+                Bitmap bitmap = Bitmap.createBitmap(ninePatchWidth(newRad), ninePatchHeight(newRad), Bitmap.Config.ARGB_8888);
                 Canvas canvas = new Canvas(bitmap);
 
                 backupRect.set(getBounds());
@@ -378,7 +388,7 @@ public class MessageDrawable extends Drawable {
 
                     Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-                    LinearGradient gradientShader = new LinearGradient(0, 0, 0, dp(40), new int[]{0x155F6569, 0x295F6569}, null, Shader.TileMode.CLAMP);
+                    LinearGradient gradientShader = new LinearGradient(0, 0, 0, bitmap.getHeight(), new int[]{0x155F6569, 0x295F6569}, null, Shader.TileMode.CLAMP);
                     shadowPaint.setShader(gradientShader);
                     shadowPaint.setColorFilter(new PorterDuffColorFilter(shadowColor, PorterDuff.Mode.MULTIPLY));
 
@@ -417,7 +427,7 @@ public class MessageDrawable extends Drawable {
 
     public Drawable getTransitionDrawable(int color) {
         if (transitionDrawable == null) {
-            Bitmap bitmap = Bitmap.createBitmap(dp(50), dp(40), Bitmap.Config.ARGB_8888);
+            Bitmap bitmap = Bitmap.createBitmap(ninePatchWidth(dp(SharedConfig.bubbleRadius)), ninePatchHeight(dp(SharedConfig.bubbleRadius)), Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
 
             backupRect.set(getBounds());
@@ -470,12 +480,12 @@ public class MessageDrawable extends Drawable {
                 shadowDrawableBitmap[idx].recycle();
             }
             try {
-                Bitmap bitmap = Bitmap.createBitmap(dp(50), dp(40), Bitmap.Config.ARGB_8888);
+                Bitmap bitmap = Bitmap.createBitmap(ninePatchWidth(newRad), ninePatchHeight(newRad), Bitmap.Config.ARGB_8888);
                 Canvas canvas = new Canvas(bitmap);
 
                 Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-                LinearGradient gradientShader = new LinearGradient(0, 0, 0, dp(40), new int[]{0x155F6569, 0x295F6569}, null, Shader.TileMode.CLAMP);
+                LinearGradient gradientShader = new LinearGradient(0, 0, 0, bitmap.getHeight(), new int[]{0x155F6569, 0x295F6569}, null, Shader.TileMode.CLAMP);
                 shadowPaint.setShader(gradientShader);
 
                 shadowPaint.setShadowLayer(2, 0, 1, 0xffffffff);

@@ -51,6 +51,10 @@ public class BuildVars {
     // Must differ from the official app or the two installs fight over the same authenticator.
     public static final String CONTACTS_ACCOUNT_TYPE = "com.tigi.app";
 
+    // Tigi: folder in shared storage (Android 10 and older). Telegram uses "Telegram"; sharing it would let either
+    // app clear or move the other's files. The app-private folder (getExternalFilesDir) keeps its old name.
+    public static final String PUBLIC_ROOT_DIR = "Tigi";
+
     // Tigi feature flags. With a flag off the app behaves like the release before that feature.
     public static boolean TIGI_HOME = true;    // Home feed tab, channels open as a feed, media feed menu item
     public static boolean TIGI_NEW_NAV = true; // Home | Reels | + | Chats | Profile bottom bar

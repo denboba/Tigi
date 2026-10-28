@@ -30,7 +30,8 @@ public class BuildVars {
     public static String APP_HASH = ""; // injected from TG_API_HASH secret at build time
 
     // SafetyNet key for Google Identity SDK, set it to empty to disable
-    public static String SAFETYNET_KEY = "AIzaSyDqt8P-7F7CPCseMkOiVRgb1LY8RN1bvH8";
+    // Tigi: Telegram's key only works for its own package; empty = login codes come by SMS/app instead of Firebase SMS
+    public static String SAFETYNET_KEY = "";
     public static String PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=com.tigi.app";
     public static String HUAWEI_STORE_URL = "https://appgallery.huawei.com/app/C101184875";
     public static String GOOGLE_AUTH_CLIENT_ID = "760348033671-81kmi3pi84p11ub8hp9a1funsv0rn2p9.apps.googleusercontent.com";
@@ -42,6 +43,20 @@ public class BuildVars {
 
     // works only on official app ids, disable on your forks
     public static boolean SUPPORTS_PASSKEYS = false;
+
+    // Tigi: "Sign in with Google" for login email needs an OAuth client registered for com.tigi.app
+    public static boolean TIGI_GOOGLE_SIGN_IN = false;
+
+    // Tigi: account type of the synced contacts, must match res/xml/auth.xml and sync_contacts.xml.
+    // Must differ from the official app or the two installs fight over the same authenticator.
+    public static final String CONTACTS_ACCOUNT_TYPE = "com.tigi.app";
+
+    // Tigi feature flags. With a flag off the app behaves like the release before that feature.
+    public static boolean TIGI_HOME = true;    // Home feed tab, channels open as a feed, media feed menu item
+    public static boolean TIGI_NEW_NAV = true; // Home | Reels | + | Chats | Profile bottom bar
+    public static boolean TIGI_POST = true;    // "+" Create sheet, posting into own channels
+    public static boolean TIGI_REELS = true;   // full screen vertical video tab
+    public static boolean TIGI_LIVE = true;    // "Go live" in the Create sheet, LIVE badges in feeds
 
     static {
         if (ApplicationLoader.applicationContext != null) {

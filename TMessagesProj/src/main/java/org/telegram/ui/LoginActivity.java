@@ -6070,7 +6070,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             requestPhone = currentParams.getString("phoneFormated");
             phoneHash = currentParams.getString("phoneHash");
 
-            int v = params.getBoolean("googleSignInAllowed") && PushListenerController.GooglePushListenerServiceProvider.INSTANCE.hasServices() ? VISIBLE : GONE;
+            int v = BuildVars.TIGI_GOOGLE_SIGN_IN && params.getBoolean("googleSignInAllowed") && PushListenerController.GooglePushListenerServiceProvider.INSTANCE.hasServices() ? VISIBLE : GONE;
             loginOrView.setVisibility(v);
             signInWithGoogleView.setVisibility(v);
 
@@ -6685,7 +6685,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 confirmTextView.setText(AndroidUtilities.formatSpannable(getString(R.string.CheckYourEmailSubtitle), confirmText));
             }
 
-            int v = params.getBoolean("googleSignInAllowed") && PushListenerController.GooglePushListenerServiceProvider.INSTANCE.hasServices() ? VISIBLE : GONE;
+            int v = BuildVars.TIGI_GOOGLE_SIGN_IN && params.getBoolean("googleSignInAllowed") && PushListenerController.GooglePushListenerServiceProvider.INSTANCE.hasServices() ? VISIBLE : GONE;
             loginOrView.setVisibility(v);
             signInWithGoogleView.setVisibility(v);
 

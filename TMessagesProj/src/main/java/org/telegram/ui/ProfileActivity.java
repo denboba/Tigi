@@ -606,6 +606,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private final static int enable_no_forwards = 46;
     private final static int disable_no_forwards = 47;
     private final static int send_money = 48;
+    private final static int tigi_settings = 9301;
 
     private Rect rect = new Rect();
 
@@ -2679,6 +2680,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         }
                         presentFragment(fragment);
                     }
+                } else if (id == tigi_settings) {
+                    presentFragment(new SettingsActivity());
                 } else if (id == edit_profile) {
                     presentFragment(new UserInfoActivity());
                 } else if (id == invite_to_group) {
@@ -12167,6 +12170,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 editColorItem = otherItem.addSubItem(edit_color, R.drawable.menu_profile_colors, LocaleController.getString(R.string.ProfileColorEdit));
                 updateEditColorIcon();
+                if (myProfile && hasMainTabs && MainTabsActivity.NEW_NAV) {
+                    // Tigi: Settings is not a tab any more, so the own profile also has it in its menu
+                    otherItem.addSubItem(tigi_settings, R.drawable.msg_settings_old, getString(R.string.Settings));
+                }
                 if (myProfile) {
                     setUsernameItem = otherItem.addSubItem(set_username, R.drawable.menu_username_change, getString(R.string.ProfileUsernameEdit));
                     linkItem = otherItem.addSubItem(copy_link_profile, R.drawable.msg_link2, getString(R.string.ProfileCopyLink));

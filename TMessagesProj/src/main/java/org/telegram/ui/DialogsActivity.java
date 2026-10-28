@@ -284,6 +284,8 @@ import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.android.util.ClickHelper;
 
 public class DialogsActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate, FloatingDebugProvider, FactorAnimator.Target, MainTabsActivity.TabFragmentDelegate {
+
+    private static final int TIGI_CONTACTS_ITEM = 9201;
     private final int ADDITIONAL_LIST_HEIGHT_DP = Build.VERSION.SDK_INT >= 31 ? 48 : 0;
 
     private static final boolean TMP_DISABLE_TOPICS_TWO_COLUMNS = false;
@@ -3438,6 +3440,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         });
         fragmentSearchFieldWatcher.setDoNotCloseAfterFieldEmpty();
 
+        if (initialDialogsType == DIALOGS_TYPE_DEFAULT && hasMainTabs && MainTabsActivity.NEW_NAV && folderId == 0 && communityId == 0) {
+            // Tigi: Contacts left the tab bar; it is one tap away here
+            final ActionBarMenuItem contactsItem = menu.addItem(TIGI_CONTACTS_ITEM, R.drawable.msg_contacts);
+            contactsItem.setContentDescription(LocaleController.getString(R.string.Contacts));
+            contactsItem.setOnClickListener(v -> TigiNavigation.openContacts(this));
+        }
         if (initialDialogsType == DIALOGS_TYPE_DEFAULT) {
             optionsItem = menu.addItem(4, R.drawable.ic_ab_other);
             optionsItem.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
@@ -13815,7 +13823,12 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
             }
         }
-        if (getUserConfig().showCallsTab) {
+        if (hasMainTabs && MainTabsActivity.NEW_NAV) {
+            // Tigi: the new tab bar has no Contacts, Calls or Settings tabs
+            io.add(R.drawable.msg_contacts, getString(R.string.Contacts), () -> TigiNavigation.openContacts(this));
+            io.add(R.drawable.msg_calls, getString(R.string.Calls), () -> TigiNavigation.openCalls(this));
+            io.add(R.drawable.msg_settings_old, getString(R.string.Settings), () -> TigiNavigation.openSettings(this));
+        } else if (getUserConfig().showCallsTab) {
             io.add(R.drawable.msg_settings_old, getString(R.string.Settings), () -> {
                 presentFragment(new SettingsActivity());
             });

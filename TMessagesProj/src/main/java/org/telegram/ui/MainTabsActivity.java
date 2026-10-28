@@ -37,6 +37,7 @@ import androidx.core.math.MathUtils;
 import androidx.core.view.WindowInsetsCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.ContactsController;
@@ -90,22 +91,98 @@ import me.vkryl.android.animator.FactorAnimator;
 
 public class MainTabsActivity extends ViewPagerActivity implements NotificationCenter.NotificationCenterDelegate, FactorAnimator.Target {
 
-    public static final int TABS_COUNT = 5;
-    private static final int POSITION_HOME = 0;
-    private static final int POSITION_CHATS = 1;
-    private static final int POSITION_CONTACTS = 2;
-    private static final int POSITION_CALLS_OR_SETTINGS = 3;
-    private static final int POSITION_PROFILE = 4;
+    // Tigi: the bar is built from the feature flags, read once per process.
+    //   TIGI_NEW_NAV on:  Home | Reels | + | Chats | Profile   (Reels and + only when their features are on;
+    //                     "+" is a button, not a page; Contacts, Calls and Settings are reached from Chats and Profile)
+    //   TIGI_NEW_NAV off: Home | Chats | Contacts | Calls or Settings | Profile (the previous release; Telegram's own
+    //                     bar when TIGI_HOME is off as well)
+    // POSITION_* are pager pages, INDEX_* are views in tabs[]; -1 means "not in this layout".
+    public static final boolean NEW_NAV = BuildVars.TIGI_NEW_NAV;
+    // the Reels page and the Create sheet exist only from their phases on; until then their flags do nothing
+    private static final boolean REELS_READY = false;
+    private static final boolean CREATE_READY = false;
 
-    private static final int INDEX_HOME = 0;
-    private static final int INDEX_CHATS = 1;
-    private static final int INDEX_CONTACTS = 2;
-    private static final int INDEX_SETTINGS = 3;
-    private static final int INDEX_CALLS = 4;
-    private static final int INDEX_PROFILE = 5;
+    public static final int TABS_COUNT;
+    private static final int POSITION_HOME;
+    private static final int POSITION_REELS;
+    private static final int POSITION_CHATS;
+    private static final int POSITION_CONTACTS;
+    private static final int POSITION_CALLS_OR_SETTINGS;
+    private static final int POSITION_PROFILE;
+
+    private static final int TAB_VIEWS_COUNT;
+    private static final int INDEX_HOME;
+    private static final int INDEX_REELS;
+    private static final int INDEX_CREATE;
+    private static final int INDEX_CHATS;
+    private static final int INDEX_CONTACTS;
+    private static final int INDEX_SETTINGS;
+    private static final int INDEX_CALLS;
+    private static final int INDEX_PROFILE;
+    private static final int[] INDEX_TO_POSITION;
+
+    static {
+        final boolean home = BuildVars.TIGI_HOME;
+        int p = 0;
+        int i = 0;
+        final int[] map = new int[8];
+        if (NEW_NAV) {
+            final boolean reels = BuildVars.TIGI_REELS && REELS_READY;
+            final boolean create = (BuildVars.TIGI_POST || BuildVars.TIGI_LIVE) && CREATE_READY;
+            POSITION_HOME = home ? p++ : -1;
+            INDEX_HOME = home ? i++ : -1;
+            if (home) map[INDEX_HOME] = POSITION_HOME;
+            POSITION_REELS = reels ? p++ : -1;
+            INDEX_REELS = reels ? i++ : -1;
+            if (reels) map[INDEX_REELS] = POSITION_REELS;
+            INDEX_CREATE = create ? i++ : -1;
+            if (create) map[INDEX_CREATE] = -1;
+            POSITION_CHATS = p++;
+            INDEX_CHATS = i++;
+            map[INDEX_CHATS] = POSITION_CHATS;
+            POSITION_CONTACTS = -1;
+            INDEX_CONTACTS = -1;
+            POSITION_CALLS_OR_SETTINGS = -1;
+            INDEX_SETTINGS = -1;
+            INDEX_CALLS = -1;
+            POSITION_PROFILE = p++;
+            INDEX_PROFILE = i++;
+            map[INDEX_PROFILE] = POSITION_PROFILE;
+        } else {
+            POSITION_HOME = home ? p++ : -1;
+            INDEX_HOME = home ? i++ : -1;
+            if (home) map[INDEX_HOME] = POSITION_HOME;
+            POSITION_REELS = -1;
+            INDEX_REELS = -1;
+            INDEX_CREATE = -1;
+            POSITION_CHATS = p++;
+            INDEX_CHATS = i++;
+            map[INDEX_CHATS] = POSITION_CHATS;
+            POSITION_CONTACTS = p++;
+            INDEX_CONTACTS = i++;
+            map[INDEX_CONTACTS] = POSITION_CONTACTS;
+            POSITION_CALLS_OR_SETTINGS = p++;
+            INDEX_SETTINGS = i++;
+            map[INDEX_SETTINGS] = POSITION_CALLS_OR_SETTINGS;
+            INDEX_CALLS = i++;
+            map[INDEX_CALLS] = POSITION_CALLS_OR_SETTINGS;
+            POSITION_PROFILE = p++;
+            INDEX_PROFILE = i++;
+            map[INDEX_PROFILE] = POSITION_PROFILE;
+        }
+        TABS_COUNT = p;
+        TAB_VIEWS_COUNT = i;
+        INDEX_TO_POSITION = new int[i];
+        System.arraycopy(map, 0, INDEX_TO_POSITION, 0, i);
+    }
 
     private static int indexToPosition(int index) {
-        return index > 3 ? index - 1 : index;
+        return index >= 0 && index < INDEX_TO_POSITION.length ? INDEX_TO_POSITION[index] : -1;
+    }
+
+    /** The tab view at index, or null when this layout has no such tab. */
+    private GlassTabView tab(int index) {
+        return tabs != null && index >= 0 && index < tabs.length ? tabs[index] : null;
     }
 
     private static final int ANIMATOR_ID_TABS_VISIBLE = 0;
@@ -282,7 +359,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     }
 
     private void checkContactsTabBadge() {
-        if (tabsView != null && tabs[INDEX_CONTACTS] != null) {
+        if (tabsView != null && tab(INDEX_CONTACTS) != null) {
             final boolean hasPermission = Build.VERSION.SDK_INT >= 23 && ContactsController.hasContactsPermission();
             if (hasPermission) {
                 MessagesController.getGlobalNotificationsSettings().edit().putBoolean("askAboutContacts2", true).apply();
@@ -313,27 +390,57 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         tabsView.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4));
         tabsView.setMaxWidth(dp(400 + DialogsActivity.MAIN_TABS_MARGIN * 2));
 
-        tabs = new GlassTabView[6];
-        tabs[INDEX_HOME] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.HOME, R.string.MainTabsHome);
+        tabs = new GlassTabView[TAB_VIEWS_COUNT];
+        if (INDEX_HOME >= 0) {
+            tabs[INDEX_HOME] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.HOME, R.string.MainTabsHome);
+        }
+        if (INDEX_REELS >= 0) {
+            tabs[INDEX_REELS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.REELS, R.string.MainTabsReels);
+        }
+        if (INDEX_CREATE >= 0) {
+            tabs[INDEX_CREATE] = GlassTabView.createActionTab(context, resourceProvider, R.drawable.tigi_add_24, R.string.TigiCreate);
+        }
         tabs[INDEX_CHATS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CHATS, R.string.MainTabsChats);
-        tabs[INDEX_CONTACTS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CONTACTS, R.string.MainTabsContacts);
-        tabs[INDEX_SETTINGS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.SETTINGS, R.string.Settings);
-        tabs[INDEX_CALLS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CALLS, R.string.MainTabsCalls);
+        if (INDEX_CONTACTS >= 0) {
+            tabs[INDEX_CONTACTS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CONTACTS, R.string.MainTabsContacts);
+            tabs[INDEX_CONTACTS].setOnLongClickListener(this::openContactsSelector);
+        }
+        if (INDEX_SETTINGS >= 0) {
+            tabs[INDEX_SETTINGS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.SETTINGS, R.string.Settings);
+        }
+        if (INDEX_CALLS >= 0) {
+            tabs[INDEX_CALLS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CALLS, R.string.MainTabsCalls);
+            tabs[INDEX_CALLS].setOnLongClickListener(this::openCallsSelector);
+        }
         tabs[INDEX_PROFILE] = GlassTabView.createAvatar(context, resourceProvider, currentAccount, R.string.MainTabsProfile);
         tabs[INDEX_CHATS].setOnLongClickListener(this::openFoldersSelector);
-        tabs[INDEX_CONTACTS].setOnLongClickListener(this::openContactsSelector);
-        tabs[INDEX_CALLS].setOnLongClickListener(this::openCallsSelector);
         tabs[INDEX_PROFILE].setOnLongClickListener(this::openAccountSelector);
 
         tabsView.addTabToIgnoreClick(tabs[INDEX_CHATS]);
-        tabsView.addTabToIgnoreClick(tabs[INDEX_CONTACTS]);
+        if (tab(INDEX_CONTACTS) != null) {
+            tabsView.addTabToIgnoreClick(tabs[INDEX_CONTACTS]);
+        }
         tabsView.addTabToIgnoreClick(tabs[INDEX_PROFILE]);
-        tabsView.addTabToIgnoreClick(tabs[INDEX_CALLS]);
+        if (tab(INDEX_CALLS) != null) {
+            tabsView.addTabToIgnoreClick(tabs[INDEX_CALLS]);
+        }
 
         for (int index = 0; index < tabs.length; index++) {
             final GlassTabView view = tabs[index];
 
             final int position = indexToPosition(index);
+            if (position < 0) {
+                // an action button ("+"): opens something, never becomes the selected page
+                tabs[index].setOnClickListener(v -> {
+                    if (viewPager.isManualScrolling() || viewPager.isTouch()) {
+                        return;
+                    }
+                    onCreateButtonClicked();
+                });
+                tabsView.addView(tabs[index]);
+                tabsView.setViewVisible(view, true, false);
+                continue;
+            }
             tabs[index].setOnClickListener(v -> {
                 if (viewPager.isManualScrolling() || viewPager.isTouch()) {
                     return;
@@ -355,6 +462,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             tabsView.setViewVisible(view, true, false);
         }
         checkUi_callTabVisible(getUserConfig().showCallsTab, false);
+        tabsView.setOnSelectionReset(() -> {
+            if (viewPager != null) {
+                selectTab(viewPager.getCurrentPosition(), true);
+            }
+        });
 
         selectTab(viewPager.getCurrentPosition(), false);
 
@@ -736,7 +848,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         if (viewPager != null) {
             final int currentPosition = viewPager.getCurrentPosition();
-            if (currentPosition != POSITION_CALLS_OR_SETTINGS && dropCallsFragmentAfterPageScroll) {
+            if (POSITION_CALLS_OR_SETTINGS >= 0 && currentPosition != POSITION_CALLS_OR_SETTINGS && dropCallsFragmentAfterPageScroll) {
                 dropFragmentAtPosition(POSITION_CALLS_OR_SETTINGS);
                 dropCallsFragmentAfterPageScroll = false;
             }
@@ -776,7 +888,35 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     protected int getStartPosition() {
+        // Chats in both bars: DialogsActivity.onResume asks for the notification/contacts permissions and runs the
+        // storage migration check, so it must be the first visible page.
         return POSITION_CHATS;
+    }
+
+    /** Selects the Profile tab (the user's own profile). Returns false when this layout has none. */
+    public boolean openProfileTab() {
+        if (viewPager == null || POSITION_PROFILE < 0) {
+            return false;
+        }
+        selectTab(POSITION_PROFILE, true);
+        viewPager.scrollToPosition(POSITION_PROFILE);
+        return true;
+    }
+
+    /** Selects the Chats tab. */
+    public void openChatsTab() {
+        if (viewPager == null) {
+            return;
+        }
+        selectTab(POSITION_CHATS, true);
+        viewPager.scrollToPosition(POSITION_CHATS);
+    }
+
+    private void onCreateButtonClicked() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        // Phase 2: the Create sheet
     }
 
     private DialogsActivity dialogsActivity;
@@ -810,7 +950,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     protected BaseFragment createBaseFragmentAt(int position) {
-        if (position == POSITION_HOME) {
+        if (position < 0) {
+            return null;
+        } else if (position == POSITION_HOME) {
             Bundle args = new Bundle();
             args.putBoolean("hasMainTabs", true);
             return new HomeFeedActivity(args);
@@ -858,15 +1000,22 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     public void selectTab(int position, boolean animated) {
         for (int a = 0; a < tabs.length; a++) {
             GlassTabView tab = tabs[a];
-            tab.setSelected(indexToPosition(a) == position, animated);
+            if (tab == null) {
+                continue;
+            }
+            final int tabPosition = indexToPosition(a);
+            tab.setSelected(tabPosition >= 0 && tabPosition == position, animated);
         }
     }
 
     public void setGestureSelectedOverride(float animatedPosition, boolean allow) {
         for (int index = 0; index < tabs.length; index++) {
+            if (tabs[index] == null) {
+                continue;
+            }
             final int position = indexToPosition(index);
-            final float visibility = Math.max(0, 1f - Math.abs(position - animatedPosition));
-            tabs[index].setGestureSelectedOverride(visibility, allow);
+            final float visibility = position < 0 ? 0 : Math.max(0, 1f - Math.abs(position - animatedPosition));
+            tabs[index].setGestureSelectedOverride(visibility, allow && position >= 0);
         }
         tabsView.invalidate();
     }
@@ -1001,7 +1150,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         } else if (id == NotificationCenter.callTabsVisibleToggled) {
             final boolean callTabsVisible = getUserConfig().showCallsTab;
             checkUi_callTabVisible(callTabsVisible, true);
-            if (viewPager != null && viewPager.getCurrentPosition() == POSITION_CALLS_OR_SETTINGS) {
+            if (POSITION_CALLS_OR_SETTINGS < 0) {
+                // new bar: calls and settings are not pages
+            } else if (viewPager != null && viewPager.getCurrentPosition() == POSITION_CALLS_OR_SETTINGS) {
                 viewPager.scrollToPosition(POSITION_CHATS);
                 selectTab(POSITION_CHATS, true);
                 dropCallsFragmentAfterPageScroll = true;
@@ -1094,7 +1245,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     }
 
     private void checkUi_callTabVisible(boolean callTabsVisible, boolean animated) {
-        if (tabsView != null) {
+        if (tabsView != null && tab(INDEX_SETTINGS) != null && tab(INDEX_CALLS) != null) {
             tabsView.setViewVisible(tabs[INDEX_SETTINGS], !callTabsVisible, animated);
             tabsView.setViewVisible(tabs[INDEX_CALLS], callTabsVisible, animated);
         }

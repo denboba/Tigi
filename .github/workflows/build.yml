@@ -2,6 +2,19 @@ name: Build Tigi APK
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Release build: AAB for Play + APK with arm64 and armv7, R8 mapping kept"
+        type: boolean
+        default: false
+      version_code:
+        description: "Optional APP_VERSION_CODE override (must grow with every Play upload)"
+        type: string
+        default: ""
+      export_signing_key:
+        description: "Upload the signing key ENCRYPTED with the TIGI_KEY_BACKUP_PASSPHRASE secret (for a backup)"
+        type: boolean
+        default: false
   push:
     branches: [tigi-rebrand, tigi-cards]
 
@@ -12,7 +25,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,7 +68,11 @@ jobs:
       - name: Firebase config
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: python3 .github/scripts/make_google_services.py TMessagesProj/google-services.json TMessagesProj_App/google-services.json
+        run: |
+          python3 .github/scripts/make_google_services.py TMessagesProj/google-services.json TMessagesProj_App/google-services.json
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::warning title=No push notifications::GOOGLE_SERVICES_JSON is not set, the APK uses a placeholder Firebase config. Messages still arrive while the app is open, but there are no push notifications in the background. See docs/TIGI_RELEASE.md."
+          fi
 
       - name: Restore signing key
         id: keycache
@@ -64,24 +81,75 @@ jobs:
           path: ~/tigi-signing
           key: tigi-signing-v1
 
-      - name: Create signing key if missing
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.TIGI_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.TIGI_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.TIGI_KEY_ALIAS }}
         run: |
           mkdir -p ~/tigi-signing
-          if [ ! -f ~/tigi-signing/tigi.keystore ]; then
-            pw=$(openssl rand -hex 16)
-            echo "$pw" > ~/tigi-signing/pw
-            keytool -genkeypair -keystore ~/tigi-signing/tigi.keystore -storepass "$pw" -keypass "$pw" \
-              -alias tigi -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Tigi"
-            echo "Generated a new signing key."
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            # the key from repository secrets (the durable, backed-up way)
+            echo "$KEYSTORE_B64" | base64 -d > TMessagesProj/config/release.keystore
+            printf '%s' "$KEYSTORE_PASSWORD" > "$RUNNER_TEMP/tigi-use-pw"
+            printf '%s' "${KEY_ALIAS:-tigi}" > "$RUNNER_TEMP/tigi-use-alias"
+            echo "Signing with the keystore from secrets."
+          else
+            # fallback: the key kept in this branch's Actions cache (lost if the cache is evicted)
+            if [ ! -f ~/tigi-signing/tigi.keystore ]; then
+              pw=$(openssl rand -hex 16)
+              echo "$pw" > ~/tigi-signing/pw
+              keytool -genkeypair -keystore ~/tigi-signing/tigi.keystore -storepass "$pw" -keypass "$pw" \
+                -alias tigi -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Tigi"
+              echo "::warning title=New signing key::A new signing key was generated. Installed apps signed with an older key must be reinstalled. Move the key into secrets (docs/TIGI_RELEASE.md)."
+            fi
+            cp ~/tigi-signing/tigi.keystore TMessagesProj/config/release.keystore
+            cp ~/tigi-signing/pw "$RUNNER_TEMP/tigi-use-pw"
+            printf 'tigi' > "$RUNNER_TEMP/tigi-use-alias"
+            echo "::notice title=Signing key from cache::The signing key lives only in the Actions cache. Back it up and move it to the TIGI_KEYSTORE_B64 / TIGI_KEYSTORE_PASSWORD secrets."
           fi
-          cp ~/tigi-signing/tigi.keystore TMessagesProj/config/release.keystore
 
-      - name: Build release APK
+      - name: Export signing key (encrypted)
+        if: ${{ inputs.export_signing_key }}
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.TIGI_KEY_BACKUP_PASSPHRASE }}
         run: |
-          pw=$(cat ~/tigi-signing/pw)
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::error::Set the TIGI_KEY_BACKUP_PASSPHRASE secret first; the key is never uploaded unencrypted."
+            exit 1
+          fi
+          mkdir -p key-backup
+          tar -C ~/tigi-signing -cf - tigi.keystore pw 2>/dev/null | \
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:BACKUP_PASSPHRASE -out key-backup/tigi-signing.tar.enc
+          echo "Decrypt with: openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in tigi-signing.tar.enc -out tigi-signing.tar"
+
+      - name: Upload encrypted key backup
+        if: ${{ inputs.export_signing_key }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tigi-signing-backup-encrypted
+          path: key-backup/tigi-signing.tar.enc
+          retention-days: 3
+
+      - name: Build
+        env:
+          RELEASE: ${{ inputs.release }}
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          pw=$(cat "$RUNNER_TEMP/tigi-use-pw")
+          alias=$(cat "$RUNNER_TEMP/tigi-use-alias")
+          extra=""
+          tasks=":TMessagesProj_App:assembleAfatRelease"
+          if [ -n "$VERSION_CODE" ]; then
+            extra="$extra -PAPP_VERSION_CODE=$VERSION_CODE"
+          fi
+          if [ "$RELEASE" = "true" ]; then
+            extra="$extra -PTIGI_ABIS=arm64-v8a,armeabi-v7a"
+            tasks="$tasks :TMessagesProj_App:bundleBundleAfatRelease"
+          fi
           set -o pipefail
-          ./gradlew --no-daemon --stacktrace :TMessagesProj_App:assembleAfatRelease \
-            -PRELEASE_STORE_PASSWORD="$pw" -PRELEASE_KEY_PASSWORD="$pw" -PRELEASE_KEY_ALIAS=tigi 2>&1 | tee build.log
+          ./gradlew --no-daemon --stacktrace $tasks $extra \
+            -PRELEASE_STORE_PASSWORD="$pw" -PRELEASE_KEY_PASSWORD="$pw" -PRELEASE_KEY_ALIAS="$alias" 2>&1 | tee build.log
 
       - name: Report build errors
         if: failure()
@@ -94,3 +162,13 @@ jobs:
         with:
           name: tigi-apk
           path: TMessagesProj_App/build/outputs/apk/afat/release/*.apk
+
+      - name: Upload release bundle and R8 mapping
+        if: ${{ inputs.release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tigi-release
+          path: |
+            TMessagesProj_App/build/outputs/bundle/bundleAfatRelease/*.aab
+            TMessagesProj_App/build/outputs/mapping/**/mapping.txt
+          retention-days: 90

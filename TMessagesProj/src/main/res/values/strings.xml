@@ -10645,6 +10645,9 @@
     <string name="TigiPostUnsupported">This post can\'t be shown here.</string>
     <string name="TigiMute">Mute</string>
     <string name="TigiRetry">Try again</string>
+    <string name="TigiLiveBadge">LIVE</string>
+    <string name="TigiLiveJoin">Join the live stream</string>
+    <string name="TigiLiveNoRights">You can\'t start a live stream in this channel.</string>
     <string name="TigiProfilePosts">Posts</string>
     <string name="TigiMyPosts">My posts</string>
     <string name="TigiProfileFollowers">Followers</string>

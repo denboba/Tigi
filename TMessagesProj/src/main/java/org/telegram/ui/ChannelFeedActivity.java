@@ -19,6 +19,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -54,6 +55,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
     private TextView subtitleView;
     private ImageView chatButton;
     private TextView joinButton;
+    private TextView liveButton;
 
     public ChannelFeedActivity(Bundle args) {
         super(args);
@@ -72,11 +74,28 @@ public class ChannelFeedActivity extends TigiFeedBase {
             }
         }
         chat = getMessagesController().getChat(chatId);
-        return chat != null && super.onFragmentCreate();
+        if (chat == null || !super.onFragmentCreate()) {
+            return false;
+        }
+        getNotificationCenter().addObserver(this, NotificationCenter.groupCallUpdated);
+        getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
+        return true;
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.groupCallUpdated || id == NotificationCenter.updateInterfaces) {
+            // live started, ended or its viewer count changed; joined or left the channel
+            updateJoinButton();
+            return;
+        }
+        super.didReceivedNotification(id, account, args);
     }
 
     @Override
     public void onFragmentDestroy() {
+        getNotificationCenter().removeObserver(this, NotificationCenter.groupCallUpdated);
+        getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
         if (requestId != 0) {
             getConnectionsManager().cancelRequest(requestId, true);
             requestId = 0;
@@ -136,6 +155,17 @@ public class ChannelFeedActivity extends TigiFeedBase {
         names.setOnClickListener(openInfo);
         names.setContentDescription(chat.title);
 
+        liveButton = new TextView(context);
+        liveButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        liveButton.setTypeface(AndroidUtilities.bold());
+        liveButton.setTextColor(0xFFFFFFFF);
+        liveButton.setGravity(Gravity.CENTER);
+        liveButton.setPadding(dp(10), 0, dp(10), 0);
+        liveButton.setBackground(Theme.createRoundRectDrawable(dp(8), 0xFFE53935));
+        liveButton.setContentDescription(LocaleController.getString(R.string.TigiLiveJoin));
+        liveButton.setOnClickListener(v -> TigiLive.join(this, chat));
+        row.addView(liveButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30, Gravity.CENTER_VERTICAL, 6, 0, 0, 0));
+
         joinButton = new TextView(context);
         joinButton.setText(LocaleController.getString(R.string.TigiJoin));
         joinButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -186,6 +216,14 @@ public class ChannelFeedActivity extends TigiFeedBase {
         final TLRPC.Chat current = getMessagesController().getChat(chatId);
         if (current != null) {
             chat = current;
+        }
+        if (TigiLive.isLive(chat)) {
+            // loads the viewer count for the badge
+            getMessagesController().getGroupCall(chatId, true);
+            liveButton.setText(TigiLive.badgeText(currentAccount, chat));
+            liveButton.setVisibility(View.VISIBLE);
+        } else {
+            liveButton.setVisibility(View.GONE);
         }
         joinButton.setVisibility(ChatObject.isNotInChat(chat) && !chat.kicked && !chat.join_request ? View.VISIBLE : View.GONE);
     }

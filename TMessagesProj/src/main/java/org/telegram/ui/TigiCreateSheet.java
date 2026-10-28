@@ -48,8 +48,8 @@ public class TigiCreateSheet {
     private static final int ACTION_LIVE = 3;
     private static final int ACTION_TEXT = 4;
 
-    /** Set by the Live phase: until then the sheet does not offer it. */
-    static boolean liveAvailable = false;
+    /** Live uses Telegram's channel video chat / live stream, see TigiLive. */
+    static boolean liveAvailable = true;
 
     public static void show(BaseFragment fragment) {
         if (fragment == null || fragment.getParentActivity() == null) {
@@ -110,6 +110,9 @@ public class TigiCreateSheet {
                 case ACTION_STORY:
                     StoryRecorder.getInstance(fragment.getParentActivity(), account).open(null);
                     break;
+                case ACTION_LIVE:
+                    TigiLive.start(fragment);
+                    break;
             }
         });
         fragment.showDialog(builder.create());
@@ -123,8 +126,12 @@ public class TigiCreateSheet {
     }
 
     static void pickChannel(BaseFragment fragment, int composeMode, org.telegram.messenger.Utilities.Callback<TLRPC.Chat> onPicked) {
+        pickFrom(fragment, TigiPosting.postableChannels(fragment.getCurrentAccount()), onPicked);
+    }
+
+    /** The "Post as" picker over the given channels (also used to choose where to go live). */
+    static void pickFrom(BaseFragment fragment, ArrayList<TLRPC.Chat> channels, org.telegram.messenger.Utilities.Callback<TLRPC.Chat> onPicked) {
         final int account = fragment.getCurrentAccount();
-        final ArrayList<TLRPC.Chat> channels = TigiPosting.postableChannels(account);
         if (channels.isEmpty()) {
             askCreatePersonalChannel(fragment, onPicked);
             return;

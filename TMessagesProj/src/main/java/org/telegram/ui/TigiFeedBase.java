@@ -1156,6 +1156,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final TextView captionView;
         private final TextView moreView;
         private final TextView statusView;
+        private TextView liveBadge;
         private final TextView forwardedView;
         private final LinearLayout fallbackBox;
         private final TextView fallbackLabel;
@@ -1206,6 +1207,21 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                     onHeaderClicked(post);
                 }
             });
+            liveBadge = new TextView(context);
+            liveBadge.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+            liveBadge.setTypeface(AndroidUtilities.bold());
+            liveBadge.setTextColor(0xFFFFFFFF);
+            liveBadge.setGravity(Gravity.CENTER);
+            liveBadge.setPadding(dp(8), 0, dp(8), 0);
+            liveBadge.setMinHeight(dp(24));
+            liveBadge.setBackground(Theme.createRoundRectDrawable(dp(6), 0xFFE53935));
+            liveBadge.setVisibility(GONE);
+            liveBadge.setOnClickListener(v -> {
+                if (post != null) {
+                    TigiLive.join(TigiFeedBase.this, post.chat);
+                }
+            });
+            headerRow.addView(liveBadge, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 24, Gravity.CENTER_VERTICAL, 6, 0, 0, 0));
             final ImageView moreButton = new ImageView(context);
             moreButton.setScaleType(ImageView.ScaleType.CENTER);
             moreButton.setImageResource(R.drawable.ic_ab_other);
@@ -1471,6 +1487,13 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 nameView.setText(post.chat.title);
             }
             timeView.setText(LocaleController.stringForMessageListDate(post.date));
+            if (TigiLive.isLive(post.chat)) {
+                liveBadge.setText(TigiLive.badgeText(currentAccount, post.chat));
+                liveBadge.setContentDescription(LocaleController.getString(R.string.TigiLiveJoin));
+                liveBadge.setVisibility(VISIBLE);
+            } else {
+                liveBadge.setVisibility(GONE);
+            }
 
             if (post.media.isEmpty()) {
                 mediaFrame.setVisibility(GONE);

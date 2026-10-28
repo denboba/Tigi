@@ -5,6 +5,8 @@ import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.lerp;
 
 import android.content.Context;
+import android.widget.ImageView;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -252,6 +254,11 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     private boolean needUpdateBackupViewColor;
 
     private void updateColors() {
+        if (isActionTab) {
+            // the white icon sits on its own gradient, it does not follow the selection colors
+            imageView.setColorFilter(new PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN));
+            return;
+        }
         final int color = ColorUtils.blendARGB(colorDefault, colorSelected, isSelectedAnimator.getFloatValue());
         final int colorText = ColorUtils.blendARGB(colorDefault, colorSelectedText, isSelectedAnimator.getFloatValue());
 
@@ -432,6 +439,30 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         return tab;
     }
 
+    private boolean isActionTab;
+
+    public boolean isActionTab() {
+        return isActionTab;
+    }
+
+    /** Tigi: a button in the tab bar (the centre "+"), not a page; drawn as a white icon on a gradient pill. */
+    public static GlassTabView createActionTab(Context context, Theme.ResourcesProvider resourcesProvider, @DrawableRes int icon, @StringRes int contentDescription) {
+        GlassTabView tab = new GlassTabView(context);
+        tab.resourcesProvider = resourcesProvider;
+        tab.isActionTab = true;
+        tab.skipDrawSelector = true;
+        tab.textView.setVisibility(GONE);
+        tab.setContentDescription(LocaleController.getString(contentDescription));
+        tab.imageView.setImageResource(icon);
+        tab.imageView.setScaleType(ImageView.ScaleType.CENTER);
+        final GradientDrawable pill = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF8B5CF6, 0xFFEC4899});
+        pill.setCornerRadius(dp(16));
+        tab.imageView.setBackground(pill);
+        tab.imageView.setLayoutParams(LayoutHelper.createFrame(52, 34, Gravity.CENTER));
+        tab.updateColors();
+        return tab;
+    }
+
     public void updateUserAvatar(int currentAccount) {
         TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(UserConfig.getInstance(currentAccount).getClientUserId());
         AvatarDrawable avatarDrawable = new AvatarDrawable(user);
@@ -564,6 +595,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         WALLET(R.raw.tab_wallet, R.raw.tab_wallet_reverse),
         LINK(TabAnimationType.STATIC, R.drawable.tabs_link_24),
         HOME(TabAnimationType.STATIC, R.drawable.tabs_home_24),
+        REELS(TabAnimationType.STATIC, R.drawable.tigi_reels_24),
         ARTICLE(R.raw.tab_article, R.raw.tab_article_reverse),
         GRAM(R.raw.gram, R.raw.gram_reverse),
 

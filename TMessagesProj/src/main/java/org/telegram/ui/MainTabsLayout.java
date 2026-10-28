@@ -256,12 +256,27 @@ public class MainTabsLayout extends AnimatedLinearLayout {
 
 
     public void setTabSelected(View tab, boolean animated) {
+        if (isActionTab(tab)) {
+            // Tigi: a button ("+") is never the selected tab, keep the current selection
+            return;
+        }
         for (int a = 0, N = getChildCount(); a < N; a++) {
             final View child = getChildAt(a);
-            if (child instanceof GlassTabView) {
+            if (child instanceof GlassTabView && !isActionTab(child)) {
                 ((GlassTabView) child).setSelected(child == tab, animated);
             }
         }
+    }
+
+    private static boolean isActionTab(View view) {
+        return view instanceof GlassTabView && ((GlassTabView) view).isActionTab();
+    }
+
+    private Runnable onSelectionReset;
+
+    /** Tigi: called when a long-press slide over the bar ends without opening a page, to restore the real selection. */
+    public void setOnSelectionReset(Runnable onSelectionReset) {
+        this.onSelectionReset = onSelectionReset;
     }
 
     private View findSelectedTab() {
@@ -294,7 +309,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
                 continue;
             }
 
-            if (child instanceof GlassTabView) {
+            if (child instanceof GlassTabView && !isActionTab(child)) {
                 ((GlassTabView) child).setSkipDrawSelector(skipDrawSelector);
             }
         }
@@ -402,7 +417,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
                 animatedLongSelectedViewCenterX = selected.getX() + selected.getWidth() / 2f;
                 animatedLongSelectedViewOffsetX = animatedLongSelectedViewCenterX - x;
                 selectedTabPositionOffsetX.animateToFinalPosition(0);
-                if (selected != found && found != null) {
+                if (selected != found && found != null && !isActionTab(found)) {
                     found.performClick();
                 }
             }
@@ -491,8 +506,10 @@ public class MainTabsLayout extends AnimatedLinearLayout {
             checkLongMove(x, y, false, true);
             isInLongPress = false;
             AndroidUtilities.runOnUIThread(restoreDrawSelector, 450);
-            if (lastLongSelectedView != null) {
+            if (lastLongSelectedView != null && !isActionTab(lastLongSelectedView)) {
                 lastLongSelectedView.performClick();
+            } else if (onSelectionReset != null) {
+                onSelectionReset.run();
             }
             lastLongSelectedView = null;
             invalidate();
@@ -506,6 +523,9 @@ public class MainTabsLayout extends AnimatedLinearLayout {
             isInLongPress = false;
             AndroidUtilities.runOnUIThread(restoreDrawSelector, 450);
             lastLongSelectedView = null;
+            if (onSelectionReset != null) {
+                onSelectionReset.run();
+            }
             invalidate();
             longTouchEnd();
         }

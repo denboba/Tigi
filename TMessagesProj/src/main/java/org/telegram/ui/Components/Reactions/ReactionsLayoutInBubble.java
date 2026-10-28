@@ -1574,6 +1574,10 @@ public class ReactionsLayoutInBubble {
         int currentAccount;
         long dialogId;
 
+        private static boolean isHeart(ReactionButton button) {
+            return button.visibleReaction != null && button.visibleReaction.emojicon != null && button.visibleReaction.emojicon.startsWith("\u2764");
+        }
+
         @Override
         public int compare(ReactionButton o1, ReactionButton o2) {
             if (dialogId >= 0) {
@@ -1590,7 +1594,14 @@ public class ReactionsLayoutInBubble {
             } else {
                 if (o1.paid != o2.paid) {
                     return o1.paid ? -1 : 1;
-                } else if (o1.realCount != o2.realCount) {
+                }
+                // Tigi: in channels and groups the heart always comes first, then the most used
+                final boolean heart1 = isHeart(o1);
+                final boolean heart2 = isHeart(o2);
+                if (heart1 != heart2) {
+                    return heart1 ? -1 : 1;
+                }
+                if (o1.realCount != o2.realCount) {
                     return o2.realCount - o1.realCount;
                 }
             }

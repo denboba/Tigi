@@ -5,6 +5,10 @@ on:
   push:
     branches: [tigi-rebrand, tigi-cards]
 
+concurrency:
+  group: tigi-build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest

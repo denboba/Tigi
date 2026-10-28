@@ -1555,6 +1555,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private boolean forcedLayout;
     public boolean isAvatarVisible;
     private boolean isThreadPost;
+    private boolean isTigiCardMedia(MessageObject messageObject, TLRPC.PhotoSize photoObject) {
+        return photoObject != null && messageObject != null && messageObject.getDialogId() < 0 && (
+            messageObject.type == MessageObject.TYPE_PHOTO ||
+            messageObject.type == MessageObject.TYPE_EXTENDED_MEDIA_PREVIEW ||
+            messageObject.type == MessageObject.TYPE_VIDEO ||
+            messageObject.type == MessageObject.TYPE_GIF
+        );
+    }
+
     private boolean drawBackground = true;
     private int substractBackgroundHeight;
     private boolean allowAssistant;
@@ -9819,7 +9828,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         if (AndroidUtilities.isTablet()) {
                             photoWidth = (int) (AndroidUtilities.getMinTabletSide() * 0.7f);
                         } else {
-                            if (
+                            if (isTigiCardMedia(messageObject, currentPhotoObject)) {
+                                // Tigi: photos and videos in channels and groups use the full card width
+                                photoWidth = Math.min(getParentWidth(), AndroidUtilities.displaySize.y) - dp(32 + (checkNeedDrawShareButton(messageObject) ? 10 : 0));
+                                useFullWidth = true;
+                            } else if (
                                 currentPhotoObject != null && (
                                     messageObject.type == MessageObject.TYPE_PHOTO ||
                                     messageObject.type == MessageObject.TYPE_EXTENDED_MEDIA_PREVIEW ||

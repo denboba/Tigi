@@ -1465,7 +1465,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             captionView.setMovementMethod(captionLinks);
             // a tap that is not on a link opens or closes a long caption
             captionView.setOnClickListener(v -> {
-                if (moreView.getVisibility() == VISIBLE) {
+                if (FeedCell.this.moreView.getVisibility() == VISIBLE) {
                     captionExpanded = !captionExpanded;
                     updateCaption();
                 }

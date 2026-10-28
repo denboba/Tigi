@@ -9829,8 +9829,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             photoWidth = (int) (AndroidUtilities.getMinTabletSide() * 0.7f);
                         } else {
                             if (isTigiCardMedia(messageObject, currentPhotoObject)) {
-                                // Tigi: photos and videos in channels and groups use the full card width
-                                photoWidth = Math.min(getParentWidth(), AndroidUtilities.displaySize.y) - dp(32 + (checkNeedDrawShareButton(messageObject) ? 10 : 0));
+                                // Tigi: photos and videos in channels and groups use the full card width, also when portrait.
+                                // Same margins as Telegram's own full-width (landscape) case, so the avatar, the share
+                                // button and outgoing bubbles still fit on screen.
+                                photoWidth = Math.min(getParentWidth(), AndroidUtilities.displaySize.y) - dp(64 + (checkNeedDrawShareButton(messageObject) ? 10 : 0));
                                 useFullWidth = true;
                             } else if (
                                 currentPhotoObject != null && (
@@ -10065,6 +10067,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                 h += (int) Math.ceil(maxHeight * currentPosition.siblingHeights[a]);
                             }
                             h += (currentPosition.maxY - currentPosition.minY) * Math.round(7 * AndroidUtilities.density); //TODO fix
+                        } else if (currentMessagesGroup.tigiStack && w > 0) {
+                            // Tigi: one photo per row, as tall as its own aspect ratio needs at the real width
+                            h = (int) Math.ceil(w / MessageObject.GroupedMessages.tigiStackAspect(currentPosition.aspectRatio));
                         } else {
                             h = (int) Math.ceil(maxHeight * currentPosition.ph);
                         }

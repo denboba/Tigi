@@ -1261,6 +1261,8 @@ public class MessageObject {
         public MessageObject captionMessage;
         public boolean isDocuments;
         public boolean captionAbove;
+        // Tigi: one photo per row; the cell sizes each row from the real photo width and aspect ratio
+        public boolean tigiStack;
 
         public int cachedWidthForCaption = -1;
 
@@ -1310,11 +1312,20 @@ public class MessageObject {
 
         public boolean reversed;
 
+        /** Aspect ratio (w/h) a stacked album row is shown with: the photo's own, kept between 4:5 and 16:9. */
+        public static float tigiStackAspect(float aspectRatio) {
+            if (!(aspectRatio > 0)) {
+                return 1f;
+            }
+            return Math.max(0.8f, Math.min(16f / 9f, aspectRatio));
+        }
+
         public void calculate() {
             posArray.clear();
             positions.clear();
             positionsArray.clear();
             captionMessage = null;
+            tigiStack = false;
 
             maxSizeWidth = 800;
             int firstSpanAdditionalSize = 200;
@@ -1429,7 +1440,7 @@ public class MessageObject {
             }
 
             // Tigi: albums in channels and groups are one big photo per row, like an Instagram feed
-            final boolean tigiStack = !isDocuments && count >= 2 && messages.get(0) != null && messages.get(0).getDialogId() < 0;
+            tigiStack = !isDocuments && count >= 2 && messages.get(0) != null && messages.get(0).getDialogId() < 0;
 
             int minHeight = dp(120);
             int minWidth = (int) (dp(120) / (Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) / (float) maxSizeWidth));
@@ -1441,14 +1452,11 @@ public class MessageObject {
             float minH = dp(100) / maxSizeHeight;
 
             if (tigiStack) {
-                // keep the real aspect ratio of every photo, between 16:9 and 4:5
-                final float maxHeightPx = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) * 0.5f;
-                final float unitToPx = AndroidUtilities.displaySize.x / 1000f;
-                final float scale = unitToPx * maxSizeHeight / maxHeightPx;
+                // Rough heights only (this code does not know the real width on tablets, in landscape or split screen);
+                // ChatMessageCell recomputes each row from its real width, see tigiStackHeight.
                 for (int a = 0; a < count; a++) {
                     final GroupedMessagePosition pos = posArray.get(a);
-                    final float rawUnits = maxSizeWidth / Math.max(0.1f, pos.aspectRatio);
-                    final float units = Math.max(maxSizeWidth * 0.56f, Math.min(maxSizeWidth * 1.25f, rawUnits));
+                    final float units = maxSizeWidth / tigiStackAspect(pos.aspectRatio);
                     int flags = POSITION_FLAG_LEFT | POSITION_FLAG_RIGHT;
                     if (a == 0) {
                         flags |= POSITION_FLAG_TOP;
@@ -1456,7 +1464,7 @@ public class MessageObject {
                     if (a == count - 1) {
                         flags |= POSITION_FLAG_BOTTOM;
                     }
-                    pos.set(0, 0, a, a, maxSizeWidth, Math.round(units) / maxSizeHeight * scale, flags);
+                    pos.set(0, 0, a, a, maxSizeWidth, Math.round(units) / maxSizeHeight, flags);
                 }
             } else if (count == 1) {
                 MessageObject.GroupedMessagePosition position1 = posArray.get(0);

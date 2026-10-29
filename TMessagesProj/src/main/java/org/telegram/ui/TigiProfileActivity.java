@@ -510,6 +510,17 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
     }
 
+    /** The own channel's subscribers (Telegram's member list); others' subscriber lists are private. */
+    private void openFollowers() {
+        if (chat == null || !ChatObject.canChangeChatInfo(chat)) {
+            return;
+        }
+        final Bundle args = new Bundle();
+        args.putLong("chat_id", chatId);
+        args.putInt("type", ChatUsersActivity.TYPE_USERS);
+        presentFragment(new ChatUsersActivity(args));
+    }
+
     private void openMessage() {
         final Bundle args = new Bundle();
         if (user != null) {
@@ -561,7 +572,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         private final TextView followersValue;
         private final TextView postsLabel;
         private final TextView followersLabel;
+        private final TextView followingValue;
+        private final TextView followingLabel;
         private final TextView nameView;
+        private final TextView usernameView;
         private final TextView aboutView;
         private final TextView primaryButton;
         private final TextView messageButton;
@@ -598,6 +612,14 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             followersLabel = (TextView) followers.getChildAt(1);
             followersLabel.setText(LocaleController.getString(R.string.TigiProfileFollowers));
             top.addView(followers, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+            followers.setOnClickListener(v -> openFollowers());
+            final LinearLayout following = counter(context);
+            followingValue = (TextView) following.getChildAt(0);
+            followingLabel = (TextView) following.getChildAt(1);
+            followingLabel.setText(LocaleController.getString(R.string.TigiProfileFollowingCount));
+            following.setOnClickListener(v -> presentFragment(new TigiFollowingActivity()));
+            following.setVisibility(self ? VISIBLE : GONE);
+            top.addView(following, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
             addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             nameView = new TextView(context);
@@ -605,6 +627,11 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             nameView.setTypeface(AndroidUtilities.bold());
             nameView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
             addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
+            usernameView = new TextView(context);
+            usernameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            usernameView.setSingleLine(true);
+            usernameView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+            addView(usernameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 1, 0, 0));
             aboutView = new TextView(context);
             aboutView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             aboutView.setAutoLinkMask(Linkify.WEB_URLS);
@@ -711,6 +738,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             followersValue.setTextColor(text);
             postsLabel.setTextColor(gray);
             followersLabel.setTextColor(gray);
+            followingValue.setTextColor(text);
+            followingLabel.setTextColor(gray);
+            usernameView.setTextColor(gray);
             nameView.setTextColor(text);
             aboutView.setTextColor(text);
             aboutView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText));
@@ -750,12 +780,16 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             primaryButton.setTextColor(0xFFFFFFFF);
             primaryButton.setBackground(TigiStyle.gradientPill(10));
             messageButton.setVisibility(GONE);
+            followingValue.setText(LocaleController.formatShortNumber(TigiPosting.followedChannels(currentAccount).size(), null));
         }
 
         void bind() {
             final TLRPC.ChatFull full = getMessagesController().getChatFull(chatId);
             avatar.bind();
             nameView.setText(user != null ? UserObject.getUserName(user) : chat.title);
+            final String username = user != null ? UserObject.getPublicUsername(user) : ChatObject.getPublicUsername(chat);
+            usernameView.setText(TextUtils.isEmpty(username) ? null : "@" + username);
+            usernameView.setVisibility(TextUtils.isEmpty(username) ? GONE : VISIBLE);
             if (self) {
                 bindSelf();
                 return;

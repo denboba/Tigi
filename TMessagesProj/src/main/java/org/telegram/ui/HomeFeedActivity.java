@@ -12,6 +12,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
@@ -106,6 +107,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (storiesRow != null) {
             // read state changes while the story viewer was open
             storiesRow.update();
+        }
+        if (BuildVars.TIGI_POST) {
+            TigiPosting.archiveOwnChannelOnce(currentAccount);
         }
         if (posts.isEmpty() || System.currentTimeMillis() - lastLoadTime > RELOAD_AFTER_MS) {
             loadFeed();
@@ -247,6 +251,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             return;
         }
         if (id == NotificationCenter.dialogsNeedReload) {
+            if (BuildVars.TIGI_POST) {
+                TigiPosting.archiveOwnChannelOnce(currentAccount);
+            }
             // on a cold start the chat list arrives after this tab was created
             if (posts.isEmpty() && lastLoadTime == 0 && !loading && !isDead()) {
                 loadFeed();

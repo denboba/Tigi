@@ -26,6 +26,7 @@ public class TigiPosting {
 
     private static final String KEY_LAST = "tigi_post_channel";
     private static final String KEY_OWN = "tigi_own_channel";
+    private static final String KEY_ARCHIVED = "tigi_own_channel_archived";
 
     private static boolean creating;
 
@@ -86,6 +87,27 @@ public class TigiPosting {
         }
         final TLRPC.Chat last = MessagesController.getInstance(account).getChat(prefs(account).getLong(KEY_LAST, 0));
         return canPostTo(last) ? last : null;
+    }
+
+    /**
+     * The own channel is how posts work, not a chat the user made: it goes to the archive once, so "Channel created"
+     * does not sit in the chat list. Done only once, so a user who takes it out of the archive keeps it there.
+     */
+    public static void archiveOwnChannelOnce(int account) {
+        final long ownId = prefs(account).getLong(KEY_OWN, 0);
+        if (ownId == 0 || prefs(account).getLong(KEY_ARCHIVED, 0) == ownId) {
+            return;
+        }
+        final MessagesController controller = MessagesController.getInstance(account);
+        final TLRPC.Dialog dialog = controller.dialogs_dict.get(-ownId);
+        if (dialog == null) {
+            // not in the loaded chat list yet; try again next time
+            return;
+        }
+        prefs(account).edit().putLong(KEY_ARCHIVED, ownId).apply();
+        if (dialog.folder_id == 0) {
+            controller.addDialogToFolder(-ownId, 1, -1, 0);
+        }
     }
 
     public static void setLastChannel(int account, long chatId) {

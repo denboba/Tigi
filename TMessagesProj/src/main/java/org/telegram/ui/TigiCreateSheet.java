@@ -72,7 +72,7 @@ public class TigiCreateSheet {
             icons.add(R.drawable.msg_video);
             actions.add(ACTION_REEL);
         }
-        if (MessagesController.getInstance(account).storiesEnabled()) {
+        if (TigiPosting.storiesOffered(account)) {
             items.add(LocaleController.getString(R.string.TigiCreateStory));
             icons.add(R.drawable.msg_camera);
             actions.add(ACTION_STORY);
@@ -120,7 +120,7 @@ public class TigiCreateSheet {
                     pickFrom(fragment, TigiPosting.postableChannels(account), chat -> compose(fragment, chat, ChatActivity.TIGI_COMPOSE_MEDIA));
                     break;
                 case ACTION_STORY:
-                    StoryRecorder.getInstance(fragment.getParentActivity(), account).open(null);
+                    TigiPosting.openStoryRecorder(fragment);
                     break;
                 case ACTION_LIVE:
                     TigiLive.start(fragment);

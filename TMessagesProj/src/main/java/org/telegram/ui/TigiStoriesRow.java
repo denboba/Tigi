@@ -88,7 +88,7 @@ public class TigiStoriesRow extends HorizontalScrollView {
         // "Your story" first, as on Instagram: watch your own stories, or add one when posting stories is allowed
         final TLRPC.User self = UserConfig.getInstance(account).getCurrentUser();
         final boolean hasOwn = controller.hasSelfStories();
-        if (self != null && (hasOwn || MessagesController.getInstance(account).storiesEnabled())) {
+        if (self != null && (hasOwn || TigiPosting.storiesOffered(account))) {
             items.addView(createSelfItem(self, hasOwn, hasOwn && controller.hasUnreadStories(self.id)), LayoutHelper.createLinear(76, LayoutHelper.WRAP_CONTENT));
         }
         for (int i = 0; i < peerIds.size(); i++) {
@@ -136,7 +136,7 @@ public class TigiStoriesRow extends HorizontalScrollView {
             if (MessagesController.getInstance(fragment.getCurrentAccount()).getStoriesController().hasSelfStories()) {
                 fragment.getOrCreateStoryViewer().open(fragment.getParentActivity(), self.id, (dialogId, messageId, storyId, type, holder) -> false);
             } else {
-                StoryRecorder.getInstance(fragment.getParentActivity(), fragment.getCurrentAccount()).open(null);
+                TigiPosting.openStoryRecorder(fragment);
             }
         });
         return item;

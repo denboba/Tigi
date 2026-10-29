@@ -424,7 +424,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             nameView = new TextView(context);
-            nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
             nameView.setTypeface(AndroidUtilities.bold());
             nameView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
             addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
@@ -438,7 +438,11 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             buttons.setOrientation(HORIZONTAL);
             primaryButton = button(context);
             primaryButton.setOnClickListener(v -> {
-                if (ChatObject.isNotInChat(chat)) {
+                if (ChatObject.canChangeChatInfo(chat)) {
+                    final Bundle args = new Bundle();
+                    args.putLong("chat_id", chatId);
+                    presentFragment(new ChatEditActivity(args));
+                } else if (ChatObject.isNotInChat(chat)) {
                     join();
                 } else {
                     openMessage();
@@ -527,17 +531,17 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             nameView.setTextColor(text);
             aboutView.setTextColor(text);
             aboutView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText));
-            final int buttonBg = Theme.getColor(Theme.key_windowBackgroundGray);
-            messageButton.setTextColor(text);
-            messageButton.setBackground(Theme.createRoundRectDrawable(dp(10), buttonBg));
-            shareButton.setTextColor(text);
-            shareButton.setBackground(Theme.createRoundRectDrawable(dp(10), buttonBg));
-            infoButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
-            infoButton.setBackground(Theme.createRoundRectDrawable(dp(10), buttonBg));
-            postsTab.setTextColor(tab == TAB_POSTS ? text : gray);
-            reelsTab.setTextColor(tab == TAB_REELS ? text : gray);
-            postsTab.setBackground(tab == TAB_POSTS ? underline(text) : null);
-            reelsTab.setBackground(tab == TAB_REELS ? underline(text) : null);
+            final int accent = TigiStyle.accent();
+            messageButton.setTextColor(accent);
+            messageButton.setBackground(TigiStyle.tintedPill(10));
+            shareButton.setTextColor(accent);
+            shareButton.setBackground(TigiStyle.tintedPill(10));
+            infoButton.setColorFilter(new PorterDuffColorFilter(accent, PorterDuff.Mode.SRC_IN));
+            infoButton.setBackground(TigiStyle.tintedPill(10));
+            postsTab.setTextColor(tab == TAB_POSTS ? accent : gray);
+            reelsTab.setTextColor(tab == TAB_REELS ? accent : gray);
+            postsTab.setBackground(tab == TAB_POSTS ? underline(accent) : null);
+            reelsTab.setBackground(tab == TAB_REELS ? underline(accent) : null);
             bind();
         }
 
@@ -560,13 +564,20 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             final int followers = full != null && full.participants_count > 0 ? full.participants_count : chat.participants_count;
             followersValue.setText(followers > 0 ? LocaleController.formatShortNumber(followers, null) : "–");
             final boolean member = !ChatObject.isNotInChat(chat);
-            primaryButton.setText(LocaleController.getString(member ? R.string.TigiProfileFollowing : R.string.TigiJoin));
-            if (member) {
-                primaryButton.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-                primaryButton.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.getColor(Theme.key_windowBackgroundGray)));
+            final boolean canEdit = ChatObject.canChangeChatInfo(chat);
+            if (canEdit) {
+                // own (or administered) channel: Instagram's "Edit profile"
+                primaryButton.setText(LocaleController.getString(R.string.TigiProfileEdit));
+                primaryButton.setTextColor(0xFFFFFFFF);
+                primaryButton.setBackground(TigiStyle.gradientPill(10));
+            } else if (member) {
+                primaryButton.setText(LocaleController.getString(R.string.TigiProfileFollowing));
+                primaryButton.setTextColor(TigiStyle.accent());
+                primaryButton.setBackground(TigiStyle.tintedPill(10));
             } else {
-                primaryButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
-                primaryButton.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.getColor(Theme.key_featuredStickers_addButton)));
+                primaryButton.setText(LocaleController.getString(R.string.TigiProfileFollow));
+                primaryButton.setTextColor(0xFFFFFFFF);
+                primaryButton.setBackground(TigiStyle.gradientPill(10));
             }
             // a personal channel's owner is messaged directly, and "Following" opens the channel
             messageButton.setVisibility((user != null && !UserObject.isUserSelf(user)) || !member ? VISIBLE : GONE);

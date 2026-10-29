@@ -10664,6 +10664,8 @@
     <string name="TigiMyPosts">My posts</string>
     <string name="TigiProfileFollowers">Followers</string>
     <string name="TigiProfileFollowing">Following</string>
+    <string name="TigiProfileFollow">Follow</string>
+    <string name="TigiProfileEdit">Edit profile</string>
     <string name="TigiProfileMessage">Message</string>
     <string name="TigiProfileShare">Share</string>
     <string name="TigiProfileNoPosts">No posts yet.</string>

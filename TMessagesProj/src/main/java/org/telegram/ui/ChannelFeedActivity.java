@@ -214,8 +214,8 @@ public class ChannelFeedActivity extends TigiFeedBase {
         chatButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
         titleView.setTextColor(text);
         subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-        joinButton.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
-        joinButton.setBackground(Theme.createRoundRectDrawable(dp(18), Theme.getColor(Theme.key_featuredStickers_addButton)));
+        joinButton.setTextColor(0xFFFFFFFF);
+        joinButton.setBackground(TigiStyle.gradientPill(18));
     }
 
     private void updateJoinButton() {

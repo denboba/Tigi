@@ -1510,7 +1510,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             moreView = new TextView(context);
             moreView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             moreView.setTypeface(AndroidUtilities.bold());
-            moreView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            moreView.setTextColor(TigiStyle.accent());
             moreView.setPadding(0, dp(4), 0, dp(4));
             moreView.setVisibility(GONE);
             moreView.setOnClickListener(v -> {
@@ -1530,7 +1530,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             heartCountView.setTextColor(text);
             commentCountView.setTextColor(text);
             captionView.setTextColor(text);
-            moreView.setTextColor(gray);
+            moreView.setTextColor(TigiStyle.accent());
             commentButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
             shareButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
             forwardedView.setTextColor(gray);

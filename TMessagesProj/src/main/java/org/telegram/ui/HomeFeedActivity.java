@@ -61,10 +61,14 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
         title.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
+        storiesRow = new TigiStoriesRow(context, this);
+        header.addView(storiesRow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 0, 56, 0, 0));
+        storiesRow.update();
         return header;
     }
 
     private View headerView;
+    private TigiStoriesRow storiesRow;
 
     @Override
     protected void updateHeaderColors() {
@@ -99,6 +103,10 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     @Override
     public void onResume() {
         super.onResume();
+        if (storiesRow != null) {
+            // read state changes while the story viewer was open
+            storiesRow.update();
+        }
         if (posts.isEmpty() || System.currentTimeMillis() - lastLoadTime > RELOAD_AFTER_MS) {
             loadFeed();
         }
@@ -217,12 +225,14 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     @Override
     public boolean onFragmentCreate() {
         getNotificationCenter().addObserver(this, NotificationCenter.dialogsNeedReload);
+        getNotificationCenter().addObserver(this, NotificationCenter.storiesUpdated);
         return super.onFragmentCreate();
     }
 
     @Override
     public void onFragmentDestroy() {
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogsNeedReload);
+        getNotificationCenter().removeObserver(this, NotificationCenter.storiesUpdated);
         loadGeneration++;
         loading = false;
         super.onFragmentDestroy();
@@ -230,6 +240,12 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.storiesUpdated) {
+            if (storiesRow != null) {
+                storiesRow.update();
+            }
+            return;
+        }
         if (id == NotificationCenter.dialogsNeedReload) {
             // on a cold start the chat list arrives after this tab was created
             if (posts.isEmpty() && lastLoadTime == 0 && !loading && !isDead()) {

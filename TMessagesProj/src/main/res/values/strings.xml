@@ -10666,6 +10666,8 @@
     <string name="TigiProfileFollowing">Following</string>
     <string name="TigiProfileFollow">Follow</string>
     <string name="TigiProfileEdit">Edit profile</string>
+    <string name="TigiStoryUnread">New story from %1$s</string>
+    <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileMessage">Message</string>
     <string name="TigiProfileShare">Share</string>
     <string name="TigiProfileNoPosts">No posts yet.</string>

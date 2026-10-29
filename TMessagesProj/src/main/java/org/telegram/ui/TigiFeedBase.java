@@ -127,6 +127,33 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     protected void onNearEnd() {
     }
 
+    /**
+     * True when the header floats over the list and scrolls away with it (Instagram's Home): the list then runs
+     * under the header and gets the header's height as top padding; onListScrolled moves the header.
+     */
+    protected boolean headerScrollsWithList() {
+        return false;
+    }
+
+    /** dy of every list scroll, for screens whose header scrolls with the list. */
+    protected void onListScrolled(int dy) {
+    }
+
+    /** How far the list is scrolled from its very top, or Integer.MAX_VALUE once the first card is off screen. */
+    protected int listScrollFromTop() {
+        if (listView == null || layoutManager == null) {
+            return 0;
+        }
+        if (layoutManager.findFirstVisibleItemPosition() > 0) {
+            return Integer.MAX_VALUE;
+        }
+        final View first = layoutManager.findViewByPosition(0);
+        if (first == null) {
+            return posts.isEmpty() ? 0 : Integer.MAX_VALUE;
+        }
+        return Math.max(0, listView.getPaddingTop() - first.getTop());
+    }
+
     protected int bottomPadding() {
         return hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 32) : dp(24);
     }
@@ -405,9 +432,13 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         rootView = root;
         root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
 
+        final boolean floatingHeader = headerScrollsWithList();
+        final View header = createHeaderView(context);
         final LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.addView(createHeaderView(context), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (!floatingHeader) {
+            content.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
 
         final FrameLayout body = new FrameLayout(context);
         content.addView(body, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -426,6 +457,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 if (dy > 0 && layoutManager.findLastVisibleItemPosition() >= posts.size() - 3) {
                     onNearEnd();
                 }
+                onListScrolled(dy);
                 stopIfScrolledAway();
             }
 
@@ -450,6 +482,27 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         body.addView(shimmerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         root.addView(content, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        if (floatingHeader) {
+            // over the list; the list starts below it and scrolls under it
+            root.addView(header, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+            header.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                final int height = bottom - top;
+                if (height != oldBottom - oldTop && listView != null) {
+                    // not inside this layout pass
+                    listView.post(() -> {
+                        if (listView == null || listView.getPaddingTop() == height + dp(5)) {
+                            return;
+                        }
+                        final boolean atTop = listScrollFromTop() == 0;
+                        listView.setPadding(0, height + dp(5), 0, bottomPadding());
+                        shimmerView.setTopPadding(height);
+                        if (atTop) {
+                            layoutManager.scrollToPositionWithOffset(0, 0);
+                        }
+                    });
+                }
+            });
+        }
 
         installOverlay(root);
 

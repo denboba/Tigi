@@ -10669,6 +10669,8 @@
     <string name="TigiStoryUnread">New story from %1$s</string>
     <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileShareProfile">Share profile</string>
+    <string name="TigiYourStory">Your story</string>
+    <string name="TigiAddStory">Add to your story</string>
     <string name="TigiProfileAccount">Account and QR code</string>
     <string name="TigiProfileFirstPost">Share your first photo or video. Tap here to create a post.</string>
     <string name="TigiProfileMessage">Message</string>

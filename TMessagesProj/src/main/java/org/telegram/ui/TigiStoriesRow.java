@@ -20,6 +20,8 @@ import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.UserConfig;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -28,6 +30,7 @@ import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Stories.StoriesController;
+import org.telegram.ui.Stories.recorder.StoryRecorder;
 
 import java.util.ArrayList;
 
@@ -66,7 +69,7 @@ public class TigiStoriesRow extends HorizontalScrollView {
                     continue;
                 }
                 final long did = DialogObject.getPeerDialogId(stories.peer);
-                if (did != 0 && !peerIds.contains(did)) {
+                if (did != 0 && did != selfId() && !peerIds.contains(did)) {
                     peerIds.add(did);
                 }
             }
@@ -82,6 +85,12 @@ public class TigiStoriesRow extends HorizontalScrollView {
         peerIds.addAll(seen);
 
         items.removeAllViews();
+        // "Your story" first, as on Instagram: watch your own stories, or add one when posting stories is allowed
+        final TLRPC.User self = UserConfig.getInstance(account).getCurrentUser();
+        final boolean hasOwn = controller.hasSelfStories();
+        if (self != null && (hasOwn || MessagesController.getInstance(account).storiesEnabled())) {
+            items.addView(createSelfItem(self, hasOwn, hasOwn && controller.hasUnreadStories(self.id)), LayoutHelper.createLinear(76, LayoutHelper.WRAP_CONTENT));
+        }
         for (int i = 0; i < peerIds.size(); i++) {
             final long did = peerIds.get(i);
             final TLObject peer = MessagesController.getInstance(account).getUserOrChat(did);
@@ -91,6 +100,46 @@ public class TigiStoriesRow extends HorizontalScrollView {
             items.addView(createItem(peer, did, i < unread.size()), LayoutHelper.createLinear(76, LayoutHelper.WRAP_CONTENT));
         }
         setVisibility(items.getChildCount() > 0 ? VISIBLE : GONE);
+    }
+
+    private long selfId() {
+        return UserConfig.getInstance(fragment.getCurrentAccount()).getClientUserId();
+    }
+
+    private View createSelfItem(TLRPC.User self, boolean hasOwn, boolean unread) {
+        final LinearLayout item = (LinearLayout) createItem(self, self.id, unread);
+        final TextView nameView = (TextView) item.getChildAt(1);
+        nameView.setText(LocaleController.getString(R.string.TigiYourStory));
+        nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        final FrameLayout avatarFrame = (FrameLayout) item.getChildAt(0);
+        if (!hasOwn) {
+            // no ring, a "+" badge instead
+            avatarFrame.getChildAt(0).setVisibility(INVISIBLE);
+            final TextView plus = new TextView(getContext());
+            plus.setText("+");
+            plus.setTextColor(0xFFFFFFFF);
+            plus.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            plus.setTypeface(org.telegram.messenger.AndroidUtilities.bold());
+            plus.setGravity(Gravity.CENTER);
+            plus.setIncludeFontPadding(false);
+            final android.graphics.drawable.GradientDrawable badge = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.BL_TR, new int[]{TigiStyle.GRADIENT_START, TigiStyle.GRADIENT_END});
+            badge.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            badge.setStroke(dp(2), Theme.getColor(Theme.key_windowBackgroundWhite));
+            plus.setBackground(badge);
+            avatarFrame.addView(plus, LayoutHelper.createFrame(22, 22, Gravity.BOTTOM | Gravity.RIGHT, 0, 0, 4, 4));
+        }
+        item.setContentDescription(LocaleController.getString(hasOwn ? R.string.TigiYourStory : R.string.TigiAddStory));
+        item.setOnClickListener(v -> {
+            if (fragment.getParentActivity() == null) {
+                return;
+            }
+            if (MessagesController.getInstance(fragment.getCurrentAccount()).getStoriesController().hasSelfStories()) {
+                fragment.getOrCreateStoryViewer().open(fragment.getParentActivity(), self.id, (dialogId, messageId, storyId, type, holder) -> false);
+            } else {
+                StoryRecorder.getInstance(fragment.getParentActivity(), fragment.getCurrentAccount()).open(null);
+            }
+        });
+        return item;
     }
 
     private View createItem(TLObject peer, long did, boolean unread) {

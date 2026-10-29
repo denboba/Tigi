@@ -9,6 +9,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -47,11 +48,24 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     }
 
     @Override
+    protected boolean headerScrollsWithList() {
+        return true;
+    }
+
+    @Override
     protected View createHeaderView(Context context) {
+        // Instagram's Home: the stories row scrolls away with the posts, the title bar hides while scrolling down
+        // and comes back on the way up. Both float over the list, which uses the whole screen behind them.
         final FrameLayout header = new FrameLayout(context);
-        header.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        applyTopInset(header);
-        headerView = header;
+
+        storiesRow = new TigiStoriesRow(context, this);
+        storiesRow.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        header.addView(storiesRow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+
+        final FrameLayout bar = new FrameLayout(context);
+        titleBar = bar;
+        bar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        applyTopInset(bar);
         final TextView title = new TextView(context);
         titleView = title;
         title.setText(LocaleController.getString(R.string.AppName));
@@ -61,23 +75,77 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         title.setTypeface(AndroidUtilities.bold());
         title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
         title.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
-        storiesRow = new TigiStoriesRow(context, this);
-        header.addView(storiesRow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 0, 56, 0, 0));
+        bar.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
+        messagesButton = new ImageView(context);
+        messagesButton.setScaleType(ImageView.ScaleType.CENTER);
+        messagesButton.setImageResource(R.drawable.msg_message);
+        messagesButton.setContentDescription(LocaleController.getString(R.string.MainTabsChats));
+        messagesButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        messagesButton.setOnClickListener(v -> {
+            final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
+            if (tabs != null) {
+                tabs.openChatsTab();
+            }
+        });
+        bar.addView(messagesButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), 6, 4, 6, 0));
+        header.addView(bar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+        // the stories row sits right under the bar, whose height includes the status bar
+        bar.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) storiesRow.getLayoutParams();
+            if (params.topMargin != bottom - top) {
+                params.topMargin = bottom - top;
+                storiesRow.post(() -> storiesRow.setLayoutParams(params));
+            }
+        });
+
+        headerView = header;
+        updateHeaderColors();
         storiesRow.update();
         return header;
     }
 
     private View headerView;
+    private FrameLayout titleBar;
+    private ImageView messagesButton;
     private TigiStoriesRow storiesRow;
+    private float titleOffset;
+
+    @Override
+    protected void onListScrolled(int dy) {
+        if (titleBar == null || storiesRow == null) {
+            return;
+        }
+        final int scrolled = listScrollFromTop();
+        // stories move exactly with the first post
+        final int storiesSpace = storiesRow.getVisibility() == View.VISIBLE ? storiesRow.getHeight() + titleBar.getHeight() : 0;
+        storiesRow.setTranslationY(-Math.min(scrolled, storiesSpace));
+        // the bar slides up by its title part (the status bar strip stays) and returns when scrolling back
+        final int hideable = titleBar.getHeight() - titleBar.getPaddingTop();
+        titleOffset = Math.max(-hideable, Math.min(0, titleOffset - dy));
+        if (scrolled == 0) {
+            titleOffset = 0;
+        }
+        titleBar.setTranslationY(titleOffset);
+        final float shown = hideable > 0 ? 1f + titleOffset / hideable : 1f;
+        titleView.setAlpha(shown);
+        messagesButton.setAlpha(shown);
+        messagesButton.setEnabled(shown > 0.5f);
+    }
 
     @Override
     protected void updateHeaderColors() {
-        if (headerView != null) {
-            headerView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        final int background = Theme.getColor(Theme.key_windowBackgroundWhite);
+        if (titleBar != null) {
+            titleBar.setBackgroundColor(background);
+        }
+        if (storiesRow != null) {
+            storiesRow.setBackgroundColor(background);
         }
         if (titleView != null) {
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+        }
+        if (messagesButton != null) {
+            messagesButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
         }
     }
 

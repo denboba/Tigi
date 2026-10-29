@@ -296,6 +296,8 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
 
     /* loading */
 
+    private boolean triedSuggestions;
+
     private void collectChannels() {
         cursors.clear();
         final ArrayList<TLRPC.Dialog> dialogs = getMessagesController().getAllDialogs();
@@ -318,6 +320,27 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         }
         if (cursors.isEmpty()) {
             collectChannels();
+            if (cursors.isEmpty() && !triedSuggestions && getMessagesController().dialogsLoaded) {
+                // follows no channels: reels from channels Telegram recommends
+                triedSuggestions = true;
+                loading = true;
+                updateEmptyView();
+                TigiPosting.loadSuggestedChannels(currentAccount, suggested -> {
+                    loading = false;
+                    if (isDead()) {
+                        return;
+                    }
+                    for (int i = 0; i < suggested.size() && cursors.size() < MAX_CHANNELS; i++) {
+                        cursors.add(new ChannelCursor(suggested.get(i)));
+                    }
+                    if (cursors.isEmpty()) {
+                        updateEmptyView();
+                    } else {
+                        loadMore();
+                    }
+                });
+                return;
+            }
             if (cursors.isEmpty()) {
                 updateEmptyView();
                 return;

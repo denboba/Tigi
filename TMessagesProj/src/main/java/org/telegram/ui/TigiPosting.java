@@ -68,6 +68,92 @@ public class TigiPosting {
         return out;
     }
 
+    /** Channels the user follows (joined broadcast channels from the chat list), without the own Tigi channel. */
+    public static ArrayList<TLRPC.Chat> followedChannels(int account) {
+        final MessagesController controller = MessagesController.getInstance(account);
+        final long ownId = prefs(account).getLong(KEY_OWN, 0);
+        final ArrayList<TLRPC.Chat> out = new ArrayList<>();
+        final ArrayList<TLRPC.Dialog> dialogs = controller.getAllDialogs();
+        for (int i = 0; i < dialogs.size(); i++) {
+            final TLRPC.Dialog dialog = dialogs.get(i);
+            if (dialog == null || !DialogObject.isChatDialog(dialog.id)) {
+                continue;
+            }
+            final TLRPC.Chat chat = controller.getChat(-dialog.id);
+            if (chat != null && chat.id != ownId && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isNotInChat(chat) && !chat.monoforum && !out.contains(chat)) {
+                out.add(chat);
+            }
+        }
+        return out;
+    }
+
+    private static final ArrayList<TLRPC.Chat>[] suggested = new ArrayList[UserConfig.MAX_ACCOUNT_COUNT];
+    private static final long[] suggestedTime = new long[UserConfig.MAX_ACCOUNT_COUNT];
+
+    /**
+     * Public channels Telegram recommends to this account (channels.getChannelRecommendations without a channel),
+     * for people who follow none yet. Cached for 30 minutes; an empty list when there are none or on error.
+     */
+    public static void loadSuggestedChannels(int account, Utilities.Callback<ArrayList<TLRPC.Chat>> onDone) {
+        if (suggested[account] != null && System.currentTimeMillis() - suggestedTime[account] < 30 * 60 * 1000L) {
+            onDone.run(new ArrayList<>(suggested[account]));
+            return;
+        }
+        final TLRPC.TL_channels_getChannelRecommendations req = new TLRPC.TL_channels_getChannelRecommendations();
+        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            final ArrayList<TLRPC.Chat> out = new ArrayList<>();
+            if (response instanceof TLRPC.messages_Chats) {
+                final ArrayList<TLRPC.Chat> chats = ((TLRPC.messages_Chats) response).chats;
+                MessagesController.getInstance(account).putChats(chats, false);
+                for (int i = 0; i < chats.size(); i++) {
+                    final TLRPC.Chat chat = chats.get(i);
+                    if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.restricted) {
+                        out.add(chat);
+                    }
+                }
+                suggested[account] = new ArrayList<>(out);
+                suggestedTime[account] = System.currentTimeMillis();
+            }
+            onDone.run(out);
+        }));
+    }
+
+    /** Story posting is not switched off for the account (it may still need Premium; the server decides). */
+    public static boolean storiesOffered(int account) {
+        return !"disabled".equals(MessagesController.getInstance(account).storiesPosting);
+    }
+
+    /**
+     * Opens Telegram's story camera after asking the server whether this account may post a story now, so the
+     * answer is the real one (Telegram's local "premium only" setting can be stale). A refusal is explained.
+     */
+    public static void openStoryRecorder(org.telegram.ui.ActionBar.BaseFragment fragment) {
+        final int account = fragment.getCurrentAccount();
+        if (fragment.getParentActivity() == null) {
+            return;
+        }
+        final org.telegram.tgnet.tl.TL_stories.TL_stories_canSendStory req = new org.telegram.tgnet.tl.TL_stories.TL_stories_canSendStory();
+        req.peer = MessagesController.getInstance(account).getInputPeer(UserConfig.getInstance(account).getClientUserId());
+        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (fragment.getParentActivity() == null) {
+                return;
+            }
+            if (error == null) {
+                org.telegram.ui.Stories.recorder.StoryRecorder.getInstance(fragment.getParentActivity(), account).open(null);
+                return;
+            }
+            final String text;
+            if ("PREMIUM_ACCOUNT_REQUIRED".equalsIgnoreCase(error.text)) {
+                text = LocaleController.getString(R.string.TigiStoryNeedsPremium);
+            } else if (error.text != null && error.text.startsWith("STORIES_TOO_MUCH")) {
+                text = LocaleController.getString(R.string.TigiStoryTooMany);
+            } else {
+                text = errorText(error);
+            }
+            org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, text).show();
+        }), ConnectionsManager.RequestFlagDoNotWaitFloodWait);
+    }
+
     public static boolean canPostTo(TLRPC.Chat chat) {
         return chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.left && !chat.kicked
             && !ChatObject.isNotInChat(chat) && ChatObject.canPost(chat) && !chat.monoforum;

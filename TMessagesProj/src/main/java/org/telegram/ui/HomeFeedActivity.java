@@ -10,6 +10,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -37,6 +38,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     private static final int MAX_POSTS = 60;
     private static final long RELOAD_AFTER_MS = 2 * 60 * 1000L;
     private static final int PARALLEL_REQUESTS = 3;
+    private static final int DISCOVER_CHANNELS = 12;
 
     private boolean loading;
     private int loadGeneration;
@@ -58,9 +60,14 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         // and comes back on the way up. Both float over the list, which uses the whole screen behind them.
         final FrameLayout header = new FrameLayout(context);
 
+        // the part that scrolls with the posts: stories, and "Suggested for you" while the user follows no channels
+        scrollingPart = new LinearLayout(context);
+        scrollingPart.setOrientation(LinearLayout.VERTICAL);
         storiesRow = new TigiStoriesRow(context, this);
-        storiesRow.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        header.addView(storiesRow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+        scrollingPart.addView(storiesRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        suggestedRow = new TigiSuggestedRow(context, this, () -> followedSinceLoad = true);
+        scrollingPart.addView(suggestedRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        header.addView(scrollingPart, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
 
         final FrameLayout bar = new FrameLayout(context);
         titleBar = bar;
@@ -91,10 +98,10 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         header.addView(bar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
         // the stories row sits right under the bar, whose height includes the status bar
         bar.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) storiesRow.getLayoutParams();
+            final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) scrollingPart.getLayoutParams();
             if (params.topMargin != bottom - top) {
                 params.topMargin = bottom - top;
-                storiesRow.post(() -> storiesRow.setLayoutParams(params));
+                scrollingPart.post(() -> scrollingPart.setLayoutParams(params));
             }
         });
 
@@ -108,17 +115,36 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     private FrameLayout titleBar;
     private ImageView messagesButton;
     private TigiStoriesRow storiesRow;
+    private LinearLayout scrollingPart;
+    private TigiSuggestedRow suggestedRow;
+    private boolean discover;
+    private boolean followedSinceLoad;
     private float titleOffset;
+
+    /** Discover mode: the feed shows suggested channels' posts, with the follow row on top. */
+    private void setDiscover(boolean on) {
+        discover = on;
+        if (suggestedRow != null) {
+            if (on) {
+                TigiPosting.loadSuggestedChannels(currentAccount, suggestedRow::setChannels);
+            } else {
+                suggestedRow.setChannels(null);
+            }
+        }
+        if (on) {
+            followedSinceLoad = false;
+        }
+    }
 
     @Override
     protected void onListScrolled(int dy) {
-        if (titleBar == null || storiesRow == null) {
+        if (titleBar == null || scrollingPart == null) {
             return;
         }
         final int scrolled = listScrollFromTop();
-        // stories move exactly with the first post
-        final int storiesSpace = storiesRow.getVisibility() == View.VISIBLE ? storiesRow.getHeight() + titleBar.getHeight() : 0;
-        storiesRow.setTranslationY(-Math.min(scrolled, storiesSpace));
+        // stories (and suggestions) move exactly with the first post
+        final int storiesSpace = scrollingPart.getHeight() + titleBar.getHeight();
+        scrollingPart.setTranslationY(-Math.min(scrolled, storiesSpace));
         // the bar slides up by its title part (the status bar strip stays) and returns when scrolling back
         final int hideable = titleBar.getHeight() - titleBar.getPaddingTop();
         titleOffset = Math.max(-hideable, Math.min(0, titleOffset - dy));
@@ -138,8 +164,11 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (titleBar != null) {
             titleBar.setBackgroundColor(background);
         }
-        if (storiesRow != null) {
-            storiesRow.setBackgroundColor(background);
+        if (scrollingPart != null) {
+            scrollingPart.setBackgroundColor(background);
+        }
+        if (suggestedRow != null) {
+            suggestedRow.updateColors();
         }
         if (titleView != null) {
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
@@ -179,7 +208,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (BuildVars.TIGI_POST) {
             TigiPosting.archiveOwnChannelOnce(currentAccount);
         }
-        if (posts.isEmpty() || System.currentTimeMillis() - lastLoadTime > RELOAD_AFTER_MS) {
+        if (posts.isEmpty() || System.currentTimeMillis() - lastLoadTime > RELOAD_AFTER_MS || (discover && followedSinceLoad)) {
             loadFeed();
         }
     }
@@ -228,11 +257,40 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         }
         noChannels = channels.isEmpty() && (!dialogs.isEmpty() || getMessagesController().dialogsLoaded);
         if (channels.isEmpty()) {
-            updateEmptyView();
+            if (noChannels) {
+                // follows nothing yet: a Discover feed from channels Telegram recommends, instead of an empty page
+                loadDiscover();
+            } else {
+                updateEmptyView();
+            }
             return;
         }
         noChannels = false;
+        setDiscover(false);
+        loadPostsFrom(channels);
+    }
 
+    private void loadDiscover() {
+        loading = true;
+        final int generation = ++loadGeneration;
+        updateEmptyView();
+        TigiPosting.loadSuggestedChannels(currentAccount, suggested -> {
+            if (generation != loadGeneration || isDead()) {
+                return;
+            }
+            loading = false;
+            if (suggested.isEmpty()) {
+                setDiscover(false);
+                lastLoadTime = System.currentTimeMillis();
+                updateEmptyView();
+                return;
+            }
+            setDiscover(true);
+            loadPostsFrom(new ArrayList<>(suggested.subList(0, Math.min(DISCOVER_CHANNELS, suggested.size()))));
+        });
+    }
+
+    private void loadPostsFrom(ArrayList<TLRPC.Chat> channels) {
         loading = true;
         final int generation = ++loadGeneration;
         updateEmptyView();

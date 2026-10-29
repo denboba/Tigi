@@ -10670,6 +10670,12 @@
     <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileShareProfile">Share profile</string>
     <string name="TigiYourStory">Your story</string>
+    <string name="TigiSuggestedTitle">Suggested for you</string>
+    <string name="TigiSuggestedText">You don't follow any channels yet. Below are posts from channels Telegram recommends; follow the ones you like to make Home yours.</string>
+    <string name="TigiStoryNeedsPremium">Telegram allows posting stories from this account only with Premium.</string>
+    <string name="TigiStoryTooMany">You reached Telegram's limit of active stories. Try again later.</string>
+    <string name="TigiProfileFollowingCount">Following</string>
+    <string name="TigiFollowingEmpty">You don't follow any channels yet. Follow some from Home to fill your feed.</string>
     <string name="TigiAddStory">Add to your story</string>
     <string name="TigiProfileAccount">Account and QR code</string>
     <string name="TigiProfileFirstPost">Share your first photo or video. Tap here to create a post.</string>

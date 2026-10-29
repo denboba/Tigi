@@ -155,7 +155,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     protected int bottomPadding() {
-        return hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 32) : dp(24);
+        return hasMainTabs ? TigiNavigation.tabsBottomSpace() + dp(32) : dp(24) + AndroidUtilities.navigationBarHeight;
     }
 
     /** The avatar or name on a card: the person who posted (groups) or the channel. */
@@ -1100,7 +1100,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             top = (int) (pressRawY - rootLocation[1]) - pickerHeight - dp(8);
         }
         final int minTop = Math.max(AndroidUtilities.statusBarHeight, dp(24)) + dp(8);
-        final int bottomSpace = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : dp(8);
+        final int bottomSpace = hasMainTabs ? TigiNavigation.tabsBottomSpace() : dp(8);
         final int maxTop = Math.max(minTop, containerHeight - pickerHeight - bottomSpace);
         top = Math.max(minTop, Math.min(maxTop, top));
         final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, pickerHeight);
@@ -1560,6 +1560,20 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                     captionExpanded = !captionExpanded;
                     updateCaption();
                 }
+            });
+            // long-press on the text reacts with any emoji, as long-press on a photo does
+            final float[] lastTouch = new float[2];
+            captionView.setOnTouchListener((v, event) -> {
+                lastTouch[0] = event.getRawX();
+                lastTouch[1] = event.getRawY();
+                return false;
+            });
+            captionView.setOnLongClickListener(v -> {
+                if (post == null || post.sponsored || post.messages.isEmpty()) {
+                    return false;
+                }
+                showReactionPicker(post, lastTouch[0], lastTouch[1], textFirst ? actions : null);
+                return true;
             });
             captionBox.addView(captionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             moreView = new TextView(context);

@@ -1,5 +1,7 @@
 package org.telegram.ui;
 
+import org.telegram.messenger.AndroidUtilities;
+
 import android.os.Bundle;
 
 import org.telegram.messenger.BuildVars;
@@ -121,5 +123,13 @@ public class TigiNavigation {
             }
         }
         return null;
+    }
+
+    /**
+     * Space a tab page must keep free at the bottom, in px: the floating tab bar plus the system navigation bar
+     * below it (the tab pages run behind both).
+     */
+    public static int tabsBottomSpace() {
+        return AndroidUtilities.navigationBarHeight + AndroidUtilities.dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS);
     }
 }

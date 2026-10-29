@@ -747,7 +747,37 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         }
 
         private int bottomBarSpace() {
-            return hasMainTabs ? DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 8 : 16;
+            // dp; the tab bar floats above the system navigation bar, and the reel runs behind both
+            final int navigation = (int) Math.ceil(AndroidUtilities.navigationBarHeight / AndroidUtilities.density);
+            return (hasMainTabs ? DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 8 : 16) + navigation;
+        }
+
+        private int appliedBottomSpace = -1;
+
+        /** The navigation bar can change (rotation, gesture vs buttons): keep the side actions and caption above it. */
+        private void updateBottomSpace() {
+            final int space = bottomBarSpace();
+            if (space == appliedBottomSpace) {
+                return;
+            }
+            appliedBottomSpace = space;
+            setBottomMargin(actions, dp(space + 12));
+            setBottomMargin(bottom, dp(space + 14));
+            setBottomMargin(progressView, dp(space));
+        }
+
+        private void setBottomMargin(View view, int margin) {
+            final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) view.getLayoutParams();
+            if (params.bottomMargin != margin) {
+                params.bottomMargin = margin;
+                view.setLayoutParams(params);
+            }
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            updateBottomSpace();
         }
 
         private ImageView actionIcon(Context context, int icon) {

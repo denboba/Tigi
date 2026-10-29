@@ -186,7 +186,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             }
         });
         if (hasMainTabs) {
-            listView.setPadding(0, 0, 0, dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 16));
+            listView.setPadding(0, 0, 0, TigiNavigation.tabsBottomSpace() + dp(16));
             listView.setClipToPadding(false);
             final LinearLayout content = new LinearLayout(context);
             content.setOrientation(LinearLayout.VERTICAL);

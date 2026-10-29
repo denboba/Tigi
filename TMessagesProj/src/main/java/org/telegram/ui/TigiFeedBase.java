@@ -974,6 +974,14 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /** Shows Telegram's reaction bar right above the point (screen coordinates) that was pressed. */
     protected void showReactionPicker(FeedPost post, float pressRawX, float pressRawY) {
+        showReactionPicker(post, pressRawX, pressRawY, null);
+    }
+
+    /**
+     * Telegram's reaction bar. With an anchor (the card's like row) it sits right above that row, where the chosen
+     * reaction shows up afterwards; without one it opens just above the finger.
+     */
+    protected void showReactionPicker(FeedPost post, float pressRawX, float pressRawY, View anchor) {
         if (overlay == null || isDead() || post == null || post.messages.isEmpty()) {
             return;
         }
@@ -1008,12 +1016,23 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
         });
 
-        final int[] overlayLocation = new int[2];
-        overlay.getLocationInWindow(overlayLocation);
+        // the overlay is GONE until now (height 0), so measure against the screen itself
+        final int[] rootLocation = new int[2];
+        fragmentView.getLocationOnScreen(rootLocation);
+        final int containerHeight = fragmentView.getHeight();
         final int pickerHeight = dp(70 + 22);
+        int top;
+        if (anchor != null && anchor.isAttachedToWindow() && anchor.getHeight() > 0) {
+            final int[] anchorLocation = new int[2];
+            anchor.getLocationOnScreen(anchorLocation);
+            top = anchorLocation[1] - rootLocation[1] - pickerHeight + dp(14);
+        } else {
+            top = (int) (pressRawY - rootLocation[1]) - pickerHeight - dp(8);
+        }
         final int minTop = Math.max(AndroidUtilities.statusBarHeight, dp(24)) + dp(8);
-        final int maxTop = Math.max(minTop, overlay.getHeight() - pickerHeight - dp(8));
-        final int top = Math.max(minTop, Math.min(maxTop, (int) (pressRawY - overlayLocation[1]) + dp(8)));
+        final int bottomSpace = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : dp(8);
+        final int maxTop = Math.max(minTop, containerHeight - pickerHeight - bottomSpace);
+        top = Math.max(minTop, Math.min(maxTop, top));
         final FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, pickerHeight);
         params.gravity = Gravity.TOP | Gravity.LEFT;
         params.leftMargin = dp(8);
@@ -1414,7 +1433,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 if (post != null) {
                     final int[] location = new int[2];
                     heartButton.getLocationOnScreen(location);
-                    showReactionPicker(post, location[0] + heartButton.getWidth() / 2f, location[1]);
+                    showReactionPicker(post, location[0] + heartButton.getWidth() / 2f, location[1], actions);
                 }
                 return true;
             });
@@ -1777,7 +1796,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
         private void onPhotoLongPress(float rawX, float rawY) {
             if (post != null) {
-                showReactionPicker(post, rawX, rawY);
+                showReactionPicker(post, rawX, rawY, actions);
             }
         }
 

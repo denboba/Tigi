@@ -2685,10 +2685,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     presentFragment(new SettingsActivity());
                 } else if (id == tigi_my_posts) {
                     // the channel the user posts to (last used, or the personal one); none yet: the Create flow
-                    final ArrayList<TLRPC.Chat> mine = TigiPosting.postableChannels(currentAccount);
-                    if (!mine.isEmpty()) {
+                    final TLRPC.Chat mine = TigiPosting.defaultChannel(currentAccount);
+                    if (mine != null) {
                         final Bundle tigiArgs = new Bundle();
-                        tigiArgs.putLong("chat_id", mine.get(0).id);
+                        tigiArgs.putLong("chat_id", mine.id);
                         tigiArgs.putLong("user_id", getUserConfig().getClientUserId());
                         presentFragment(new TigiProfileActivity(tigiArgs));
                     } else {

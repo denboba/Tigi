@@ -10626,6 +10626,7 @@
     <string name="TigiCreateLive">Go live</string>
     <string name="TigiCreateText">Text post</string>
     <string name="TigiPostAs">Post as</string>
+    <string name="TigiPostToOtherChannel">Post to another channel</string>
     <string name="TigiPostLastUsed">Last used</string>
     <string name="TigiPostNewChannel">New channel for my posts</string>
     <string name="TigiPostNoRights">You can\'t post in this channel.</string>

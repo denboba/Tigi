@@ -47,6 +47,7 @@ public class TigiCreateSheet {
     private static final int ACTION_STORY = 2;
     private static final int ACTION_LIVE = 3;
     private static final int ACTION_TEXT = 4;
+    private static final int ACTION_OTHER_CHANNEL = 5;
 
     /** Live uses Telegram's channel video chat / live stream, see TigiLive. */
     static boolean liveAvailable = true;
@@ -85,6 +86,14 @@ public class TigiCreateSheet {
             items.add(LocaleController.getString(R.string.TigiCreateText));
             icons.add(R.drawable.msg_edit);
             actions.add(ACTION_TEXT);
+            // channels the user runs besides the personal one: posting there is a deliberate choice
+            final TLRPC.Chat own = TigiPosting.defaultChannel(account);
+            final ArrayList<TLRPC.Chat> postable = TigiPosting.postableChannels(account);
+            if (postable.size() > (own != null && postable.contains(own) ? 1 : 0)) {
+                items.add(LocaleController.getString(R.string.TigiPostToOtherChannel));
+                icons.add(R.drawable.msg_channel);
+                actions.add(ACTION_OTHER_CHANNEL);
+            }
         }
         if (actions.isEmpty()) {
             return;
@@ -107,6 +116,9 @@ public class TigiCreateSheet {
                 case ACTION_TEXT:
                     pickChannel(fragment, ChatActivity.TIGI_COMPOSE_TEXT);
                     break;
+                case ACTION_OTHER_CHANNEL:
+                    pickFrom(fragment, TigiPosting.postableChannels(account), chat -> compose(fragment, chat, ChatActivity.TIGI_COMPOSE_MEDIA));
+                    break;
                 case ACTION_STORY:
                     StoryRecorder.getInstance(fragment.getParentActivity(), account).open(null);
                     break;
@@ -125,8 +137,50 @@ public class TigiCreateSheet {
         pickChannel(fragment, composeMode, chat -> compose(fragment, chat, composeMode));
     }
 
+    /**
+     * One channel for everything, without asking: the user's Tigi channel or the last one used. On the very first
+     * post a private personal channel is made quietly; only if that fails does the user see a choice or an error.
+     */
     static void pickChannel(BaseFragment fragment, int composeMode, org.telegram.messenger.Utilities.Callback<TLRPC.Chat> onPicked) {
-        pickFrom(fragment, TigiPosting.postableChannels(fragment.getCurrentAccount()), onPicked);
+        final int account = fragment.getCurrentAccount();
+        final TLRPC.Chat target = TigiPosting.defaultChannel(account);
+        if (target != null) {
+            onPicked.run(target);
+            return;
+        }
+        createQuietly(fragment, onPicked);
+    }
+
+    private static void createQuietly(BaseFragment fragment, org.telegram.messenger.Utilities.Callback<TLRPC.Chat> onPicked) {
+        final Context context = fragment.getParentActivity();
+        if (context == null) {
+            return;
+        }
+        final int account = fragment.getCurrentAccount();
+        if (TigiPosting.isCreating()) {
+            return; // a second tap while the channel is being made
+        }
+        final AlertDialog progress = new AlertDialog(context, AlertDialog.ALERT_TYPE_SPINNER);
+        progress.setCanCancel(false);
+        progress.showDelayed(300);
+        TigiPosting.createPersonalChannel(account, TigiPosting.suggestedTitle(account), null, chat -> {
+            progress.dismiss();
+            if (fragment.getParentActivity() != null) {
+                onPicked.run(chat);
+            }
+        }, message -> {
+            progress.dismiss();
+            if (fragment.getParentActivity() == null) {
+                return;
+            }
+            final ArrayList<TLRPC.Chat> channels = TigiPosting.postableChannels(account);
+            if (!channels.isEmpty()) {
+                // could not make one (too many channels, limits): post in one the user already runs
+                pickFrom(fragment, channels, onPicked);
+            } else {
+                BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, message).show();
+            }
+        });
     }
 
     /** The "Post as" picker over the given channels (also used to choose where to go live). */

@@ -29,6 +29,10 @@ public class TigiPosting {
 
     private static boolean creating;
 
+    public static boolean isCreating() {
+        return creating;
+    }
+
     private static SharedPreferences prefs(int account) {
         return MessagesController.getMainSettings(account);
     }
@@ -66,6 +70,22 @@ public class TigiPosting {
     public static boolean canPostTo(TLRPC.Chat chat) {
         return chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.left && !chat.kicked
             && !ChatObject.isNotInChat(chat) && ChatObject.canPost(chat) && !chat.monoforum;
+    }
+
+    /** The user's own Tigi channel (made on the first post), if it still exists and accepts posts. */
+    public static TLRPC.Chat ownChannel(int account) {
+        final TLRPC.Chat own = MessagesController.getInstance(account).getChat(prefs(account).getLong(KEY_OWN, 0));
+        return canPostTo(own) ? own : null;
+    }
+
+    /** Where a post goes without asking: the own Tigi channel, else the last channel used for a post. */
+    public static TLRPC.Chat defaultChannel(int account) {
+        final TLRPC.Chat own = ownChannel(account);
+        if (own != null) {
+            return own;
+        }
+        final TLRPC.Chat last = MessagesController.getInstance(account).getChat(prefs(account).getLong(KEY_LAST, 0));
+        return canPostTo(last) ? last : null;
     }
 
     public static void setLastChannel(int account, long chatId) {

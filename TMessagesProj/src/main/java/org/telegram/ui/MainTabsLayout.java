@@ -47,6 +47,15 @@ public class MainTabsLayout extends AnimatedLinearLayout {
     private static final int[] PASS_PADDINGS_DP = {16, 8, 4};
 
     private int maxWidthPx;
+    private boolean equalWidths;
+
+    /** Tigi: every tab gets the same share of the bar, with room between them (Instagram-style bar). */
+    public void setEqualWidths(boolean equalWidths) {
+        if (this.equalWidths != equalWidths) {
+            this.equalWidths = equalWidths;
+            requestLayout();
+        }
+    }
 
     public void setMaxWidth(int maxWidthPx) {
         if (this.maxWidthPx != maxWidthPx) {
@@ -129,6 +138,15 @@ public class MainTabsLayout extends AnimatedLinearLayout {
 
             for (int a = 0, N = getChildCount(); a < N; a++) {
                 tabsTextWidthWithMargin[a] += growP * tabsWeight[a];
+            }
+        }
+
+        if (equalWidths && visibleChildCount > 0) {
+            final float share = maxTotalWidthForTabs / (float) visibleChildCount;
+            for (int a = 0, N = getChildCount(); a < N; a++) {
+                if (isViewVisible(getChildAt(a))) {
+                    tabsTextWidthWithMargin[a] = share;
+                }
             }
         }
 

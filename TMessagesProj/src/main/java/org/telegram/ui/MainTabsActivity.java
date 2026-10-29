@@ -388,7 +388,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         tabsView = new MainTabsLayout(context, resourceProvider);
         tabsView.setClipChildren(false);
         tabsView.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4));
-        tabsView.setMaxWidth(dp(400 + DialogsActivity.MAIN_TABS_MARGIN * 2));
+        tabsView.setMaxWidth(dp((NEW_NAV ? 440 : 400) + DialogsActivity.MAIN_TABS_MARGIN * 2));
+        // new bar: five equal slots across the width, so the tabs have air between them and "+" sits centred
+        tabsView.setEqualWidths(NEW_NAV);
 
         tabs = new GlassTabView[TAB_VIEWS_COUNT];
         if (INDEX_HOME >= 0) {

@@ -545,6 +545,10 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
 
     @Override
     public float measureTextWidth() {
+        if (isActionTab) {
+            // no label: the gradient pill sets the width
+            return dp(52);
+        }
         return defaultTextPaint.measureText(textView.getText().toString());
     }
 
@@ -552,6 +556,9 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
 
     @Override
     public float measureTextWidth(float textSizeDp) {
+        if (isActionTab) {
+            return dp(52);
+        }
         if (scaledTextPaint == null) {
             scaledTextPaint = new TextPaint(defaultTextPaint);
         }

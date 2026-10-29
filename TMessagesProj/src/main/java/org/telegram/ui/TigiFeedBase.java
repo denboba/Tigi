@@ -1249,6 +1249,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final ImageView shareButton;
         private final LinearLayout chipsRow;
         private final TextView captionView;
+        private LinearLayout captionBox;
+        private boolean textFirst;
         private final TextView moreView;
         private final TextView statusView;
         private TextView liveBadge;
@@ -1490,7 +1492,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             chipsRow.setPadding(dp(12), 0, dp(12), dp(4));
             addView(chipsRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            final LinearLayout captionBox = new LinearLayout(context);
+            captionBox = new LinearLayout(context);
             captionBox.setOrientation(VERTICAL);
             captionBox.setPadding(dp(12), dp(2), dp(12), dp(14));
             captionView = new TextView(context);
@@ -1644,9 +1646,28 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 forwardedView.setVisibility(GONE);
             }
 
+            // a text-only post reads like a tweet: the text right under the name, larger, then the actions
+            placeCaption(post.media.isEmpty() && TextUtils.isEmpty(post.fallback));
             updateCaption();
             bindActions();
             bindStatus();
+        }
+
+        private void placeCaption(boolean first) {
+            if (textFirst == first) {
+                return;
+            }
+            textFirst = first;
+            removeView(captionBox);
+            if (first) {
+                addView(captionBox, indexOfChild(actions), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                captionBox.setPadding(dp(14), 0, dp(14), dp(6));
+                captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
+            } else {
+                addView(captionBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                captionBox.setPadding(dp(12), dp(2), dp(12), dp(14));
+                captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            }
         }
 
         private void bindSponsored(FeedPost post) {
@@ -1674,6 +1695,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             fallbackLabel.setText(LocaleController.getString(R.string.SponsoredMessage2));
             fallbackOpen.setText(!TextUtils.isEmpty(message.sponsoredButtonText) ? message.sponsoredButtonText : LocaleController.getString(R.string.TigiSponsoredOpen));
             fallbackBox.setVisibility(TextUtils.isEmpty(message.sponsoredUrl) ? GONE : VISIBLE);
+            placeCaption(false);
             updateCaption();
             logSponsoredView(message);
         }
@@ -1704,7 +1726,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 return;
             }
             captionView.setVisibility(VISIBLE);
-            captionView.setMaxLines(captionExpanded ? Integer.MAX_VALUE : CAPTION_LINES);
+            captionView.setMaxLines(captionExpanded ? Integer.MAX_VALUE : textFirst ? CAPTION_LINES * 2 : CAPTION_LINES);
             captionView.setEllipsize(captionExpanded ? null : TextUtils.TruncateAt.END);
             captionView.setText(post.text);
             moreView.setVisibility(GONE);

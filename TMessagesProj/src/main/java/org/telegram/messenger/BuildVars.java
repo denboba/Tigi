@@ -61,6 +61,7 @@ public class BuildVars {
     public static boolean TIGI_POST = true;    // "+" Create sheet, posting into own channels
     public static boolean TIGI_REELS = true;   // full screen vertical video tab
     public static boolean TIGI_LIVE = true;    // "Go live" in the Create sheet, LIVE badges in feeds
+    public static boolean TIGI_PROFILE_TAB = true; // Profile tab is the Tigi profile (own posts grid); off = Telegram's profile
     // Premium, Stars, Gram wallet, Business and gift rows in Settings. Off while IS_BILLING_UNAVAILABLE: Google Play
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.
     public static boolean TIGI_PAID_FEATURES = false;

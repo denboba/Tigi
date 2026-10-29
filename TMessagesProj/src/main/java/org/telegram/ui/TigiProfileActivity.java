@@ -627,6 +627,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         static final int TYPE_HEADER = 0;
         static final int TYPE_TILE = 1;
         static final int TYPE_STATE = 2;
+        static final int TYPE_LOADING = 3;
         static final int FIRST_TILE = 1;
 
         @Override
@@ -640,7 +641,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             if (position == 0) {
                 return TYPE_HEADER;
             }
-            return tiles[tab].isEmpty() ? TYPE_STATE : TYPE_TILE;
+            if (tiles[tab].isEmpty()) {
+                return loading[tab] || (!reachedEnd[tab] && errorText == null) ? TYPE_LOADING : TYPE_STATE;
+            }
+            return TYPE_TILE;
         }
 
         @Override
@@ -660,6 +664,13 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 }
                 view = header;
                 view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else if (viewType == TYPE_LOADING) {
+                // Telegram's own shimmer for photo grids while the first tiles load
+                final org.telegram.ui.Components.FlickerLoadingView flicker = new org.telegram.ui.Components.FlickerLoadingView(parent.getContext());
+                flicker.setViewType(org.telegram.ui.Components.FlickerLoadingView.PHOTOS_TYPE);
+                flicker.setIsSingleCell(false);
+                view = flicker;
+                view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(420)));
             } else if (viewType == TYPE_STATE) {
                 final TextView state = new TextView(parent.getContext());
                 state.setGravity(Gravity.CENTER);

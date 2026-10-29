@@ -178,6 +178,9 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         });
         root.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
+        shimmerView = new TigiShimmerView(context, TigiShimmerView.STYLE_REEL);
+        root.addView(shimmerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
         stateView = new TextView(context);
         stateView.setTextColor(0xFFFFFFFF);
         stateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
@@ -247,11 +250,13 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         if (!posts.isEmpty()) {
             stateView.setVisibility(View.GONE);
             retryButton.setVisibility(View.GONE);
+            shimmerView.setVisibility(View.GONE);
             return;
         }
-        stateView.setVisibility(View.VISIBLE);
-        if (loading) {
-            stateView.setText(LocaleController.getString(R.string.TigiReelsLoading));
+        final boolean initial = loading || (!loadFailed && cursors.isEmpty() && getMessagesController().getAllDialogs().isEmpty());
+        shimmerView.setVisibility(initial ? View.VISIBLE : View.GONE);
+        stateView.setVisibility(initial ? View.GONE : View.VISIBLE);
+        if (initial) {
             retryButton.setVisibility(View.GONE);
         } else if (loadFailed) {
             stateView.setText(LocaleController.getString(R.string.TigiFeedError));

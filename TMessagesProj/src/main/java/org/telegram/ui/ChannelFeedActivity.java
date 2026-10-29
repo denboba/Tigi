@@ -282,6 +282,11 @@ public class ChannelFeedActivity extends TigiFeedBase {
     }
 
     @Override
+    protected boolean isInitialLoading() {
+        return loading || (posts.isEmpty() && !loadFailed && !reachedEnd);
+    }
+
+    @Override
     protected void updateEmptyView() {
         super.updateEmptyView();
         if (emptyView != null && posts.isEmpty() && !loading && loadFailed) {

@@ -88,6 +88,14 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         return loading;
     }
 
+    private boolean noChannels;
+
+    @Override
+    protected boolean isInitialLoading() {
+        // before the first load finished there is nothing to say "empty" about yet
+        return loading || (lastLoadTime == 0 && !noChannels);
+    }
+
     @Override
     public void onResume() {
         super.onResume();
@@ -138,10 +146,12 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 channels.add(chat);
             }
         }
+        noChannels = channels.isEmpty() && (!dialogs.isEmpty() || getMessagesController().dialogsLoaded);
         if (channels.isEmpty()) {
             updateEmptyView();
             return;
         }
+        noChannels = false;
 
         loading = true;
         final int generation = ++loadGeneration;

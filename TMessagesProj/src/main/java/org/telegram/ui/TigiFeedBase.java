@@ -104,6 +104,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     protected LinearLayoutManager layoutManager;
     protected FeedAdapter adapter;
     protected TextView emptyView;
+    protected TigiShimmerView shimmerView;
     protected boolean hasMainTabs;
 
     private FrameLayout overlay;
@@ -444,6 +445,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         emptyView.setPadding(dp(32), 0, dp(32), 0);
         body.addView(emptyView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
 
+        shimmerView = new TigiShimmerView(context, TigiShimmerView.STYLE_CARDS);
+        shimmerView.setVisibility(View.GONE);
+        body.addView(shimmerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
         root.addView(content, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         installOverlay(root);
@@ -503,16 +508,28 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     protected void updateHeaderColors() {
     }
 
+    /** Nothing to show yet because the first posts are still on their way (skeleton cards instead of a message). */
+    protected boolean isInitialLoading() {
+        return isLoadingPosts();
+    }
+
     protected void updateEmptyView() {
         if (emptyView == null) {
             return;
         }
         if (!posts.isEmpty()) {
             emptyView.setVisibility(View.GONE);
+            if (shimmerView != null) {
+                shimmerView.setVisibility(View.GONE);
+            }
             return;
         }
-        emptyView.setVisibility(View.VISIBLE);
-        emptyView.setText(LocaleController.getString(isLoadingPosts() ? R.string.TigiFeedLoading : R.string.TigiFeedEmpty));
+        final boolean loadingNow = isInitialLoading();
+        if (shimmerView != null) {
+            shimmerView.setVisibility(loadingNow ? View.VISIBLE : View.GONE);
+        }
+        emptyView.setVisibility(loadingNow ? View.GONE : View.VISIBLE);
+        emptyView.setText(LocaleController.getString(R.string.TigiFeedEmpty));
     }
 
     /* posts from messages */

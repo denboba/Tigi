@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nilak icon set: save (24dp outline, 1.9 stroke, round caps) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M6.5,3.5L17.5,3.5C18.05,3.5 18.5,3.95 18.5,4.5L18.5,20.5L12,16.3L5.5,20.5L5.5,4.5C5.5,3.95 5.95,3.5 6.5,3.5Z" />
+</vector>

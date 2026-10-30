@@ -1,3 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nilak icon set: share, a curved arrow (no paper plane) (24dp outline, 1.9 stroke, round caps) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -5,9 +7,9 @@
     android:viewportHeight="24">
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.8"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
         android:strokeLineJoin="round"
         android:strokeLineCap="round"
-        android:pathData="M21,3L10,14M21,3L14,21L10,14L3,10L21,3Z" />
+        android:pathData="M14,4.5L20.5,11L14,17.5M20.5,11L10,11C6.4,11 3.5,13.9 3.5,17.5L3.5,18.5" />
 </vector>

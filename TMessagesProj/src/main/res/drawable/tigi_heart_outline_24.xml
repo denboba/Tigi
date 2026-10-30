@@ -1,3 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nilak icon set: like (24dp outline, 1.9 stroke, round caps) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -5,9 +7,9 @@
     android:viewportHeight="24">
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.8"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
         android:strokeLineJoin="round"
         android:strokeLineCap="round"
-        android:pathData="M12,20.5C12,20.5 4,15.9 4,10.3C4,7.8 6,6 8.3,6C9.9,6 11.3,6.8 12,8.1C12.7,6.8 14.1,6 15.7,6C18,6 20,7.8 20,10.3C20,15.9 12,20.5 12,20.5Z" />
+        android:pathData="M12,20.5C12,20.5 4.7,15.9 2.8,11.5C1.4,8 3.6,4.5 7.1,4.5C9.1,4.5 10.7,5.6 12,7.3C13.3,5.6 14.9,4.5 16.9,4.5C20.4,4.5 22.6,8 21.2,11.5C19.3,15.9 12,20.5 12,20.5Z" />
 </vector>

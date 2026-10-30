@@ -216,7 +216,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         });
         topTitle = new TextView(context);
         topTitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-        topTitle.setTypeface(AndroidUtilities.bold());
+        topTitle.setTypeface(TigiStyle.displayExtraBold());
         topTitle.setSingleLine(true);
         topTitle.setEllipsize(TextUtils.TruncateAt.END);
         topTitle.setGravity(Gravity.CENTER_VERTICAL);
@@ -624,7 +624,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
             nameView = new TextView(context);
             nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
-            nameView.setTypeface(AndroidUtilities.bold());
+            nameView.setTypeface(TigiStyle.displayBold());
             nameView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
             addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
             usernameView = new TextView(context);
@@ -693,7 +693,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             box.setGravity(Gravity.CENTER);
             final TextView value = new TextView(context);
             value.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
-            value.setTypeface(AndroidUtilities.bold());
+            value.setTypeface(TigiStyle.displayExtraBold());
             value.setGravity(Gravity.CENTER);
             final TextView label = new TextView(context);
             label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
@@ -706,7 +706,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         private TextView button(Context context) {
             final TextView view = new TextView(context);
             view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-            view.setTypeface(AndroidUtilities.bold());
+            view.setTypeface(TigiStyle.displayBold());
             view.setGravity(Gravity.CENTER);
             view.setSingleLine(true);
             view.setEllipsize(TextUtils.TruncateAt.END);
@@ -778,7 +778,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             followersValue.setText(LocaleController.formatShortNumber(Math.max(0, members - 1), null));
             primaryButton.setText(LocaleController.getString(R.string.TigiProfileEdit));
             primaryButton.setTextColor(0xFFFFFFFF);
-            primaryButton.setBackground(TigiStyle.gradientPill(10));
+            primaryButton.setBackground(TigiStyle.primaryPill(10));
             messageButton.setVisibility(GONE);
             followingValue.setText(LocaleController.formatShortNumber(TigiPosting.followedChannels(currentAccount).size(), null));
         }
@@ -806,7 +806,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 // own (or administered) channel: Instagram's "Edit profile"
                 primaryButton.setText(LocaleController.getString(R.string.TigiProfileEdit));
                 primaryButton.setTextColor(0xFFFFFFFF);
-                primaryButton.setBackground(TigiStyle.gradientPill(10));
+                primaryButton.setBackground(TigiStyle.primaryPill(10));
             } else if (member) {
                 primaryButton.setText(LocaleController.getString(R.string.TigiProfileFollowing));
                 primaryButton.setTextColor(TigiStyle.accent());
@@ -814,7 +814,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             } else {
                 primaryButton.setText(LocaleController.getString(R.string.TigiProfileFollow));
                 primaryButton.setTextColor(0xFFFFFFFF);
-                primaryButton.setBackground(TigiStyle.gradientPill(10));
+                primaryButton.setBackground(TigiStyle.primaryPill(10));
             }
             // a personal channel's owner is messaged directly, and "Following" opens the channel
             messageButton.setVisibility((user != null && !UserObject.isUserSelf(user)) || !member ? VISIBLE : GONE);
@@ -861,7 +861,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 return;
             }
             if (unread) {
-                ringPaint.setShader(new LinearGradient(0, getHeight(), getWidth(), 0, 0xFF8B5CF6, 0xFFEC4899, Shader.TileMode.CLAMP));
+                ringPaint.setShader(new LinearGradient(0, getHeight(), getWidth(), 0, TigiStyle.RING_START, TigiStyle.RING_END, Shader.TileMode.CLAMP));
             } else {
                 ringPaint.setShader(null);
                 ringPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));

@@ -707,7 +707,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             nameView = new TextView(context);
             nameView.setTextColor(0xFFFFFFFF);
             nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-            nameView.setTypeface(AndroidUtilities.bold());
+            nameView.setTypeface(TigiStyle.displayBold());
             nameView.setSingleLine(true);
             nameView.setEllipsize(TextUtils.TruncateAt.END);
             nameView.setShadowLayer(dp(2), 0, 0, 0x66000000);

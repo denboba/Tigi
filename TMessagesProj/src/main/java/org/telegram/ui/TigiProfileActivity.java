@@ -31,6 +31,7 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
@@ -60,6 +61,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
     private static final int TAB_POSTS = 0;
     private static final int TAB_REELS = 1;
+    private static final int TAB_SAVED = 2;
+    private static final int TABS = 3;
     private static final int PAGE = 60;
 
     private long chatId;
@@ -70,13 +73,13 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     private TLRPC.User user;
 
     private int tab = TAB_POSTS;
-    private final ArrayList<MessageObject>[] tiles = new ArrayList[]{new ArrayList<>(), new ArrayList<>()};
-    private final HashMap<Long, MessageObject>[] albums = new HashMap[]{new HashMap<>(), new HashMap<>()};
+    private final ArrayList<MessageObject>[] tiles = new ArrayList[]{new ArrayList<>(), new ArrayList<>(), new ArrayList<>()};
+    private final HashMap<Long, MessageObject>[] albums = new HashMap[]{new HashMap<>(), new HashMap<>(), new HashMap<>()};
     private final HashMap<MessageObject, Integer> albumSizes = new HashMap<>();
-    private final int[] offsetId = new int[2];
-    private final boolean[] reachedEnd = new boolean[2];
-    private final boolean[] loading = new boolean[2];
-    private final int[] requestId = new int[2];
+    private final int[] offsetId = new int[TABS];
+    private final boolean[] reachedEnd = new boolean[TABS];
+    private final boolean[] loading = new boolean[TABS];
+    private final int[] requestId = new int[TABS];
     private String errorText;
     private int postsCount = -1;
 
@@ -115,6 +118,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
         getNotificationCenter().addObserver(this, NotificationCenter.messagesDeleted);
         getNotificationCenter().addObserver(this, NotificationCenter.userInfoDidLoad);
+        getNotificationCenter().addObserver(this, NotificationCenter.storiesListUpdated);
         if (chat != null) {
             getMessagesController().loadFullChat(chatId, classGuid, false);
             loadCount();
@@ -128,7 +132,11 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
         getNotificationCenter().removeObserver(this, NotificationCenter.messagesDeleted);
         getNotificationCenter().removeObserver(this, NotificationCenter.userInfoDidLoad);
-        for (int i = 0; i < 2; i++) {
+        getNotificationCenter().removeObserver(this, NotificationCenter.storiesListUpdated);
+        if (pinnedStories != null && pinnedLink >= 0) {
+            pinnedStories.unlink(pinnedLink);
+        }
+        for (int i = 0; i < TABS; i++) {
             if (requestId[i] != 0) {
                 getConnectionsManager().cancelRequest(requestId[i], true);
             }
@@ -293,7 +301,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     }
 
     private void resetGrid() {
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < TABS; i++) {
             if (requestId[i] != 0) {
                 getConnectionsManager().cancelRequest(requestId[i], true);
                 requestId[i] = 0;
@@ -341,6 +349,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             if (full != null && full.id == chatId && header != null) {
                 header.bind();
             }
+        } else if (id == NotificationCenter.storiesListUpdated) {
+            if (args.length > 0 && args[0] == pinnedStories && header != null) {
+                header.highlights.bind();
+            }
         } else if (id == NotificationCenter.userInfoDidLoad) {
             if (user != null && (Long) args[0] == user.id && header != null) {
                 header.bind();
@@ -367,7 +379,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             }
             final ArrayList<Integer> ids = (ArrayList<Integer>) args[0];
             boolean changed = false;
-            for (int t = 0; t < 2; t++) {
+            for (int t = 0; t < TABS; t++) {
                 for (int i = tiles[t].size() - 1; i >= 0; i--) {
                     if (ids.contains(tiles[t].get(i).getId())) {
                         tiles[t].remove(i);
@@ -405,6 +417,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     }
 
     private void load(int which) {
+        if (which == TAB_SAVED) {
+            loadSaved();
+            return;
+        }
         if (chatId == 0) {
             // own profile before the first post: nothing to load
             reachedEnd[which] = true;
@@ -485,9 +501,84 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         tiles[which].add(message);
     }
 
+    /** Saved posts (bookmarks kept on the phone), fetched per channel with channels.getMessages, newest saved first. */
+    private void loadSaved() {
+        if (loading[TAB_SAVED] || reachedEnd[TAB_SAVED] || isDead()) {
+            return;
+        }
+        final ArrayList<long[]> saved = TigiFeedPrefs.saved(currentAccount);
+        reachedEnd[TAB_SAVED] = true;
+        if (saved.isEmpty()) {
+            if (adapter != null) {
+                adapter.notifyDataSetChanged();
+            }
+            return;
+        }
+        loading[TAB_SAVED] = true;
+        final java.util.LinkedHashMap<Long, ArrayList<Integer>> byChat = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < saved.size() && i < 200; i++) {
+            final long savedChat = saved.get(i)[0];
+            ArrayList<Integer> ids = byChat.get(savedChat);
+            if (ids == null) {
+                byChat.put(savedChat, ids = new ArrayList<>());
+            }
+            ids.add((int) saved.get(i)[1]);
+        }
+        final HashMap<String, MessageObject> found = new HashMap<>();
+        final int[] pending = {byChat.size()};
+        for (java.util.Map.Entry<Long, ArrayList<Integer>> entry : byChat.entrySet()) {
+            final TLRPC.Chat savedChat = getMessagesController().getChat(entry.getKey());
+            if (savedChat == null) {
+                pending[0]--;
+                continue;
+            }
+            final TLRPC.TL_channels_getMessages req = new TLRPC.TL_channels_getMessages();
+            req.channel = MessagesController.getInputChannel(savedChat);
+            req.id.addAll(entry.getValue());
+            getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                if (response instanceof TLRPC.messages_Messages) {
+                    final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                    getMessagesController().putUsers(res.users, false);
+                    getMessagesController().putChats(res.chats, false);
+                    for (int i = 0; i < res.messages.size(); i++) {
+                        final TLRPC.Message message = res.messages.get(i);
+                        if (!(message instanceof TLRPC.TL_messageEmpty)) {
+                            found.put(entry.getKey() + ":" + message.id, new MessageObject(currentAccount, message, false, false));
+                        }
+                    }
+                }
+                if (--pending[0] <= 0) {
+                    finishSaved(saved, found);
+                }
+            }));
+        }
+        if (pending[0] <= 0) {
+            finishSaved(saved, found);
+        }
+    }
+
+    private void finishSaved(ArrayList<long[]> saved, HashMap<String, MessageObject> found) {
+        loading[TAB_SAVED] = false;
+        if (isDead()) {
+            return;
+        }
+        tiles[TAB_SAVED].clear();
+        albums[TAB_SAVED].clear();
+        for (int i = 0; i < saved.size(); i++) {
+            final MessageObject message = found.get(saved.get(i)[0] + ":" + saved.get(i)[1]);
+            if (message != null) {
+                addTile(TAB_SAVED, message);
+            }
+        }
+        if (tab == TAB_SAVED && adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
+    }
+
     private void openPost(MessageObject message) {
         final Bundle args = new Bundle();
-        args.putLong("chat_id", chatId);
+        // saved tiles come from many channels
+        args.putLong("chat_id", tab == TAB_SAVED ? -message.getDialogId() : chatId);
         // the album's newest message, so the whole album is on the first page
         int startId = message.getId();
         if (message.getGroupId() != 0 && albumSizes.containsKey(message)) {
@@ -568,6 +659,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
     private class HeaderView extends LinearLayout {
         private final StoryRingAvatar avatar;
+        private final BackupImageView cover;
         private final TextView postsValue;
         private final TextView followersValue;
         private final TextView postsLabel;
@@ -583,15 +675,22 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         private final ImageView infoButton;
         private final TextView postsTab;
         private final TextView reelsTab;
+        private final TextView savedTab;
+        private final HighlightsRow highlights;
 
         HeaderView(Context context) {
             super(context);
             setOrientation(VERTICAL);
-            setPadding(dp(16), dp(12), dp(16), 0);
+            setPadding(dp(16), 0, dp(16), 0);
+
+            // a soft band from the profile photo behind the avatar
+            cover = new BackupImageView(context);
+            cover.setAlpha(0.85f);
+            addView(cover, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 72, -16, 0, -16, 0));
 
             final LinearLayout top = new LinearLayout(context);
             top.setOrientation(HORIZONTAL);
-            top.setGravity(Gravity.CENTER_VERTICAL);
+            top.setGravity(Gravity.BOTTOM);
             avatar = new StoryRingAvatar(context);
             avatar.setOnClickListener(v -> {
                 if (self && !getMessagesController().getStoriesController().hasStories(user.id)) {
@@ -602,6 +701,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 }
             });
             top.addView(avatar, LayoutHelper.createLinear(88, 88));
+            top.setPadding(0, 0, 0, 0);
             final LinearLayout posts = counter(context);
             postsValue = (TextView) posts.getChildAt(0);
             postsLabel = (TextView) posts.getChildAt(1);
@@ -620,7 +720,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             following.setOnClickListener(v -> presentFragment(new TigiFollowingActivity()));
             following.setVisibility(self ? VISIBLE : GONE);
             top.addView(following, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-            addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            // the avatar overlaps the band
+            addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, -40, 0, 0));
 
             nameView = new TextView(context);
             nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
@@ -675,12 +776,21 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             }
             addView(buttons, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 10));
 
+            // highlights: stories pinned to the profile
+            highlights = new HighlightsRow(context);
+            addView(highlights, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, -16, 0, -16, 6));
+
             final LinearLayout tabs = new LinearLayout(context);
             tabs.setOrientation(HORIZONTAL);
             postsTab = tabView(context, R.string.TigiProfilePosts, TAB_POSTS);
             reelsTab = tabView(context, R.string.MainTabsReels, TAB_REELS);
+            savedTab = tabView(context, R.string.NilakSavedTab, TAB_SAVED);
             tabs.addView(postsTab, LayoutHelper.createLinear(0, 44, 1f));
             tabs.addView(reelsTab, LayoutHelper.createLinear(0, 44, 1f));
+            if (self) {
+                // bookmarks are private: only on the own profile
+                tabs.addView(savedTab, LayoutHelper.createLinear(0, 44, 1f));
+            }
             addView(tabs, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44, -16, 0, -16, 0));
 
             updateColors();
@@ -723,6 +833,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             view.setOnClickListener(v -> {
                 if (tab != which) {
                     tab = which;
+                    if (which == TAB_SAVED) {
+                        // bookmarks change in the feeds: read them again
+                        reachedEnd[TAB_SAVED] = false;
+                    }
                     updateColors();
                     adapter.notifyDataSetChanged();
                     load(which);
@@ -753,8 +867,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             infoButton.setBackground(TigiStyle.tintedPill(10));
             postsTab.setTextColor(tab == TAB_POSTS ? accent : gray);
             reelsTab.setTextColor(tab == TAB_REELS ? accent : gray);
+            savedTab.setTextColor(tab == TAB_SAVED ? accent : gray);
             postsTab.setBackground(tab == TAB_POSTS ? underline(accent) : null);
             reelsTab.setBackground(tab == TAB_REELS ? underline(accent) : null);
+            savedTab.setBackground(tab == TAB_SAVED ? underline(accent) : null);
             bind();
         }
 
@@ -764,6 +880,20 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             final android.graphics.drawable.LayerDrawable layer = new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{line});
             layer.setLayerInset(0, 0, dp(42), 0, 0);
             return layer;
+        }
+
+        private void bindCover() {
+            // the profile photo, tiny and blurred, over the brand colours
+            final TLObject owner = user != null ? user : chat;
+            final android.graphics.drawable.GradientDrawable fallback = new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.BL_TR, new int[]{TigiStyle.PRIMARY, TigiStyle.LILAC});
+            final ImageLocation location = owner instanceof TLRPC.User ? ImageLocation.getForUser((TLRPC.User) owner, ImageLocation.TYPE_SMALL)
+                : owner instanceof TLRPC.Chat ? ImageLocation.getForChat((TLRPC.Chat) owner, ImageLocation.TYPE_SMALL) : null;
+            if (location != null) {
+                cover.setImage(location, "40_40_b2", fallback, owner);
+            } else {
+                cover.setImageDrawable(fallback);
+            }
         }
 
         private void bindSelf() {
@@ -786,6 +916,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         void bind() {
             final TLRPC.ChatFull full = getMessagesController().getChatFull(chatId);
             avatar.bind();
+            bindCover();
+            highlights.bind();
             nameView.setText(user != null ? UserObject.getUserName(user) : chat.title);
             final String username = user != null ? UserObject.getPublicUsername(user) : ChatObject.getPublicUsername(chat);
             usernameView.setText(TextUtils.isEmpty(username) ? null : "@" + username);
@@ -818,6 +950,109 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             }
             // a personal channel's owner is messaged directly, and "Following" opens the channel
             messageButton.setVisibility((user != null && !UserObject.isUserSelf(user)) || !member ? VISIBLE : GONE);
+        }
+    }
+
+    private org.telegram.ui.Stories.StoriesController.StoriesList pinnedStories;
+    private int pinnedLink = -1;
+
+    /** Stories pinned to the profile, Instagram's highlights. Tap opens Telegram's story viewer at that story. */
+    private class HighlightsRow extends android.widget.HorizontalScrollView {
+        private final LinearLayout items;
+
+        HighlightsRow(Context context) {
+            super(context);
+            setHorizontalScrollBarEnabled(false);
+            setOverScrollMode(OVER_SCROLL_NEVER);
+            items = new LinearLayout(context);
+            items.setOrientation(LinearLayout.HORIZONTAL);
+            items.setPadding(dp(12), dp(4), dp(12), dp(4));
+            addView(items, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+            setVisibility(GONE);
+        }
+
+        void bind() {
+            final long dialogId = user != null ? user.id : -chatId;
+            if (dialogId == 0) {
+                setVisibility(GONE);
+                return;
+            }
+            if (pinnedStories == null) {
+                pinnedStories = getMessagesController().getStoriesController().getStoriesList(dialogId, org.telegram.ui.Stories.StoriesController.StoriesList.TYPE_PINNED);
+                if (pinnedStories != null) {
+                    pinnedLink = pinnedStories.link();
+                    pinnedStories.load(false, 20);
+                }
+            }
+            items.removeAllViews();
+            final ArrayList<MessageObject> stories = pinnedStories != null ? pinnedStories.messageObjects : new ArrayList<>();
+            for (int i = 0; i < stories.size() && i < 20; i++) {
+                final MessageObject story = stories.get(i);
+                if (story.storyItem == null) {
+                    continue;
+                }
+                items.addView(item(story), LayoutHelper.createLinear(70, LayoutHelper.WRAP_CONTENT));
+            }
+            if (self && TigiPosting.storiesOffered(currentAccount)) {
+                items.addView(newItem(), LayoutHelper.createLinear(70, LayoutHelper.WRAP_CONTENT));
+            }
+            setVisibility(items.getChildCount() > 0 ? VISIBLE : GONE);
+        }
+
+        private View item(MessageObject story) {
+            final Context context = getContext();
+            final LinearLayout item = new LinearLayout(context);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setGravity(Gravity.CENTER_HORIZONTAL);
+            final FrameLayout ring = new FrameLayout(context);
+            ring.setBackground(Theme.createRoundRectDrawable(dp(28), Theme.getColor(Theme.key_windowBackgroundGray)));
+            final BackupImageView image = new BackupImageView(context);
+            image.setRoundRadius(dp(26));
+            org.telegram.ui.Stories.StoriesUtilities.setStoryMiniImage(image.getImageReceiver(), story.storyItem);
+            ring.addView(image, LayoutHelper.createFrame(52, 52, Gravity.CENTER));
+            item.addView(ring, LayoutHelper.createLinear(56, 56));
+            final TextView caption = new TextView(context);
+            final String text = story.storyItem.caption;
+            caption.setText(TextUtils.isEmpty(text) ? LocaleController.formatDateChat(story.storyItem.date) : text);
+            caption.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
+            caption.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            caption.setSingleLine(true);
+            caption.setEllipsize(TextUtils.TruncateAt.END);
+            caption.setGravity(Gravity.CENTER);
+            item.addView(caption, LayoutHelper.createLinear(64, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
+            item.setContentDescription(LocaleController.getString(R.string.NilakHighlight) + ", " + caption.getText());
+            item.setOnClickListener(v -> {
+                if (getParentActivity() != null && pinnedStories != null) {
+                    getOrCreateStoryViewer().open(getParentActivity(), story.storyItem.id, pinnedStories, (did, messageId, storyId, type, holder) -> false);
+                }
+            });
+            return item;
+        }
+
+        private View newItem() {
+            final Context context = getContext();
+            final LinearLayout item = new LinearLayout(context);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setGravity(Gravity.CENTER_HORIZONTAL);
+            final TextView plus = new TextView(context);
+            plus.setText("+");
+            plus.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24);
+            plus.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            plus.setGravity(Gravity.CENTER);
+            final android.graphics.drawable.GradientDrawable dashed = new android.graphics.drawable.GradientDrawable();
+            dashed.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dashed.setStroke(dp(1.5f), Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), dp(4), dp(3));
+            plus.setBackground(dashed);
+            item.addView(plus, LayoutHelper.createLinear(56, 56));
+            final TextView caption = new TextView(context);
+            caption.setText(LocaleController.getString(R.string.NilakNewHighlight));
+            caption.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
+            caption.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            caption.setGravity(Gravity.CENTER);
+            item.addView(caption, LayoutHelper.createLinear(64, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
+            // a new story; Telegram keeps it on the profile when the user pins it
+            item.setOnClickListener(v -> TigiPosting.openStoryRecorder(TigiProfileActivity.this));
+            return item;
         }
     }
 
@@ -944,6 +1179,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                     state.setText(errorText);
                 } else if (loading[tab]) {
                     state.setText(LocaleController.getString(R.string.TigiFeedLoading));
+                } else if (tab == TAB_SAVED) {
+                    state.setText(LocaleController.getString(R.string.NilakSavedEmpty));
+                    state.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                    state.setOnClickListener(null);
                 } else if (self) {
                     // own empty profile: an invitation to post, tapping it opens Create
                     state.setText(LocaleController.getString(R.string.TigiProfileFirstPost));

@@ -10670,6 +10670,10 @@
     <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileShareProfile">Share profile</string>
     <string name="TigiYourStory">Your story</string>
+    <string name="NilakSavedTab">Saved</string>
+    <string name="NilakSavedEmpty">Posts you save appear here. Only you can see them.</string>
+    <string name="NilakHighlight">Highlight</string>
+    <string name="NilakNewHighlight">New</string>
     <string name="NilakInterestNews">News</string>
     <string name="NilakInterestFootball">Football</string>
     <string name="NilakInterestMusic">Music</string>

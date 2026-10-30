@@ -108,7 +108,7 @@ public class TigiAboutActivity extends BaseFragment {
         if (getParentActivity() == null) {
             return;
         }
-        final String subject = "Tigi " + versionText();
+        final String subject = LocaleController.getString(R.string.AppName) + " " + versionText();
         final String body = "\n\n---\n" + versionText() + "\nAndroid " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + "), " + Build.MANUFACTURER + " " + Build.MODEL;
         try {
             if (!TextUtils.isEmpty(BuildVars.TIGI_SUPPORT_EMAIL)) {

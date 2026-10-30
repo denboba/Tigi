@@ -4,7 +4,7 @@ import java.util.HashSet;
 import java.util.regex.Pattern;
 
 /**
- * Turns Telegram's own wording (bundled and downloaded translations) into Tigi wording.
+ * Turns Telegram's own wording (bundled and downloaded translations) into Nilak wording.
  */
 public class TigiBranding {
 
@@ -35,7 +35,7 @@ public class TigiBranding {
         if (value == null || value.indexOf("Telegram") < 0) {
             return value;
         }
-        // "Telegram Premium", "Telegram Stars", "Telegram FAQ" ... become "Tigi Premium", "Tigi Stars", "Tigi FAQ" ...
-        return WORD.matcher(value).replaceAll("Tigi");
+        // "Telegram Premium", "Telegram Stars", "Telegram FAQ" ... become "Nilak Premium", "Nilak Stars", "Nilak FAQ" ...
+        return WORD.matcher(value).replaceAll("Nilak");
     }
 }

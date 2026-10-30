@@ -39,6 +39,7 @@ import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
@@ -115,6 +116,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
 
     @Override
     public boolean onFragmentCreate() {
+        forYou = getMessagesController().getMainSettings().getBoolean(KEY_FOR_YOU, false);
         try {
             ApplicationLoader.applicationContext.registerComponentCallbacks(memoryCallbacks);
         } catch (Exception ignore) {
@@ -205,14 +207,16 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         final LinearLayout topBar = new LinearLayout(context);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        final TextView title = new TextView(context);
-        title.setText(LocaleController.getString(R.string.MainTabsReels));
-        title.setTextColor(0xFFFFFFFF);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
-        title.setTypeface(AndroidUtilities.bold());
-        title.setShadowLayer(dp(2), 0, 0, 0x66000000);
-        androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
-        topBar.addView(title, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL));
+        // Following (channels the user follows) and For you (channels like them), TikTok-style
+        final LinearLayout modes = new LinearLayout(context);
+        modes.setOrientation(LinearLayout.HORIZONTAL);
+        modes.setGravity(Gravity.CENTER_VERTICAL);
+        followingTab = modeTab(context, R.string.TigiReelsFollowing, false);
+        forYouTab = modeTab(context, R.string.TigiReelsForYou, true);
+        modes.addView(followingTab, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44));
+        modes.addView(forYouTab, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, 18, 0, 0, 0));
+        topBar.addView(modes, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL));
+        updateModeTabs();
         muteButton = new ImageView(context);
         muteButton.setScaleType(ImageView.ScaleType.CENTER);
         muteButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
@@ -231,6 +235,70 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         fragmentView = root;
         updateEmptyView();
         return fragmentView;
+    }
+
+    private static final String KEY_FOR_YOU = "nilak_reels_for_you";
+
+    private TextView followingTab;
+    private TextView forYouTab;
+    private boolean forYou;
+
+    private TextView modeTab(Context context, int text, boolean forYouTab) {
+        final TextView tab = new TextView(context);
+        tab.setText(LocaleController.getString(text));
+        tab.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
+        tab.setTypeface(TigiStyle.displayExtraBold());
+        tab.setTextColor(0xFFFFFFFF);
+        tab.setShadowLayer(dp(2), 0, 0, 0x66000000);
+        tab.setGravity(Gravity.CENTER);
+        tab.setOnClickListener(v -> setForYou(forYouTab));
+        return tab;
+    }
+
+    private void updateModeTabs() {
+        if (followingTab == null) {
+            return;
+        }
+        followingTab.setAlpha(forYou ? 0.6f : 1f);
+        forYouTab.setAlpha(forYou ? 1f : 0.6f);
+        followingTab.setSelected(!forYou);
+        forYouTab.setSelected(forYou);
+        followingTab.setContentDescription(followingTab.getText() + (forYou ? "" : ", " + LocaleController.getString(R.string.TigiSelected)));
+        forYouTab.setContentDescription(forYouTab.getText() + (forYou ? ", " + LocaleController.getString(R.string.TigiSelected) : ""));
+    }
+
+    /** Switches between Following and For you and starts that list from the top. */
+    private void setForYou(boolean value) {
+        if (forYou == value) {
+            onParentScrollToTop();
+            return;
+        }
+        forYou = value;
+        getMessagesController().getMainSettings().edit().putBoolean(KEY_FOR_YOU, value).apply();
+        updateModeTabs();
+        generation++;
+        loading = false;
+        loadFailed = false;
+        triedSuggestions = false;
+        roundStart = 0;
+        cursors.clear();
+        seen.clear();
+        cancelPreload();
+        if (inlinePlayer != null) {
+            inlinePlayer.stop();
+        }
+        currentPosition = -1;
+        posts.clear();
+        if (reelsAdapter != null) {
+            reelsAdapter.notifyDataSetChanged();
+        }
+        updateEmptyView();
+        loadMore();
+    }
+
+    @Override
+    protected boolean appliesFeedFilter() {
+        return true;
     }
 
     private void updateMuteButton() {
@@ -298,8 +366,15 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
 
     private boolean triedSuggestions;
 
+    /** A few channels the user follows, as seeds for "For you". */
+    private ArrayList<TLRPC.Chat> followedSeeds() {
+        final ArrayList<TLRPC.Chat> followed = TigiPosting.followedChannels(currentAccount);
+        return new ArrayList<>(followed.subList(0, Math.min(4, followed.size())));
+    }
+
     private void collectChannels() {
         cursors.clear();
+        final TigiFeedPrefs.Filter filter = TigiFeedPrefs.filter(currentAccount);
         final ArrayList<TLRPC.Dialog> dialogs = getMessagesController().getAllDialogs();
         for (int i = 0; i < dialogs.size() && cursors.size() < MAX_CHANNELS; i++) {
             final TLRPC.Dialog dialog = dialogs.get(i);
@@ -307,7 +382,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
                 continue;
             }
             final TLRPC.Chat chat = getMessagesController().getChat(-dialog.id);
-            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isNotInChat(chat)) {
+            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isNotInChat(chat) && !filter.hidesChannel(chat.id)) {
                 cursors.add(new ChannelCursor(chat));
             }
         }
@@ -318,7 +393,33 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         if (loading || isDead()) {
             return;
         }
-        if (cursors.isEmpty()) {
+        if (cursors.isEmpty() && forYou && !triedSuggestions) {
+            // channels like the ones the user follows, plus Telegram's general suggestions
+            triedSuggestions = true;
+            loading = true;
+            updateEmptyView();
+            final int gen = generation;
+            TigiPosting.loadRecommendedChannels(currentAccount, followedSeeds(), recommended -> {
+                if (gen != generation || isDead()) {
+                    return;
+                }
+                loading = false;
+                final TigiFeedPrefs.Filter filter = TigiFeedPrefs.filter(currentAccount);
+                for (int i = 0; i < recommended.size() && cursors.size() < MAX_CHANNELS; i++) {
+                    final TLRPC.Chat chat = recommended.get(i);
+                    if (!filter.hidesChannel(chat.id)) {
+                        cursors.add(new ChannelCursor(chat));
+                    }
+                }
+                if (cursors.isEmpty()) {
+                    updateEmptyView();
+                } else {
+                    loadMore();
+                }
+            });
+            return;
+        }
+        if (cursors.isEmpty() && !forYou) {
             collectChannels();
             if (cursors.isEmpty() && !triedSuggestions && getMessagesController().dialogsLoaded) {
                 // follows no channels: reels from channels Telegram recommends
@@ -427,6 +528,9 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             return null;
         }
         if (object.getDuration() > MAX_DURATION_SECONDS) {
+            return null;
+        }
+        if (TigiFeedPrefs.isNotInterested(currentAccount, chat.id, object.getId())) {
             return null;
         }
         // the same clip reposted in several channels shows once
@@ -611,6 +715,8 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         private final TextView heartCount;
         private final TextView commentCount;
         private final TextView nameView;
+        private TextView followButton;
+        private TextView followBadge;
         private final TextView captionView;
         private final LinearLayout actions;
         private final LinearLayout bottom;
@@ -664,7 +770,24 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             avatarView = new BackupImageView(context);
             avatarView.setRoundRadius(dp(22));
             avatarView.setOnClickListener(v -> openChannel());
-            actions.addView(avatarView, LayoutHelper.createLinear(44, 44, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 18));
+            final FrameLayout avatarBox = new FrameLayout(context);
+            avatarBox.addView(avatarView, LayoutHelper.createFrame(44, 44, Gravity.CENTER));
+            followBadge = new TextView(context);
+            followBadge.setText("+");
+            followBadge.setTextColor(0xFFFFFFFF);
+            followBadge.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            followBadge.setTypeface(TigiStyle.displayExtraBold());
+            followBadge.setGravity(Gravity.CENTER);
+            followBadge.setIncludeFontPadding(false);
+            final GradientDrawable badge = new GradientDrawable();
+            badge.setShape(GradientDrawable.OVAL);
+            badge.setColor(TigiStyle.PRIMARY);
+            badge.setStroke(dp(1.5f), 0xFFFFFFFF);
+            followBadge.setBackground(badge);
+            followBadge.setContentDescription(LocaleController.getString(R.string.TigiProfileFollow));
+            followBadge.setOnClickListener(v -> follow());
+            avatarBox.addView(followBadge, LayoutHelper.createFrame(20, 20, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+            actions.addView(avatarBox, LayoutHelper.createLinear(48, 54, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 14));
             heartButton = actionIcon(context, R.drawable.tigi_heart_outline_24);
             heartButton.setOnClickListener(v -> {
                 if (post != null) {
@@ -714,12 +837,31 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             nameView.setMinHeight(dp(44));
             nameView.setGravity(Gravity.CENTER_VERTICAL | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT));
             nameView.setOnClickListener(v -> openChannel());
-            bottom.addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            nameView.setMaxWidth(dp(200));
+            final LinearLayout nameRow = new LinearLayout(context);
+            nameRow.setOrientation(LinearLayout.HORIZONTAL);
+            nameRow.setGravity(Gravity.CENTER_VERTICAL);
+            nameRow.addView(nameView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+            followButton = new TextView(context);
+            followButton.setText(LocaleController.getString(R.string.TigiProfileFollow));
+            followButton.setTextColor(0xFFFFFFFF);
+            followButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            followButton.setTypeface(TigiStyle.displayBold());
+            followButton.setGravity(Gravity.CENTER);
+            followButton.setPadding(dp(12), 0, dp(12), 0);
+            final GradientDrawable outline = new GradientDrawable();
+            outline.setCornerRadius(dp(8));
+            outline.setStroke(dp(1.4f), 0xFFFFFFFF);
+            followButton.setBackground(outline);
+            followButton.setOnClickListener(v -> follow());
+            nameRow.addView(followButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30, 10, 0, 0, 0));
+            bottom.addView(nameRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             captionView = new TextView(context);
             captionView.setTextColor(0xFFFFFFFF);
             captionView.setLinkTextColor(0xFFFFFFFF);
             captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-            captionView.setShadowLayer(dp(2), 0, 0, 0x66000000);
+            captionView.setLineSpacing(dp(2), 1f);
+            captionView.setShadowLayer(dp(3), 0, dp(1), 0x99000000);
             captionView.setMaxLines(2);
             captionView.setEllipsize(TextUtils.TruncateAt.END);
             captionView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
@@ -835,6 +977,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             avatarView.setForUserOrChat(post.chat, avatarDrawable);
             avatarView.setContentDescription(post.chat.title);
             nameView.setText(post.chat.title);
+            bindFollow();
             if (TextUtils.isEmpty(post.text)) {
                 captionView.setVisibility(GONE);
             } else {
@@ -864,6 +1007,30 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             heartCount.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
             final int comments = message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
             commentCount.setText(comments > 0 ? LocaleController.formatShortNumber(comments, null) : "");
+        }
+
+        private void bindFollow() {
+            final TLRPC.Chat chat = post != null ? getMessagesController().getChat(post.chat.id) : null;
+            final int visibility = chat != null && ChatObject.isNotInChat(chat) ? VISIBLE : GONE;
+            followButton.setVisibility(visibility);
+            followBadge.setVisibility(visibility);
+        }
+
+        private void follow() {
+            final TLRPC.Chat chat = post != null ? getMessagesController().getChat(post.chat.id) : null;
+            if (chat == null || !ChatObject.isNotInChat(chat)) {
+                return;
+            }
+            followButton.setVisibility(GONE);
+            followBadge.setVisibility(GONE);
+            getMessagesController().addUserToChat(chat.id, getUserConfig().getCurrentUser(), 0, null, ReelsActivity.this, true, () -> {
+                if (!isDead()) {
+                    BulletinFactory.of(ReelsActivity.this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.TigiFollowingNow, chat.title)).show();
+                }
+            }, error -> {
+                bindFollow();
+                return true;
+            });
         }
 
         private void openChannel() {

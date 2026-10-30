@@ -118,6 +118,50 @@ public class TigiPosting {
         }));
     }
 
+    /**
+     * "For you": channels Telegram recommends next to each seed channel (channels.getChannelRecommendations with a
+     * channel, one request at a time), then the general suggestions. Without channels the user already follows.
+     */
+    public static void loadRecommendedChannels(int account, ArrayList<TLRPC.Chat> seeds, Utilities.Callback<ArrayList<TLRPC.Chat>> onDone) {
+        final ArrayList<TLRPC.Chat> out = new ArrayList<>();
+        final java.util.HashSet<Long> ids = new java.util.HashSet<>();
+        final Utilities.Callback<ArrayList<TLRPC.Chat>> add = chats -> {
+            for (int i = 0; i < chats.size(); i++) {
+                final TLRPC.Chat chat = chats.get(i);
+                if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.restricted && ChatObject.isNotInChat(chat) && ids.add(chat.id)) {
+                    out.add(chat);
+                }
+            }
+        };
+        final int[] next = {0};
+        final Runnable[] step = new Runnable[1];
+        step[0] = () -> {
+            if (next[0] >= seeds.size()) {
+                loadSuggestedChannels(account, suggested -> {
+                    add.run(suggested);
+                    onDone.run(out);
+                });
+                return;
+            }
+            final TLRPC.Chat seed = seeds.get(next[0]++);
+            final TLRPC.TL_channels_getChannelRecommendations req = new TLRPC.TL_channels_getChannelRecommendations();
+            req.flags |= 1;
+            req.channel = MessagesController.getInputChannel(seed);
+            ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                if (response instanceof TLRPC.messages_Chats) {
+                    final ArrayList<TLRPC.Chat> chats = ((TLRPC.messages_Chats) response).chats;
+                    MessagesController.getInstance(account).putChats(chats, false);
+                    add.run(chats);
+                }
+                if (error != null && error.text != null && error.text.startsWith("FLOOD_WAIT")) {
+                    next[0] = seeds.size();
+                }
+                step[0].run();
+            }));
+        };
+        step[0].run();
+    }
+
     /** Story posting is not switched off for the account (it may still need Premium; the server decides). */
     public static boolean storiesOffered(int account) {
         return !"disabled".equals(MessagesController.getInstance(account).storiesPosting);

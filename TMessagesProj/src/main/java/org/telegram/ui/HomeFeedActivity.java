@@ -111,6 +111,15 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             }
         });
         bar.addView(searchButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), 6, 4, 6, 0));
+        // Activity: what happened to the user's posts
+        activityButton = new ImageView(context);
+        activityButton.setScaleType(ImageView.ScaleType.CENTER);
+        activityButton.setImageResource(R.drawable.tigi_bell_24);
+        activityButton.setContentDescription(LocaleController.getString(R.string.NilakActivity));
+        activityButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        activityButton.setOnClickListener(v -> presentFragment(new TigiActivityActivity()));
+        activityButton.setVisibility(BuildVars.TIGI_ACTIVITY ? View.VISIBLE : View.GONE);
+        bar.addView(activityButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), LocaleController.isRTL ? 54 : 6, 4, LocaleController.isRTL ? 6 : 54, 0));
         header.addView(bar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
         // the stories row sits right under the bar, whose height includes the status bar
         bar.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -141,6 +150,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         title.setText(text);
     }
     private ImageView searchButton;
+    private ImageView activityButton;
     private TigiStoriesRow storiesRow;
     private LinearLayout scrollingPart;
     private TigiSuggestedRow suggestedRow;
@@ -183,6 +193,8 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         titleView.setAlpha(shown);
         searchButton.setAlpha(shown);
         searchButton.setEnabled(shown > 0.5f);
+        activityButton.setAlpha(shown);
+        activityButton.setEnabled(shown > 0.5f);
     }
 
     @Override
@@ -199,6 +211,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         }
         if (titleView != null) {
             bindWordmark(titleView);
+        }
+        if (activityButton != null) {
+            activityButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
         }
         if (searchButton != null) {
             searchButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));

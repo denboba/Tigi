@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nilak icon set: activity (bell) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M6,16.5L6,11C6,7.69 8.69,5 12,5C15.31,5 18,7.69 18,11L18,16.5L19.5,18L4.5,18Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineCap="round"
+        android:pathData="M10,20.5C10,21.6 10.9,22.5 12,22.5C13.1,22.5 14,21.6 14,20.5" />
+</vector>

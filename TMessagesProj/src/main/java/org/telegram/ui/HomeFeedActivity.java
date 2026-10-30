@@ -75,26 +75,27 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         applyTopInset(bar);
         final TextView title = new TextView(context);
         titleView = title;
-        title.setText(LocaleController.getString(R.string.AppName));
+        // the floret + "nilak" wordmark, drawn as an image span so TalkBack still reads the app name
         title.setFocusable(true);
+        title.setContentDescription(LocaleController.getString(R.string.AppName));
         androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 26);
-        title.setTypeface(AndroidUtilities.bold());
-        title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
         title.setGravity(Gravity.CENTER_VERTICAL);
+        bindWordmark(title);
         bar.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
-        messagesButton = new ImageView(context);
-        messagesButton.setScaleType(ImageView.ScaleType.CENTER);
-        messagesButton.setImageResource(R.drawable.msg_message);
-        messagesButton.setContentDescription(LocaleController.getString(R.string.MainTabsChats));
-        messagesButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
-        messagesButton.setOnClickListener(v -> {
+        searchButton = new ImageView(context);
+        searchButton.setScaleType(ImageView.ScaleType.CENTER);
+        searchButton.setImageResource(R.drawable.outline_header_search);
+        searchButton.setContentDescription(LocaleController.getString(R.string.Search));
+        searchButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        searchButton.setOnClickListener(v -> {
+            // until Explore exists: Telegram's search for chats, channels and messages
             final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
             if (tabs != null) {
-                tabs.openChatsTab();
+                tabs.openChatsSearch();
             }
         });
-        bar.addView(messagesButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), 6, 4, 6, 0));
+        bar.addView(searchButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), 6, 4, 6, 0));
         header.addView(bar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
         // the stories row sits right under the bar, whose height includes the status bar
         bar.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -113,7 +114,18 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
 
     private View headerView;
     private FrameLayout titleBar;
-    private ImageView messagesButton;
+
+    private void bindWordmark(TextView title) {
+        final android.graphics.drawable.Drawable logo = title.getContext().getResources().getDrawable(R.drawable.telegram_logo_2).mutate();
+        final int height = AndroidUtilities.dp(24);
+        final int width = (int) (logo.getIntrinsicWidth() * (height / (float) logo.getIntrinsicHeight()));
+        logo.setBounds(0, 0, width, height);
+        logo.setColorFilter(new android.graphics.PorterDuffColorFilter(TigiStyle.accent(), android.graphics.PorterDuff.Mode.SRC_IN));
+        final android.text.SpannableString text = new android.text.SpannableString(LocaleController.getString(R.string.AppName));
+        text.setSpan(new android.text.style.ImageSpan(logo, android.text.style.ImageSpan.ALIGN_BOTTOM), 0, text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        title.setText(text);
+    }
+    private ImageView searchButton;
     private TigiStoriesRow storiesRow;
     private LinearLayout scrollingPart;
     private TigiSuggestedRow suggestedRow;
@@ -154,8 +166,8 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         titleBar.setTranslationY(titleOffset);
         final float shown = hideable > 0 ? 1f + titleOffset / hideable : 1f;
         titleView.setAlpha(shown);
-        messagesButton.setAlpha(shown);
-        messagesButton.setEnabled(shown > 0.5f);
+        searchButton.setAlpha(shown);
+        searchButton.setEnabled(shown > 0.5f);
     }
 
     @Override
@@ -171,10 +183,10 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             suggestedRow.updateColors();
         }
         if (titleView != null) {
-            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+            bindWordmark(titleView);
         }
-        if (messagesButton != null) {
-            messagesButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
+        if (searchButton != null) {
+            searchButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
         }
     }
 

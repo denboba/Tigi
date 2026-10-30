@@ -1271,7 +1271,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
             final FeedCell cell = new FeedCell(parent.getContext());
             final RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.setMargins(dp(8), dp(5), dp(8), dp(5));
+            params.setMargins(dp(8), dp(7), dp(8), dp(7));
             cell.setLayoutParams(params);
             return new RecyclerListView.Holder(cell);
         }
@@ -1320,7 +1320,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         FeedCell(Context context) {
             super(context);
             setOrientation(VERTICAL);
-            setBackground(Theme.createRoundRectDrawable(dp(20), Theme.getColor(Theme.key_windowBackgroundWhite)));
+            setBackground(Theme.createRoundRectDrawable(dp(18), Theme.getColor(Theme.key_windowBackgroundWhite)));
             setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
@@ -1345,7 +1345,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             names.setOrientation(VERTICAL);
             nameView = new TextView(context);
             nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-            nameView.setTypeface(AndroidUtilities.bold());
+            nameView.setTypeface(TigiStyle.displayBold());
             nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             nameView.setSingleLine(true);
             nameView.setEllipsize(TextUtils.TruncateAt.END);
@@ -1542,12 +1542,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
             chipsRow = new LinearLayout(context);
             chipsRow.setOrientation(HORIZONTAL);
-            chipsRow.setPadding(dp(12), 0, dp(12), dp(4));
-            addView(chipsRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            chipsRow.setPadding(dp(12), 0, dp(12), dp(12));
 
             captionBox = new LinearLayout(context);
             captionBox.setOrientation(VERTICAL);
-            captionBox.setPadding(dp(12), dp(2), dp(12), dp(14));
+            captionBox.setPadding(dp(12), dp(2), dp(12), dp(12));
             captionView = new TextView(context);
             captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             captionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
@@ -1588,10 +1587,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             });
             captionBox.addView(moreView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
             addView(captionBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            // emoji reaction chips sit under the caption
+            addView(chipsRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }
 
         void updateColors() {
-            setBackground(Theme.createRoundRectDrawable(dp(20), Theme.getColor(Theme.key_windowBackgroundWhite)));
+            setBackground(Theme.createRoundRectDrawable(dp(18), Theme.getColor(Theme.key_windowBackgroundWhite)));
             final int text = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
             final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
             nameView.setTextColor(text);
@@ -1616,8 +1617,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
         private TextView makeCountView(Context context) {
             final TextView view = new TextView(context);
-            view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-            view.setTypeface(AndroidUtilities.bold());
+            view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
+            view.setTypeface(TigiStyle.displayBold());
             view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             return view;
         }
@@ -1731,8 +1732,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 captionBox.setPadding(dp(14), 0, dp(14), dp(6));
                 captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
             } else {
-                addView(captionBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-                captionBox.setPadding(dp(12), dp(2), dp(12), dp(14));
+                addView(captionBox, indexOfChild(chipsRow), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                captionBox.setPadding(dp(12), dp(2), dp(12), dp(12));
                 captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             }
         }
@@ -1830,33 +1831,34 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 heartButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
             }
             final int hearts = heartCount(message);
-            heartCountView.setText(hearts > 0 ? String.valueOf(hearts) : "");
+            heartCountView.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
             final int comments = message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
-            commentCountView.setText(comments > 0 ? String.valueOf(comments) : "");
+            commentCountView.setText(comments > 0 ? LocaleController.formatShortNumber(comments, null) : "");
 
+            // other emoji under the caption, at most three
             chipsRow.removeAllViews();
             if (message.messageOwner.reactions != null) {
                 int added = 0;
-                for (int i = 0; i < message.messageOwner.reactions.results.size() && added < 4; i++) {
+                for (int i = 0; i < message.messageOwner.reactions.results.size() && added < 3; i++) {
                     final TLRPC.ReactionCount count = message.messageOwner.reactions.results.get(i);
                     if (isHeart(count.reaction) || !(count.reaction instanceof TLRPC.TL_reactionEmoji)) {
                         continue;
                     }
                     final TextView chip = new TextView(getContext());
-                    chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-                    chip.setTypeface(AndroidUtilities.bold());
+                    chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+                    chip.setTypeface(TigiStyle.displayBold());
                     chip.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
                     chip.setGravity(Gravity.CENTER);
                     chip.setPadding(dp(10), 0, dp(10), 0);
                     chip.setBackground(Theme.createRoundRectDrawable(dp(15), count.chosen ? Theme.multAlpha(Theme.getColor(Theme.key_featuredStickers_addButton), 0.18f) : Theme.getColor(Theme.key_windowBackgroundGray)));
-                    chip.setText(((TLRPC.TL_reactionEmoji) count.reaction).emoticon + " " + count.count);
+                    chip.setText(((TLRPC.TL_reactionEmoji) count.reaction).emoticon + " " + LocaleController.formatShortNumber(count.count, null));
                     final TLRPC.Reaction reaction = count.reaction;
                     chip.setOnClickListener(v -> {
                         if (post != null) {
                             applyReaction(post, ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction), false, false);
                         }
                     });
-                    chipsRow.addView(chip, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30, 0, 0, 6, 0));
+                    chipsRow.addView(chip, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 26, 0, 0, 6, 0));
                     added++;
                 }
             }

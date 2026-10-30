@@ -7459,6 +7459,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
     }
 
+    /** Nilak: the search button on Home opens Telegram's chat and global search here. */
+    public void openSearchFromHome() {
+        if (searchItem != null && !searchIsShowed) {
+            searchItem.callOnClick();
+        }
+    }
+
     public void search(String query, boolean animated) {
         showSearch(true, false, animated);
         if (fragmentSearchField != null) {

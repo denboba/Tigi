@@ -923,6 +923,19 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         viewPager.scrollToPosition(POSITION_CHATS);
     }
 
+    /** Chats tab with its search open (the search button on Home). */
+    public void openChatsSearch() {
+        openChatsTab();
+        if (dialogsActivity != null && dialogsActivity.getFragmentView() != null) {
+            // after the page switch has settled
+            AndroidUtilities.runOnUIThread(() -> {
+                if (dialogsActivity != null) {
+                    dialogsActivity.openSearchFromHome();
+                }
+            }, 250);
+        }
+    }
+
     private void onCreateButtonClicked() {
         if (getParentActivity() == null) {
             return;

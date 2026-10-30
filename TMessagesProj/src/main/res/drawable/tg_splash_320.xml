@@ -1,29 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Tigi launch icon (Android 12+ splash): the wordmark on the brand gradient. Replaces Telegram's paper plane. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="320dp"
-    android:height="320dp"
-    android:viewportWidth="320"
-    android:viewportHeight="320">
-    <path android:pathData="M160,60a100,100 0,1 1,0 200a100,100 0,1 1,0 -200z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="linear"
-                android:startX="90"
-                android:startY="230"
-                android:endX="230"
-                android:endY="90">
-                <item android:offset="0" android:color="#FF8B5CF6" />
-                <item android:offset="1" android:color="#FFEC4899" />
-            </gradient>
-        </aapt:attr>
-    </path>
-    <group
-        android:translateX="80.2"
-        android:translateY="112.7"
-        android:scaleX="1.6"
-        android:scaleY="1.6">
-        <path android:fillColor="#FFFFFFFF" android:pathData="M7.04 13.57H17.89V42.85H26.8V13.57H37.63V6H7.04ZM40.55 42.85H49.05V16.73H40.55ZM44.77 14.19C47.52 14.19 49.47 12.38 49.47 9.88C49.47 7.38 47.52 5.6 44.77 5.6C42.05 5.6 40.1 7.38 40.1 9.88C40.1 12.38 42.05 14.19 44.77 14.19ZM66.19 53.53C74.35 53.53 79.49 49.92 79.49 41.41V16.73H71.04V20.39H71.01C69.38 17.65 66.83 16.16 63.44 16.16C56.82 16.16 52.22 21.75 52.22 29.52C52.22 37.18 56.67 42.67 63.52 42.67C66.93 42.67 69.63 41.31 71.01 38.22H71.04V42.25C71.04 45.71 69.35 47.49 66.19 47.49C63.74 47.49 62.08 46.51 61.64 44.87H53.5C54.29 49.89 58.15 53.53 66.19 53.53ZM65.89 36C62.78 36 60.85 33.52 60.85 29.37C60.85 25.24 62.78 22.77 65.89 22.77C69.11 22.77 71.31 25.36 71.31 29.37C71.31 33.4 69.11 36 65.89 36ZM83.75 42.85H92.25V16.73H83.75ZM87.97 14.19C90.72 14.19 92.67 12.38 92.67 9.88C92.67 7.38 90.72 5.6 87.97 5.6C85.25 5.6 83.3 7.38 83.3 9.88C83.3 12.38 85.25 14.19 87.97 14.19Z" />
-    </group>
+<!-- Nilak launch icon (Android 12+ splash): white lilac floret on the brand violet. Interim until the final logo. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="320dp" android:height="320dp" android:viewportWidth="320" android:viewportHeight="320">
+    <path android:fillColor="#FF7138D5" android:pathData="M160,60a100,100 0,1 1,0 200a100,100 0,1 1,0 -200z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M142.60,125.20a17.40,22.04 0 1,0 34.80,0a17.40,22.04 0 1,0 -34.80,0zM142.60,194.80a17.40,22.04 0 1,0 34.80,0a17.40,22.04 0 1,0 -34.80,0zM103.16,160.00a22.04,17.40 0 1,0 44.08,0a22.04,17.40 0 1,0 -44.08,0zM172.76,160.00a22.04,17.40 0 1,0 44.08,0a22.04,17.40 0 1,0 -44.08,0z"/>
 </vector>

@@ -221,12 +221,13 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         muteButton = new ImageView(context);
         muteButton.setScaleType(ImageView.ScaleType.CENTER);
         muteButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
-        muteButton.setBackground(org.telegram.ui.ActionBar.Theme.createRoundRectDrawable(dp(22), 0x33000000));
+        muteButton.setBackground(org.telegram.ui.ActionBar.Theme.createRoundRectDrawable(dp(18), 0x40000000));
         muteButton.setOnClickListener(v -> {
             inlinePlayer.setMuted(!inlinePlayer.isMuted());
             updateMuteButton();
+            flashSoundOnCurrent();
         });
-        topBar.addView(muteButton, LayoutHelper.createLinear(44, 44));
+        topBar.addView(muteButton, LayoutHelper.createLinear(36, 36, Gravity.CENTER_VERTICAL, 0, 0, 4, 0));
         topBar.setPadding(dp(16), 0, dp(12), 0);
         applyTopInset(topBar);
         root.addView(topBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
@@ -300,6 +301,18 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
     @Override
     protected boolean appliesFeedFilter() {
         return true;
+    }
+
+    private void flashSoundOnCurrent() {
+        if (listView == null || inlinePlayer == null) {
+            return;
+        }
+        for (int i = 0; i < listView.getChildCount(); i++) {
+            final View child = listView.getChildAt(i);
+            if (child instanceof ReelCell && child.getTop() <= listView.getHeight() / 2 && child.getBottom() >= listView.getHeight() / 2) {
+                ((ReelCell) child).flashSound(inlinePlayer.isMuted());
+            }
+        }
     }
 
     private void updateMuteButton() {
@@ -709,6 +722,8 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
     private class ReelCell extends FrameLayout {
         private final BackupImageView thumbView;
         private final ImageView pausedView;
+        private ImageView soundFlash;
+        private boolean userPaused;
         private final ImageView bigHeart;
         private final View progressView;
         private final BackupImageView avatarView;
@@ -750,11 +765,19 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
 
             pausedView = new ImageView(context);
             pausedView.setScaleType(ImageView.ScaleType.CENTER);
-            pausedView.setImageResource(R.drawable.tigi_play_24);
-            pausedView.setBackground(org.telegram.ui.ActionBar.Theme.createRoundRectDrawable(dp(36), 0x66000000));
+            pausedView.setImageResource(R.drawable.tigi_play_big);
             pausedView.setVisibility(GONE);
             pausedView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            addView(pausedView, LayoutHelper.createFrame(72, 72, Gravity.CENTER));
+            addView(pausedView, LayoutHelper.createFrame(88, 88, Gravity.CENTER));
+
+            // a short speaker mark in the middle when the sound is switched
+            soundFlash = new ImageView(context);
+            soundFlash.setScaleType(ImageView.ScaleType.CENTER);
+            soundFlash.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
+            soundFlash.setBackground(org.telegram.ui.ActionBar.Theme.createRoundRectDrawable(dp(32), 0x59000000));
+            soundFlash.setAlpha(0f);
+            soundFlash.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+            addView(soundFlash, LayoutHelper.createFrame(64, 64, Gravity.CENTER));
 
             bigHeart = new ImageView(context);
             bigHeart.setImageResource(R.drawable.tigi_heart_filled_24);
@@ -966,6 +989,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         void bind(FeedPost post) {
             if (this.post != post) {
                 release();
+                userPaused = false;
             }
             this.post = post;
             captionExpanded = false;
@@ -1063,19 +1087,46 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
                 return;
             }
             if (!inlinePlayer.isPlaying(post.primary())) {
+                userPaused = false;
                 play();
             } else if (inlinePlayer.isPaused()) {
+                userPaused = false;
                 inlinePlayer.resume();
                 AndroidUtilities.runOnUIThread(progressUpdater);
             } else {
+                userPaused = true;
                 inlinePlayer.pause();
             }
             updatePaused();
         }
 
+        /** The play mark only when the user paused, never while a video is still loading. */
         void updatePaused() {
             final boolean playing = post != null && inlinePlayer != null && inlinePlayer.isPlaying(post.primary()) && !inlinePlayer.isPaused();
-            pausedView.setVisibility(playing ? GONE : VISIBLE);
+            final boolean show = userPaused && !playing;
+            if (show == (pausedView.getVisibility() == VISIBLE)) {
+                return;
+            }
+            pausedView.animate().cancel();
+            if (show) {
+                pausedView.setVisibility(VISIBLE);
+                pausedView.setAlpha(0f);
+                pausedView.setScaleX(1.4f);
+                pausedView.setScaleY(1.4f);
+                pausedView.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(180).start();
+            } else {
+                pausedView.animate().alpha(0f).scaleX(0.8f).scaleY(0.8f).setDuration(140).withEndAction(() -> pausedView.setVisibility(GONE)).start();
+            }
+        }
+
+        void flashSound(boolean muted) {
+            soundFlash.setImageResource(muted ? R.drawable.media_mute : R.drawable.media_unmute);
+            soundFlash.animate().cancel();
+            soundFlash.setAlpha(1f);
+            soundFlash.setScaleX(0.9f);
+            soundFlash.setScaleY(0.9f);
+            soundFlash.animate().scaleX(1f).scaleY(1f).setDuration(150).withEndAction(() ->
+                soundFlash.animate().alpha(0f).setStartDelay(500).setDuration(250).start()).start();
         }
 
         private void updateProgress() {

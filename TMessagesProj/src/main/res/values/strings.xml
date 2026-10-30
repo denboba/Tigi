@@ -10670,6 +10670,11 @@
     <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileShareProfile">Share profile</string>
     <string name="TigiYourStory">Your story</string>
+    <string name="NilakExploreSearchHint">Search channels, people, #tags</string>
+    <string name="NilakExploreTagPremium">Telegram allows searching this hashtag only with Premium.</string>
+    <string name="NilakExploreNoResults">No channels or people found.</string>
+    <string name="NilakExploreNoTagPosts">No posts with #%1$s yet.</string>
+    <string name="NilakExploreEmpty">Nothing to explore yet. Follow a few channels and come back.</string>
     <string name="TigiCreateWhat">What would you like to share?</string>
     <string name="TigiCreatePostHint">Photos and captions</string>
     <string name="TigiCreateReelHint">Short videos</string>

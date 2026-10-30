@@ -112,6 +112,54 @@ public class TigiFeedPrefs {
         store(account, KEY_NOT_INTERESTED, keys);
     }
 
+    /* affinity: how often the user opens a channel from Explore or Reels, for on-device ordering */
+
+    private static final String KEY_AFFINITY = "nilak_channel_affinity";
+    private static final int MAX_AFFINITY = 300;
+
+    private static java.util.LinkedHashMap<String, Integer> affinity(int account) {
+        final java.util.LinkedHashMap<String, Integer> map = new java.util.LinkedHashMap<>();
+        for (String entry : list(account, KEY_AFFINITY)) {
+            final int colon = entry.indexOf(':');
+            if (colon > 0) {
+                try {
+                    map.put(entry.substring(0, colon), Integer.parseInt(entry.substring(colon + 1)));
+                } catch (NumberFormatException ignore) {
+                }
+            }
+        }
+        return map;
+    }
+
+    public static void bumpAffinity(int account, long chatId) {
+        final java.util.LinkedHashMap<String, Integer> map = affinity(account);
+        final String key = String.valueOf(chatId);
+        final Integer old = map.remove(key);
+        map.put(key, old == null ? 1 : Math.min(old + 1, 1000));
+        final ArrayList<String> out = new ArrayList<>();
+        for (java.util.Map.Entry<String, Integer> e : map.entrySet()) {
+            out.add(e.getKey() + ":" + e.getValue());
+        }
+        // most recently touched last; drop the oldest
+        while (out.size() > MAX_AFFINITY) {
+            out.remove(0);
+        }
+        store(account, KEY_AFFINITY, out);
+    }
+
+    /** Stable sort: channels opened more often first, the rest keep their order. */
+    public static void sortByAffinity(int account, ArrayList<org.telegram.tgnet.TLRPC.Chat> chats) {
+        final java.util.LinkedHashMap<String, Integer> map = affinity(account);
+        if (map.isEmpty()) {
+            return;
+        }
+        Collections.sort(chats, (a, b) -> {
+            final Integer sa = map.get(String.valueOf(a.id));
+            final Integer sb = map.get(String.valueOf(b.id));
+            return (sb == null ? 0 : sb) - (sa == null ? 0 : sa);
+        });
+    }
+
     /** Everything the feeds should skip, read once per load. */
     public static Filter filter(int account) {
         final Filter filter = new Filter();

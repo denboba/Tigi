@@ -100,7 +100,11 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         searchButton.setContentDescription(LocaleController.getString(R.string.Search));
         searchButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
         searchButton.setOnClickListener(v -> {
-            // until Explore exists: Telegram's search for chats, channels and messages
+            if (BuildVars.TIGI_EXPLORE) {
+                presentFragment(new ExploreActivity(null));
+                return;
+            }
+            // without Explore: Telegram's search for chats, channels and messages
             final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
             if (tabs != null) {
                 tabs.openChatsSearch();

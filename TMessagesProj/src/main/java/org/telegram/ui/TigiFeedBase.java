@@ -37,6 +37,7 @@ import androidx.recyclerview.widget.PagerSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DownloadController;
 import org.telegram.messenger.FileLoader;
@@ -952,6 +953,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
             if (url.startsWith("@")) {
                 getMessagesController().openByUserName(url.substring(1), this, 1);
+            } else if (url.startsWith("#") && url.length() > 1 && BuildVars.TIGI_EXPLORE) {
+                // a hashtag opens Explore on that tag
+                final Bundle args = new Bundle();
+                args.putString("hashtag", url.substring(1).replaceAll("@.*$", ""));
+                presentFragment(new ExploreActivity(args));
             } else if (url.startsWith("#") || url.startsWith("$")) {
                 presentFragment(new org.telegram.ui.Components.HashtagActivity(url, getResourceProvider()));
             } else if (url.startsWith("/")) {

@@ -899,6 +899,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             return;
         }
         final MessageObject message = post.primary();
+        if (BuildVars.TIGI_COMMENTS && getParentActivity() != null && message.getId() > 0) {
+            // comments in a sheet over the post; it also explains channels without comments
+            showDialog(new TigiCommentsSheet(this, post.chat, message));
+            return;
+        }
         final TLRPC.MessageReplies replies = message.messageOwner.replies;
         if (replies == null || !replies.comments || message.getId() <= 0) {
             openPostInChat(post, message);

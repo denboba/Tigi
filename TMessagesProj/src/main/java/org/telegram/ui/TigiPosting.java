@@ -313,6 +313,8 @@ public class TigiPosting {
                 }
                 final TLRPC.Chat chat = updates.chats.get(0);
                 prefs(account).edit().putLong(KEY_OWN, chat.id).putLong(KEY_LAST, chat.id).apply();
+                // comments on from the first post; a failure here only means no comments yet
+                createDiscussionGroup(account, chat, group -> {}, message -> {});
                 if (TextUtils.isEmpty(publicUsername)) {
                     onDone.run(chat);
                     return;
@@ -322,6 +324,54 @@ public class TigiPosting {
                     onError.run(message);
                     onDone.run(chat);
                 });
+            });
+        }, ConnectionsManager.RequestFlagFailOnServerErrors);
+    }
+
+    /**
+     * Comments for a channel the user owns: a discussion group made quietly next to it, linked with
+     * channels.setDiscussionGroup and moved to the archive. Posts published from now on get comments.
+     */
+    public static void createDiscussionGroup(int account, TLRPC.Chat channel, Utilities.Callback<TLRPC.Chat> onDone, Utilities.Callback<String> onError) {
+        final TLRPC.TL_channels_createChannel req = new TLRPC.TL_channels_createChannel();
+        req.megagroup = true;
+        req.title = LocaleController.formatString(R.string.NilakCommentsGroupTitle, channel.title);
+        req.about = LocaleController.getString(R.string.NilakCommentsGroupAbout);
+        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> {
+            if (response instanceof TLRPC.Updates) {
+                MessagesController.getInstance(account).processUpdates((TLRPC.Updates) response, false);
+            }
+            AndroidUtilities.runOnUIThread(() -> {
+                if (error != null || !(response instanceof TLRPC.Updates) || ((TLRPC.Updates) response).chats.isEmpty()) {
+                    onError.run(errorText(error));
+                    return;
+                }
+                final TLRPC.Updates updates = (TLRPC.Updates) response;
+                MessagesController.getInstance(account).putChats(updates.chats, false);
+                TLRPC.Chat group = null;
+                for (int i = 0; i < updates.chats.size(); i++) {
+                    if (updates.chats.get(i).megagroup) {
+                        group = updates.chats.get(i);
+                    }
+                }
+                if (group == null) {
+                    onError.run(LocaleController.getString(R.string.TigiPostErrorGeneric));
+                    return;
+                }
+                final TLRPC.Chat finalGroup = group;
+                final TLRPC.TL_channels_setDiscussionGroup link = new TLRPC.TL_channels_setDiscussionGroup();
+                link.broadcast = MessagesController.getInputChannel(channel);
+                link.group = MessagesController.getInputChannel(group);
+                ConnectionsManager.getInstance(account).sendRequest(link, (linked, linkError) -> AndroidUtilities.runOnUIThread(() -> {
+                    if (!(linked instanceof TLRPC.TL_boolTrue)) {
+                        onError.run(errorText(linkError));
+                        return;
+                    }
+                    // it is how comments work, not a group the user made: keep it out of the chat list
+                    MessagesController.getInstance(account).addDialogToFolder(-finalGroup.id, 1, -1, 0);
+                    MessagesController.getInstance(account).loadFullChat(channel.id, 0, true);
+                    onDone.run(finalGroup);
+                }));
             });
         }, ConnectionsManager.RequestFlagFailOnServerErrors);
     }

@@ -356,6 +356,36 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         checkUnreadCount(true);
 
         showAccountChangeHint();
+        if (!nilakStartChecked) {
+            nilakStartChecked = true;
+            nilakStart(0);
+        }
+    }
+
+    private boolean nilakStartChecked;
+    private static boolean nilakMovedToHome;
+
+    /**
+     * Nilak start: first run for people with almost no channels, otherwise Home as the first screen. The app still
+     * opens on Chats for a moment, so Telegram's permission questions and storage checks run as before.
+     */
+    private void nilakStart(int attempt) {
+        if (getParentActivity() == null || isFinishing()) {
+            return;
+        }
+        if (!getMessagesController().dialogsLoaded && attempt < 15) {
+            // the chat list decides whether first run is needed
+            AndroidUtilities.runOnUIThread(() -> nilakStart(attempt + 1), 1000);
+            return;
+        }
+        if (TigiOnboardingActivity.shouldShow(currentAccount)) {
+            presentFragment(new TigiOnboardingActivity());
+            return;
+        }
+        if (BuildVars.TIGI_START_ON_HOME && !nilakMovedToHome && POSITION_HOME >= 0 && viewPager != null && viewPager.getCurrentPosition() == POSITION_CHATS) {
+            nilakMovedToHome = true;
+            openHomeTab();
+        }
     }
 
     private void checkContactsTabBadge() {

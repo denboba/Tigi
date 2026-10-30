@@ -63,6 +63,8 @@ public class BuildVars {
     public static boolean TIGI_LIVE = true;    // "Go live" in the Create sheet, LIVE badges in feeds
     public static boolean TIGI_EXPLORE = true;     // Explore: For you grid, hashtags, channel search (search button on Home)
     public static boolean TIGI_COMMENTS = true;    // comments in a sheet over the post; quiet discussion group for the own channel
+    public static boolean TIGI_ONBOARDING = true;  // first run: interests and suggested channels for people with almost no channels
+    public static boolean TIGI_START_ON_HOME = true; // move to Home after the start (Chats opens first for permissions)
     public static boolean TIGI_PROFILE_TAB = true; // Profile tab is the Tigi profile (own posts grid); off = Telegram's profile
     // Premium, Stars, Gram wallet, Business and gift rows in Settings. Off while IS_BILLING_UNAVAILABLE: Google Play
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.

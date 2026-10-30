@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nilak icon set: photo post -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M6.5,4.5L17.5,4.5C19.16,4.5 20.5,5.84 20.5,7.5L20.5,16.5C20.5,18.16 19.16,19.5 17.5,19.5L6.5,19.5C4.84,19.5 3.5,18.16 3.5,16.5L3.5,7.5C3.5,5.84 4.84,4.5 6.5,4.5Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M9,8.4A1.6,1.6 0 1,1 9,11.6A1.6,1.6 0 1,1 9,8.4Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.9"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M4,17L9,12.5L13,16L16,13.5L20,17" />
+</vector>

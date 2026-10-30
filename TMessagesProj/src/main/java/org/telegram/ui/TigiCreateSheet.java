@@ -3,6 +3,8 @@ package org.telegram.ui;
 import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.os.Bundle;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -61,73 +63,156 @@ public class TigiCreateSheet {
             AccountFrozenAlert.show(account);
             return;
         }
-        final ArrayList<CharSequence> items = new ArrayList<>();
-        final ArrayList<Integer> icons = new ArrayList<>();
-        final ArrayList<Integer> actions = new ArrayList<>();
+        // Post, Reel, Story and Live as large tiles, Text post as a wide row, and the channel posts go to at the bottom
+        final ArrayList<Integer> tiles = new ArrayList<>();
         if (BuildVars.TIGI_POST) {
-            items.add(LocaleController.getString(R.string.TigiCreatePost));
-            icons.add(R.drawable.msg_media);
-            actions.add(ACTION_POST);
-            items.add(LocaleController.getString(R.string.TigiCreateReel));
-            icons.add(R.drawable.msg_video);
-            actions.add(ACTION_REEL);
+            tiles.add(ACTION_POST);
+            tiles.add(ACTION_REEL);
         }
         if (TigiPosting.storiesOffered(account)) {
-            items.add(LocaleController.getString(R.string.TigiCreateStory));
-            icons.add(R.drawable.msg_camera);
-            actions.add(ACTION_STORY);
+            tiles.add(ACTION_STORY);
         }
         if (BuildVars.TIGI_LIVE && liveAvailable) {
-            items.add(LocaleController.getString(R.string.TigiCreateLive));
-            icons.add(R.drawable.msg_voicechat);
-            actions.add(ACTION_LIVE);
+            tiles.add(ACTION_LIVE);
         }
-        if (BuildVars.TIGI_POST) {
-            items.add(LocaleController.getString(R.string.TigiCreateText));
-            icons.add(R.drawable.msg_edit);
-            actions.add(ACTION_TEXT);
-            // channels the user runs besides the personal one: posting there is a deliberate choice
-            final TLRPC.Chat own = TigiPosting.defaultChannel(account);
-            final ArrayList<TLRPC.Chat> postable = TigiPosting.postableChannels(account);
-            if (postable.size() > (own != null && postable.contains(own) ? 1 : 0)) {
-                items.add(LocaleController.getString(R.string.TigiPostToOtherChannel));
-                icons.add(R.drawable.msg_channel);
-                actions.add(ACTION_OTHER_CHANNEL);
-            }
-        }
-        if (actions.isEmpty()) {
+        if (tiles.isEmpty() && !BuildVars.TIGI_POST) {
             return;
         }
-        final int[] iconArray = new int[icons.size()];
-        for (int i = 0; i < iconArray.length; i++) {
-            iconArray[i] = icons.get(i);
+        final Context context = fragment.getParentActivity();
+        final Theme.ResourcesProvider resources = fragment.getResourceProvider();
+        final BottomSheet sheet = new BottomSheet(context, false, resources);
+        final LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(6), AndroidUtilities.dp(16), AndroidUtilities.dp(12));
+
+        final int textColor = Theme.getColor(Theme.key_dialogTextBlack, resources);
+        final int grayColor = Theme.getColor(Theme.key_dialogTextGray3, resources);
+        final TextView title = new TextView(context);
+        title.setText(LocaleController.getString(R.string.TigiCreate));
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
+        title.setTypeface(TigiStyle.displayExtraBold());
+        title.setTextColor(textColor);
+        androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
+        content.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 4, 0, 4, 0));
+        final TextView subtitle = new TextView(context);
+        subtitle.setText(LocaleController.getString(R.string.TigiCreateWhat));
+        subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        subtitle.setTextColor(grayColor);
+        content.addView(subtitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 4, 2, 4, 14));
+
+        LinearLayout row = null;
+        for (int i = 0; i < tiles.size(); i++) {
+            if (i % 2 == 0) {
+                row = new LinearLayout(context);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                content.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 10));
+            }
+            final int action = tiles.get(i);
+            row.addView(tile(context, resources, action, false, () -> {
+                sheet.dismiss();
+                run(fragment, action);
+            }), LayoutHelper.createLinear(0, 108, 1f, i % 2 == 0 ? 0 : 5, 0, i % 2 == 0 ? 5 : 0, 0));
         }
-        final BottomSheet.Builder builder = new BottomSheet.Builder(fragment.getParentActivity(), false, fragment.getResourceProvider());
-        builder.setTitle(LocaleController.getString(R.string.TigiCreate), true);
-        builder.setItems(items.toArray(new CharSequence[0]), iconArray, (dialog, which) -> {
-            if (which < 0 || which >= actions.size()) {
-                return;
-            }
-            switch (actions.get(which)) {
-                case ACTION_POST:
-                case ACTION_REEL:
-                    pickChannel(fragment, ChatActivity.TIGI_COMPOSE_MEDIA);
-                    break;
-                case ACTION_TEXT:
-                    pickChannel(fragment, ChatActivity.TIGI_COMPOSE_TEXT);
-                    break;
-                case ACTION_OTHER_CHANNEL:
+        if (row != null && tiles.size() % 2 == 1) {
+            // keep the last tile half width
+            row.addView(new View(context), LayoutHelper.createLinear(0, 108, 1f, 5, 0, 0, 0));
+        }
+        if (BuildVars.TIGI_POST) {
+            content.addView(tile(context, resources, ACTION_TEXT, true, () -> {
+                sheet.dismiss();
+                run(fragment, ACTION_TEXT);
+            }), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64, 0, 0, 0, 4));
+
+            // "Posting to <channel> · Change" when the user runs other channels too
+            final TLRPC.Chat target = TigiPosting.defaultChannel(account);
+            final ArrayList<TLRPC.Chat> postable = TigiPosting.postableChannels(account);
+            if (target != null && postable.size() > (postable.contains(target) ? 1 : 0)) {
+                final TextView footer = new TextView(context);
+                final String change = LocaleController.getString(R.string.TigiChange);
+                final String text = LocaleController.formatString(R.string.TigiPostingTo, target.title) + " · " + change;
+                final android.text.SpannableString span = new android.text.SpannableString(text);
+                span.setSpan(new android.text.style.ForegroundColorSpan(TigiStyle.accent()), text.length() - change.length(), text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                footer.setText(span);
+                footer.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                footer.setTextColor(grayColor);
+                footer.setGravity(Gravity.CENTER);
+                footer.setMinHeight(AndroidUtilities.dp(44));
+                footer.setOnClickListener(v -> {
+                    sheet.dismiss();
                     pickFrom(fragment, TigiPosting.postableChannels(account), chat -> compose(fragment, chat, ChatActivity.TIGI_COMPOSE_MEDIA));
-                    break;
-                case ACTION_STORY:
-                    TigiPosting.openStoryRecorder(fragment);
-                    break;
-                case ACTION_LIVE:
-                    TigiLive.start(fragment);
-                    break;
+                });
+                content.addView(footer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
             }
-        });
-        fragment.showDialog(builder.create());
+        }
+        sheet.setCustomView(content);
+        fragment.showDialog(sheet);
+    }
+
+    private static void run(BaseFragment fragment, int action) {
+        final int account = fragment.getCurrentAccount();
+        switch (action) {
+            case ACTION_POST:
+            case ACTION_REEL:
+                pickChannel(fragment, ChatActivity.TIGI_COMPOSE_MEDIA);
+                break;
+            case ACTION_TEXT:
+                pickChannel(fragment, ChatActivity.TIGI_COMPOSE_TEXT);
+                break;
+            case ACTION_OTHER_CHANNEL:
+                pickFrom(fragment, TigiPosting.postableChannels(account), chat -> compose(fragment, chat, ChatActivity.TIGI_COMPOSE_MEDIA));
+                break;
+            case ACTION_STORY:
+                TigiPosting.openStoryRecorder(fragment);
+                break;
+            case ACTION_LIVE:
+                TigiLive.start(fragment);
+                break;
+        }
+    }
+
+    private static View tile(Context context, Theme.ResourcesProvider resources, int action, boolean wide, Runnable onClick) {
+        final int icon;
+        final int title;
+        final int hint;
+        switch (action) {
+            case ACTION_REEL: icon = R.drawable.tigi_reels_24; title = R.string.TigiCreateReel; hint = R.string.TigiCreateReelHint; break;
+            case ACTION_STORY: icon = R.drawable.tigi_clock_24; title = R.string.TigiCreateStory; hint = R.string.TigiCreateStoryHint; break;
+            case ACTION_LIVE: icon = R.drawable.tigi_live_24; title = R.string.TigiCreateLive; hint = R.string.TigiCreateLiveHint; break;
+            case ACTION_TEXT: icon = R.drawable.tigi_text_24; title = R.string.TigiCreateText; hint = R.string.TigiCreateTextHint; break;
+            default: icon = R.drawable.tigi_image_24; title = R.string.TigiCreatePost; hint = R.string.TigiCreatePostHint; break;
+        }
+        final int textColor = Theme.getColor(Theme.key_dialogTextBlack, resources);
+        final LinearLayout box = new LinearLayout(context);
+        box.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        box.setGravity(wide ? Gravity.CENTER_VERTICAL : Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        box.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(12), AndroidUtilities.dp(14), AndroidUtilities.dp(12));
+        box.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(16), Theme.multAlpha(textColor, 0.05f), Theme.multAlpha(textColor, 0.11f)));
+        final ImageView image = new ImageView(context);
+        image.setImageResource(icon);
+        image.setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
+        box.addView(image, LayoutHelper.createLinear(26, 26));
+        final LinearLayout texts = new LinearLayout(context);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        final TextView name = new TextView(context);
+        name.setText(LocaleController.getString(title));
+        name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        name.setTypeface(TigiStyle.displayBold());
+        name.setTextColor(textColor);
+        texts.addView(name);
+        final TextView sub = new TextView(context);
+        sub.setText(LocaleController.getString(hint));
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+        sub.setTextColor(Theme.getColor(Theme.key_dialogTextGray3, resources));
+        sub.setMaxLines(2);
+        texts.addView(sub);
+        if (wide) {
+            box.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 14, 0, 0, 0));
+        } else {
+            box.addView(texts, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
+        }
+        box.setContentDescription(LocaleController.getString(title) + ", " + LocaleController.getString(hint));
+        box.setOnClickListener(v -> onClick.run());
+        return box;
     }
 
     /* the channel */

@@ -48,7 +48,10 @@ public class TigiOnboardingActivity extends BaseFragment {
     private static final int[] INTERESTS = {
         R.string.NilakInterestNews, R.string.NilakInterestFootball, R.string.NilakInterestMusic, R.string.NilakInterestComedy,
         R.string.NilakInterestTech, R.string.NilakInterestFaith, R.string.NilakInterestBusiness, R.string.NilakInterestLearning,
-        R.string.NilakInterestFood, R.string.NilakInterestMovies, R.string.NilakInterestSports, R.string.NilakInterestTravel
+        R.string.NilakInterestFood, R.string.NilakInterestMovies, R.string.NilakInterestSports, R.string.NilakInterestTravel,
+        R.string.NilakInterestEducation, R.string.NilakInterestHealth, R.string.NilakInterestFashion, R.string.NilakInterestArt,
+        R.string.NilakInterestGaming, R.string.NilakInterestScience, R.string.NilakInterestCulture, R.string.NilakInterestJobs,
+        R.string.NilakInterestLanguages
     };
 
     private final HashSet<Integer> picked = new HashSet<>();

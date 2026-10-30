@@ -241,6 +241,56 @@ public class TigiPosting {
     }
 
     private static final String KEY_PERSONAL = "nilak_personal_channel_set";
+    private static final String KEY_IDENTITY = "nilak_identity_done";
+    /** Profile channels made by Nilak end with this, so Nilak can tell a person's profile from other channels. */
+    public static final String NILAK_SUFFIX = "_nilak";
+
+    public static boolean isNilakProfile(TLRPC.Chat chat) {
+        final String username = chat != null ? ChatObject.getPublicUsername(chat) : null;
+        return username != null && username.toLowerCase(Locale.US).endsWith(NILAK_SUFFIX);
+    }
+
+    /**
+     * The profile channel as the person's identity, quietly: their name as its title and a public link ending in
+     * _nilak (abdi_nilak, then abdi_nilak123, then nilak_<id>) so Nilak can recognise profiles. Done once.
+     */
+    public static void ensureNilakIdentity(int account) {
+        final TLRPC.Chat own = ownChannel(account);
+        final TLRPC.User self = UserConfig.getInstance(account).getCurrentUser();
+        if (own == null || self == null || prefs(account).getLong(KEY_IDENTITY, 0) == own.id) {
+            return;
+        }
+        prefs(account).edit().putLong(KEY_IDENTITY, own.id).apply();
+        final String name = UserObject.getUserName(self);
+        if (!TextUtils.isEmpty(name) && !name.equals(own.title)) {
+            MessagesController.getInstance(account).changeChatTitle(own.id, name);
+        }
+        if (TextUtils.isEmpty(ChatObject.getPublicUsername(own))) {
+            final ArrayList<String> candidates = new ArrayList<>();
+            final String base = suggestedUsername(account);
+            if (base != null) {
+                candidates.add(base);
+                final String numbered = base + (self.id % 1000);
+                if (numbered.length() <= 32) {
+                    candidates.add(numbered);
+                }
+            }
+            candidates.add("nilak_" + self.id);
+            claimUsername(account, own, candidates, 0);
+        }
+    }
+
+    private static void claimUsername(int account, TLRPC.Chat chat, ArrayList<String> candidates, int index) {
+        if (index >= candidates.size()) {
+            return;
+        }
+        setPublicUsername(account, chat, candidates.get(index), () -> {}, message -> {
+            // taken: the next one; other refusals (too many public channels) keep the profile private
+            if (message.equals(LocaleController.formatString(R.string.TigiPostLinkTaken, candidates.get(index)))) {
+                claimUsername(account, chat, candidates, index + 1);
+            }
+        });
+    }
 
     /**
      * The own channel shown on the user's Telegram profile as their personal channel, so other people opening the
@@ -293,7 +343,8 @@ public class TigiPosting {
 
     public static String suggestedTitle(int account) {
         final TLRPC.User self = UserConfig.getInstance(account).getCurrentUser();
-        final String name = self != null ? UserObject.getFirstName(self) : null;
+        // the profile channel carries the person's own name
+        final String name = self != null ? UserObject.getUserName(self) : null;
         return LocaleController.formatString(R.string.TigiOwnChannelTitle, TextUtils.isEmpty(name) ? LocaleController.getString(R.string.AppName) : name);
     }
 
@@ -308,7 +359,7 @@ public class TigiPosting {
         if (base.isEmpty() || !Character.isLetter(base.charAt(0))) {
             return null;
         }
-        String candidate = base + "_tigi";
+        String candidate = base + NILAK_SUFFIX;
         if (candidate.length() > 32) {
             candidate = candidate.substring(0, 32);
         }
@@ -359,6 +410,9 @@ public class TigiPosting {
                 // comments on from the first post; a failure here only means no comments yet
                 createDiscussionGroup(account, chat, group -> {}, message -> {});
                 setPersonalChannelOnce(account);
+                if (TextUtils.isEmpty(publicUsername)) {
+                    ensureNilakIdentity(account);
+                }
                 if (TextUtils.isEmpty(publicUsername)) {
                     onDone.run(chat);
                     return;

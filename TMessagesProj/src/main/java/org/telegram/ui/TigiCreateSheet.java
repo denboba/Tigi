@@ -152,8 +152,14 @@ public class TigiCreateSheet {
         final int account = fragment.getCurrentAccount();
         switch (action) {
             case ACTION_POST:
-            case ACTION_REEL:
                 pickChannel(fragment, ChatActivity.TIGI_COMPOSE_MEDIA);
+                break;
+            case ACTION_REEL:
+                if (BuildVars.TIGI_SILENT_POST) {
+                    pickChannel(fragment, ChatActivity.TIGI_COMPOSE_MEDIA, chat -> TigiComposeActivity.start(fragment, chat, TigiComposeActivity.MODE_REEL));
+                } else {
+                    pickChannel(fragment, ChatActivity.TIGI_COMPOSE_MEDIA);
+                }
                 break;
             case ACTION_TEXT:
                 pickChannel(fragment, ChatActivity.TIGI_COMPOSE_TEXT);
@@ -438,6 +444,11 @@ public class TigiCreateSheet {
             if (fragment != null && fragment.getParentActivity() != null) {
                 BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiPostNoRights)).show();
             }
+            return;
+        }
+        if (BuildVars.TIGI_SILENT_POST) {
+            // Nilak's own composer: gallery, caption, Share; the channel's chat is never shown
+            TigiComposeActivity.start(fragment, chat, composeMode == ChatActivity.TIGI_COMPOSE_TEXT ? TigiComposeActivity.MODE_TEXT : TigiComposeActivity.MODE_POST);
             return;
         }
         TigiPosting.setLastChannel(fragment.getCurrentAccount(), chat.id);

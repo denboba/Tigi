@@ -250,6 +250,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (BuildVars.TIGI_POST) {
             TigiPosting.archiveOwnChannelOnce(currentAccount);
             TigiPosting.setPersonalChannelOnce(currentAccount);
+            TigiPosting.ensureNilakIdentity(currentAccount);
         }
         if (posts.isEmpty() || System.currentTimeMillis() - lastLoadTime > RELOAD_AFTER_MS || (discover && followedSinceLoad)) {
             loadFeed();

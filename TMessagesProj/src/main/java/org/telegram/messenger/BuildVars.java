@@ -66,6 +66,7 @@ public class BuildVars {
     public static boolean TIGI_ONBOARDING = true;  // first run: interests and suggested channels for people with almost no channels
     public static boolean TIGI_START_ON_HOME = true; // move to Home after the start (Chats opens first for permissions)
     public static boolean TIGI_ACTIVITY = true;    // Activity (bell on Home): reactions, comments, followers, views on own posts
+    public static boolean TIGI_SILENT_POST = true; // Nilak composer: gallery + caption, posts without opening the channel chat
     public static boolean TIGI_PROFILE_TAB = true; // Profile tab is the Tigi profile (own posts grid); off = Telegram's profile
     // Premium, Stars, Gram wallet, Business and gift rows in Settings. Off while IS_BILLING_UNAVAILABLE: Google Play
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.

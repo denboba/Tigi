@@ -1202,6 +1202,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             tiles.addView(sheetTile(context, R.drawable.tigi_save_24, LocaleController.getString(saved ? R.string.TigiUnsave : R.string.TigiSave), () -> {
                 sheet.dismiss();
                 final boolean nowSaved = TigiFeedPrefs.toggleSaved(currentAccount, chat.id, primary.getId());
+                refreshPost(post);
                 BulletinFactory.of(this).createSimpleBulletin(R.raw.msg_stories_saved, LocaleController.getString(nowSaved ? R.string.TigiSavedDone : R.string.TigiUnsavedDone)).show();
             }), LayoutHelper.createLinear(0, 76, 1f, 4, 4, 4, 8));
             tiles.addView(sheetTile(context, R.drawable.tigi_share_24, LocaleController.getString(R.string.ShareFile), () -> {
@@ -1479,6 +1480,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final TextView commentCountView;
         private final ImageView commentButton;
         private final ImageView shareButton;
+        private ImageView saveButton;
         private final LinearLayout chipsRow;
         private final TextView captionView;
         private LinearLayout captionBox;
@@ -1717,6 +1719,19 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 }
             });
             actions.addView(shareButton, LayoutHelper.createLinear(48, 48));
+            // save on the far side, Instagram-style
+            actions.addView(new View(context), LayoutHelper.createLinear(0, 48, 1f));
+            saveButton = new ImageView(context);
+            saveButton.setScaleType(ImageView.ScaleType.CENTER);
+            saveButton.setOnClickListener(v -> {
+                if (post == null || post.messages.isEmpty() || post.chat == null || post.primary().getId() <= 0) {
+                    return;
+                }
+                final boolean nowSaved = TigiFeedPrefs.toggleSaved(currentAccount, post.chat.id, post.primary().getId());
+                bindSave();
+                BulletinFactory.of(TigiFeedBase.this).createSimpleBulletin(R.raw.msg_stories_saved, LocaleController.getString(nowSaved ? R.string.TigiSavedDone : R.string.TigiUnsavedDone)).show();
+            });
+            actions.addView(saveButton, LayoutHelper.createLinear(48, 48));
             addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
 
             chipsRow = new LinearLayout(context);
@@ -1782,6 +1797,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             moreView.setTextColor(TigiStyle.accent());
             commentButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
             shareButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
+            bindSave();
             forwardedView.setTextColor(gray);
             fallbackLabel.setTextColor(text);
             fallbackBox.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
@@ -2000,6 +2016,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             if (post == null || post.messages.isEmpty() || post.sponsored) {
                 return;
             }
+            bindSave();
             final MessageObject message = post.primary();
             final boolean liked = heartChosen(message);
             heartButton.setImageResource(liked ? R.drawable.tigi_heart_filled_24 : R.drawable.tigi_heart_outline_24);
@@ -2042,6 +2059,17 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 }
             }
             chipsRow.setVisibility(chipsRow.getChildCount() > 0 ? VISIBLE : GONE);
+        }
+
+        void bindSave() {
+            if (saveButton == null) {
+                return;
+            }
+            final boolean saved = post != null && !post.messages.isEmpty() && post.chat != null && TigiFeedPrefs.isSaved(currentAccount, post.chat.id, post.primary().getId());
+            saveButton.setImageResource(saved ? R.drawable.tigi_save_filled_24 : R.drawable.tigi_save_24);
+            saveButton.setColorFilter(new PorterDuffColorFilter(saved ? TigiStyle.accent() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
+            saveButton.setContentDescription(LocaleController.getString(saved ? R.string.TigiUnsave : R.string.TigiSave));
+            saveButton.setVisibility(post != null && post.primary().getId() > 0 ? VISIBLE : GONE);
         }
 
         private void popHeart() {

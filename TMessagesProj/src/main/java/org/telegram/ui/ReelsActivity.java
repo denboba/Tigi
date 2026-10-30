@@ -158,6 +158,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
 
         inlinePlayer = new TigiInlinePlayer(currentAccount, "tigi_reels_muted_v1");
         inlinePlayer.setFitInside(true);
+        inlinePlayer.setCropTall(true);
 
         listView = new RecyclerListView(context);
         pagerLayout = new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false);
@@ -971,6 +972,8 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             captionView.setMaxLines(2);
             final MessageObject message = post.primary();
             final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, AndroidUtilities.getPhotoSize());
+            // like the video: tall clips fill the screen, wide ones keep bars
+            thumbView.getImageReceiver().setAspectFit(size == null || size.h < size.w * 1.25f);
             thumbView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "1000_1000", (android.graphics.drawable.Drawable) null, message.photoThumbsObject);
             final AvatarDrawable avatarDrawable = new AvatarDrawable();
             avatarDrawable.setInfo(currentAccount, post.chat);

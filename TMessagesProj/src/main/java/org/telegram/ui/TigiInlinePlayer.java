@@ -62,6 +62,13 @@ public class TigiInlinePlayer {
     }
 
     /** true: letterbox wide videos instead of cropping them (full screen reels). */
+    private boolean cropTall;
+
+    /** With fit-inside on, still fill the host with portrait videos (Reels). */
+    public void setCropTall(boolean cropTall) {
+        this.cropTall = cropTall;
+    }
+
     public void setFitInside(boolean fitInside) {
         this.fitInside = fitInside;
     }
@@ -193,7 +200,9 @@ public class TigiInlinePlayer {
         if (hostW <= 0 || hostH <= 0) {
             return;
         }
-        final float scale = fitInside ? Math.min(hostW / width, hostH / height) : Math.max(hostW / width, hostH / height);
+        // full-screen reels: tall videos fill the screen (cropping a little), wide ones fit with bars
+        final boolean inside = fitInside && !(cropTall && height >= width * 1.25f);
+        final float scale = inside ? Math.min(hostW / width, hostH / height) : Math.max(hostW / width, hostH / height);
         final FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) textureView.getLayoutParams();
         params.width = (int) Math.ceil(width * scale);
         params.height = (int) Math.ceil(height * scale);

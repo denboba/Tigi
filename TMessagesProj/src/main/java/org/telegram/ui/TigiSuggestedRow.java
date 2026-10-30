@@ -155,7 +155,7 @@ public class TigiSuggestedRow extends LinearLayout {
         } else {
             follow.setText(LocaleController.getString(R.string.TigiProfileFollow));
             follow.setTextColor(0xFFFFFFFF);
-            follow.setBackground(TigiStyle.gradientPill(10));
+            follow.setBackground(TigiStyle.primaryPill(10));
         }
     }
 }

@@ -122,7 +122,7 @@ public class TigiStoriesRow extends HorizontalScrollView {
             plus.setTypeface(org.telegram.messenger.AndroidUtilities.bold());
             plus.setGravity(Gravity.CENTER);
             plus.setIncludeFontPadding(false);
-            final android.graphics.drawable.GradientDrawable badge = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.BL_TR, new int[]{TigiStyle.GRADIENT_START, TigiStyle.GRADIENT_END});
+            final android.graphics.drawable.GradientDrawable badge = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.BL_TR, new int[]{TigiStyle.RING_START, TigiStyle.RING_END});
             badge.setShape(android.graphics.drawable.GradientDrawable.OVAL);
             badge.setStroke(dp(2), Theme.getColor(Theme.key_windowBackgroundWhite));
             plus.setBackground(badge);
@@ -202,7 +202,7 @@ public class TigiStoriesRow extends HorizontalScrollView {
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
             if (unread) {
-                paint.setShader(new LinearGradient(0, h, w, 0, new int[]{TigiStyle.GRADIENT_START, TigiStyle.GRADIENT_END}, null, Shader.TileMode.CLAMP));
+                paint.setShader(new LinearGradient(0, h, w, 0, new int[]{TigiStyle.RING_START, TigiStyle.RING_END}, null, Shader.TileMode.CLAMP));
             }
         }
 

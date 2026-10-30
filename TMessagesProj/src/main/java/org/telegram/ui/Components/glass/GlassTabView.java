@@ -455,7 +455,9 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         tab.setContentDescription(LocaleController.getString(contentDescription));
         tab.imageView.setImageResource(icon);
         tab.imageView.setScaleType(ImageView.ScaleType.CENTER);
-        final GradientDrawable pill = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF8B5CF6, 0xFFEC4899});
+        // the create button: a solid pill in the brand violet
+        final GradientDrawable pill = new GradientDrawable();
+        pill.setColor(org.telegram.ui.TigiStyle.PRIMARY);
         pill.setCornerRadius(dp(16));
         tab.imageView.setBackground(pill);
         tab.imageView.setLayoutParams(LayoutHelper.createFrame(52, 34, Gravity.CENTER));

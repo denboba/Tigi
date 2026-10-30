@@ -215,7 +215,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
         titleView.setTextColor(text);
         subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         joinButton.setTextColor(0xFFFFFFFF);
-        joinButton.setBackground(TigiStyle.gradientPill(18));
+        joinButton.setBackground(TigiStyle.primaryPill(18));
     }
 
     private void updateJoinButton() {

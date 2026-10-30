@@ -10670,6 +10670,8 @@
     <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileShareProfile">Share profile</string>
     <string name="TigiYourStory">Your story</string>
+    <string name="NilakCommentLikesOff">Likes are turned off in these comments.</string>
+    <string name="NilakCommentJoinToReact">Join the discussion group to like comments.</string>
     <string name="NilakActivity">Activity</string>
     <string name="NilakActivityReactions_one">Your post got %1$d reaction</string>
     <string name="NilakActivityReactions_other">Your post got %1$d reactions</string>

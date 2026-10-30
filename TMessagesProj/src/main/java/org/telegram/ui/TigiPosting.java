@@ -240,6 +240,49 @@ public class TigiPosting {
         }
     }
 
+    private static final String KEY_PERSONAL = "nilak_personal_channel_set";
+
+    /**
+     * The own channel shown on the user's Telegram profile as their personal channel, so other people opening the
+     * profile see the posts and can follow. Done once, and never over a personal channel the user chose themselves.
+     */
+    public static void setPersonalChannelOnce(int account) {
+        final TLRPC.Chat own = ownChannel(account);
+        if (own == null || prefs(account).getLong(KEY_PERSONAL, 0) == own.id) {
+            return;
+        }
+        final MessagesController controller = MessagesController.getInstance(account);
+        final TLRPC.User self = UserConfig.getInstance(account).getCurrentUser();
+        if (self == null) {
+            return;
+        }
+        final TLRPC.UserFull full = controller.getUserFull(self.id);
+        if (full == null) {
+            controller.loadFullUser(self, 0, true, loaded -> AndroidUtilities.runOnUIThread(() -> {
+                if (loaded != null) {
+                    setPersonalChannelOnce(account);
+                }
+            }));
+            return;
+        }
+        prefs(account).edit().putLong(KEY_PERSONAL, own.id).apply();
+        if (full.personal_channel_id != 0) {
+            // the user picked one already
+            return;
+        }
+        final org.telegram.tgnet.tl.TL_account.updatePersonalChannel req = new org.telegram.tgnet.tl.TL_account.updatePersonalChannel();
+        req.channel = MessagesController.getInputChannel(own);
+        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (error == null) {
+                full.flags |= 64;
+                full.personal_channel_id = own.id;
+                full.personal_channel_message = 0;
+            } else {
+                prefs(account).edit().remove(KEY_PERSONAL).apply();
+            }
+        }));
+    }
+
     public static void setLastChannel(int account, long chatId) {
         prefs(account).edit().putLong(KEY_LAST, chatId).apply();
     }
@@ -315,6 +358,7 @@ public class TigiPosting {
                 prefs(account).edit().putLong(KEY_OWN, chat.id).putLong(KEY_LAST, chat.id).apply();
                 // comments on from the first post; a failure here only means no comments yet
                 createDiscussionGroup(account, chat, group -> {}, message -> {});
+                setPersonalChannelOnce(account);
                 if (TextUtils.isEmpty(publicUsername)) {
                     onDone.run(chat);
                     return;

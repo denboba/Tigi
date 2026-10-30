@@ -45,6 +45,22 @@ public class TigiNavigation {
             }
             // a person with a personal channel gets the posts grid of that channel
             final TLRPC.UserFull full = MessagesController.getInstance(account).getUserFull(dialogId);
+            if (BuildVars.TIGI_HOME && full == null && !user.bot && !user.self) {
+                // not known yet whether they have one: ask first, then open the right profile
+                MessagesController.getInstance(account).loadFullUser(user, 0, true, loaded -> AndroidUtilities.runOnUIThread(() -> {
+                    if (fragment.getParentActivity() == null) {
+                        return;
+                    }
+                    if (loaded != null && MessagesController.getInstance(account).getUserFull(dialogId) != null) {
+                        openProfile(fragment, dialogId);
+                    } else {
+                        final Bundle fallback = new Bundle();
+                        fallback.putLong("user_id", dialogId);
+                        fragment.presentFragment(new ProfileActivity(fallback));
+                    }
+                }));
+                return true;
+            }
             if (BuildVars.TIGI_HOME && full != null && full.personal_channel_id != 0) {
                 final TLRPC.Chat personal = MessagesController.getInstance(account).getChat(full.personal_channel_id);
                 if (personal != null && !personal.restricted) {

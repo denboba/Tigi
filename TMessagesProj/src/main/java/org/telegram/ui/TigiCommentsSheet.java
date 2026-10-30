@@ -69,6 +69,8 @@ public class TigiCommentsSheet extends BottomSheet {
     private boolean commentsOff;
     private String errorText;
     private boolean destroyed;
+    private int maxListHeight;
+    private int lastKeyboardHeight;
 
     private final RecyclerListView listView;
     private final Adapter adapter;
@@ -87,7 +89,21 @@ public class TigiCommentsSheet extends BottomSheet {
         final Context context = fragment.getParentActivity();
         fixNavigationBar(Theme.getColor(Theme.key_dialogBackground, resourcesProvider));
 
-        final LinearLayout content = new LinearLayout(context);
+        final LinearLayout content = new LinearLayout(context) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                // the list takes what is left above the input, so the input stays visible with the keyboard open
+                final int screen = AndroidUtilities.displaySize.y;
+                final int others = dp(44) + (replyingView.getVisibility() == VISIBLE ? dp(30) : 0) + (inputBar.getVisibility() == VISIBLE ? dp(62) : 0);
+                final int available = screen - AndroidUtilities.statusBarHeight - keyboardHeight - others - dp(72);
+                final int height = Math.max(dp(100), Math.min(maxListHeight, available));
+                final ViewGroup.LayoutParams params = listView.getLayoutParams();
+                if (params != null && params.height != height) {
+                    params.height = height;
+                }
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+            }
+        };
         content.setOrientation(LinearLayout.VERTICAL);
 
         titleView = new TextView(context);
@@ -102,8 +118,8 @@ public class TigiCommentsSheet extends BottomSheet {
         listView.setLayoutManager(new LinearLayoutManager(context));
         adapter = new Adapter();
         listView.setAdapter(adapter);
-        final int listHeight = (int) (Math.min(AndroidUtilities.displaySize.y, AndroidUtilities.displaySize.x * 2) * 0.55f);
-        content.addView(listView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeight));
+        maxListHeight = (int) (Math.min(AndroidUtilities.displaySize.y, AndroidUtilities.displaySize.x * 2) * 0.55f);
+        content.addView(listView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxListHeight));
 
         replyingView = new TextView(context);
         replyingView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
@@ -169,6 +185,18 @@ public class TigiCommentsSheet extends BottomSheet {
     }
 
     @Override
+    protected void onContainerTranslationYChanged(float translationY) {
+        super.onContainerTranslationYChanged(translationY);
+        if (lastKeyboardHeight != keyboardHeight) {
+            lastKeyboardHeight = keyboardHeight;
+            containerView.requestLayout();
+            if (!comments.isEmpty()) {
+                listView.post(() -> listView.scrollToPosition(comments.size() - 1));
+            }
+        }
+    }
+
+    @Override
     public void dismiss() {
         destroyed = true;
         AndroidUtilities.hideKeyboard(input);
@@ -222,6 +250,9 @@ public class TigiCommentsSheet extends BottomSheet {
                     }
                     discussionTop = new MessageObject(account, top, true, true);
                     discussionChatId = -discussionTop.getDialogId();
+                    if (fragment.getMessagesController().getChatFull(discussionChatId) == null) {
+                        fragment.getMessagesController().loadFullChat(discussionChatId, 0, true);
+                    }
                     inputBar.setVisibility(View.VISIBLE);
                     updateSend();
                     loadComments();
@@ -296,16 +327,50 @@ public class TigiCommentsSheet extends BottomSheet {
         }, 1200);
     }
 
-    private void toggleLike(MessageObject comment) {
+    /** The heart when the discussion group allows it, else the first reaction it allows; null when reactions are off. */
+    private ReactionsLayoutInBubble.VisibleReaction likeReaction() {
         final String heart = TigiHeart.find(fragment.getMediaDataController().getReactionsList());
-        final ReactionsLayoutInBubble.VisibleReaction reaction = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(heart != null ? heart : TigiHeart.HEART);
+        final String wanted = heart != null ? heart : TigiHeart.HEART;
+        final TLRPC.ChatFull full = fragment.getMessagesController().getChatFull(discussionChatId);
+        if (full == null || full.available_reactions == null || full.available_reactions instanceof TLRPC.TL_chatReactionsAll) {
+            return ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(wanted);
+        }
+        if (full.available_reactions instanceof TLRPC.TL_chatReactionsSome) {
+            final ArrayList<TLRPC.Reaction> allowed = ((TLRPC.TL_chatReactionsSome) full.available_reactions).reactions;
+            for (int i = 0; i < allowed.size(); i++) {
+                if (TigiHeart.isHeart(allowed.get(i))) {
+                    return ReactionsLayoutInBubble.VisibleReaction.fromTL(allowed.get(i));
+                }
+            }
+            return allowed.isEmpty() ? null : ReactionsLayoutInBubble.VisibleReaction.fromTL(allowed.get(0));
+        }
+        return null;
+    }
+
+    private String reactionError(TLRPC.TL_error error) {
+        final String text = error != null ? error.text : null;
+        if (text != null && text.startsWith("REACTION")) {
+            return LocaleController.getString(R.string.NilakCommentLikesOff);
+        }
+        if (text != null && (text.contains("PARTICIPANT") || text.contains("WRITE_FORBIDDEN") || text.contains("PRIVATE") || text.contains("GUEST"))) {
+            return LocaleController.getString(R.string.NilakCommentJoinToReact);
+        }
+        return LocaleController.getString(R.string.TigiReactionFailed) + (text != null ? " (" + text + ")" : "");
+    }
+
+    private void toggleLike(MessageObject comment) {
+        final ReactionsLayoutInBubble.VisibleReaction reaction = likeReaction();
+        if (reaction == null) {
+            BulletinFactory.of(container, resourcesProvider).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakCommentLikesOff)).show();
+            return;
+        }
         final boolean added = comment.selectReaction(reaction, false, false);
         final ArrayList<ReactionsLayoutInBubble.VisibleReaction> chosen = new ArrayList<>(comment.getChoosenReactions());
         SendMessagesHelper.getInstance(account).sendReaction(comment, chosen, added ? reaction : null, false, false, fragment, null, error -> {
             comment.selectReaction(reaction, false, false);
             adapter.notifyDataSetChanged();
             if (!destroyed) {
-                BulletinFactory.of(container, resourcesProvider).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionFailed)).show();
+                BulletinFactory.of(container, resourcesProvider).createSimpleBulletin(R.raw.error, reactionError(error)).show();
             }
         });
         adapter.notifyDataSetChanged();
@@ -470,6 +535,12 @@ public class TigiCommentsSheet extends BottomSheet {
             avatar = new BackupImageView(context);
             avatar.setRoundRadius(dp(16));
             addView(avatar, LayoutHelper.createFrame(32, 32, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)));
+            avatar.setOnClickListener(v -> {
+                if (comment != null) {
+                    dismiss();
+                    TigiNavigation.openProfile(fragment, comment.getFromChatId());
+                }
+            });
 
             final LinearLayout texts = new LinearLayout(context);
             texts.setOrientation(LinearLayout.VERTICAL);

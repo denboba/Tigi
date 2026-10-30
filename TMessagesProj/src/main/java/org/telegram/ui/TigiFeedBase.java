@@ -900,7 +900,13 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
         final MessageObject message = post.primary();
         if (BuildVars.TIGI_COMMENTS && getParentActivity() != null && message.getId() > 0) {
-            // comments in a sheet over the post; it also explains channels without comments
+            final TLRPC.MessageReplies postReplies = message.messageOwner.replies;
+            final boolean commentsOn = postReplies != null && postReplies.comments;
+            if (!commentsOn && !ChatObject.canChangeChatInfo(post.chat)) {
+                // say it right away instead of opening an empty sheet; owners get the sheet to turn comments on
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString(R.string.NilakCommentsOff)).show();
+                return;
+            }
             showDialog(new TigiCommentsSheet(this, post.chat, message));
             return;
         }

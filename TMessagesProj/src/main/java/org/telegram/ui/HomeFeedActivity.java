@@ -50,6 +50,17 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     }
 
     @Override
+    protected boolean appliesFeedFilter() {
+        return true;
+    }
+
+    @Override
+    protected void onFeedFilterUndone() {
+        lastLoadTime = 0;
+        loadFeed();
+    }
+
+    @Override
     protected boolean headerScrollsWithList() {
         return true;
     }
@@ -354,6 +365,14 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         lastLoadTime = System.currentTimeMillis();
         if (isDead()) {
             return;
+        }
+        // hidden channels and "Not interested" posts stay out
+        final TigiFeedPrefs.Filter filter = TigiFeedPrefs.filter(currentAccount);
+        for (int i = result.size() - 1; i >= 0; i--) {
+            final FeedPost item = result.get(i);
+            if (item.chat != null && !item.messages.isEmpty() && filter.skips(item.chat.id, item.primary().getId())) {
+                result.remove(i);
+            }
         }
         Collections.sort(result, (a, b) -> b.date - a.date);
         final ArrayList<FeedPost> unsent = unsentPosts();

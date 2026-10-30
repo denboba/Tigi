@@ -1160,8 +1160,18 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     /** The card's three-dot menu: everything Telegram allows for this post, plus report for other people's posts. */
+    /** Home and Reels skip hidden channels and "Not interested" posts; a channel's own feed shows everything. */
+    protected boolean appliesFeedFilter() {
+        return false;
+    }
+
+    /**
+     * The ⋮ sheet of a post: Save, Share and Send as big shortcuts, then the controls. Other people's posts get
+     * Not interested, Hide, Copy link, View in chat, Unfollow and Report (last, red); posts the user can manage get
+     * Edit, Pin, Statistics, Copy link, View in chat and Delete.
+     */
     protected void showPostMenu(FeedPost post, View anchor) {
-        if (post == null || post.messages.isEmpty() || post.chat == null || anchor == null || isDead()) {
+        if (post == null || post.messages.isEmpty() || post.chat == null || isDead() || getParentActivity() == null) {
             return;
         }
         final MessageObject primary = post.primary();
@@ -1177,46 +1187,215 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         final TLRPC.Chat chat = getMessagesController().getChat(post.chat.id) != null ? getMessagesController().getChat(post.chat.id) : post.chat;
         final boolean sent = primary.getId() > 0 && !primary.isSending() && !primary.isSendError();
         final TLRPC.ChatFull full = getMessagesController().getChatFull(chat.id);
-        final org.telegram.ui.Components.ItemOptions options = org.telegram.ui.Components.ItemOptions.makeOptions(this, anchor);
-        options.add(R.drawable.msg_openin, LocaleController.getString(R.string.ViewInChat), () -> openPostInChat(post, primary));
+        final boolean manages = ChatObject.canPost(chat) || primary.isOut();
+
+        final Context context = getParentActivity();
+        final org.telegram.ui.ActionBar.BottomSheet sheet = new org.telegram.ui.ActionBar.BottomSheet(context, false, getResourceProvider());
+        final LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(4), dp(12), dp(8));
+
         if (sent) {
-            options.add(R.drawable.msg_link, LocaleController.getString(R.string.CopyLink), () -> {
-                final String username = ChatObject.getPublicUsername(chat);
-                final String link = !TextUtils.isEmpty(username)
-                    ? "https://t.me/" + username + "/" + primary.getId()
-                    : "https://t.me/c/" + chat.id + "/" + primary.getId();
-                AndroidUtilities.addToClipboard(link);
-                BulletinFactory.of(this).createCopyLinkBulletin(TextUtils.isEmpty(username)).show();
-            });
+            final LinearLayout tiles = new LinearLayout(context);
+            tiles.setOrientation(LinearLayout.HORIZONTAL);
+            final boolean saved = TigiFeedPrefs.isSaved(currentAccount, chat.id, primary.getId());
+            tiles.addView(sheetTile(context, R.drawable.tigi_save_24, LocaleController.getString(saved ? R.string.TigiUnsave : R.string.TigiSave), () -> {
+                sheet.dismiss();
+                final boolean nowSaved = TigiFeedPrefs.toggleSaved(currentAccount, chat.id, primary.getId());
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.msg_stories_saved, LocaleController.getString(nowSaved ? R.string.TigiSavedDone : R.string.TigiUnsavedDone)).show();
+            }), LayoutHelper.createLinear(0, 76, 1f, 4, 4, 4, 8));
+            tiles.addView(sheetTile(context, R.drawable.tigi_share_24, LocaleController.getString(R.string.ShareFile), () -> {
+                sheet.dismiss();
+                sharePost(post);
+            }), LayoutHelper.createLinear(0, 76, 1f, 4, 4, 4, 8));
+            tiles.addView(sheetTile(context, R.drawable.tigi_comment_24, LocaleController.getString(R.string.TigiSendToChat), () -> {
+                sheet.dismiss();
+                showDialog(org.telegram.ui.Components.ShareAlert.createShareAlert(context, primary, null, ChatObject.isChannelAndNotMegaGroup(chat), postLink(chat, primary), false));
+            }), LayoutHelper.createLinear(0, 76, 1f, 4, 4, 4, 8));
+            content.addView(tiles, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        }
+
+        if (!manages && sent && appliesFeedFilter()) {
+            content.addView(sheetRow(context, R.drawable.msg_cancel, LocaleController.getString(R.string.TigiNotInterested), false, () -> {
+                sheet.dismiss();
+                TigiFeedPrefs.setNotInterested(currentAccount, chat.id, primary.getId(), true);
+                removeFilteredPosts();
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.chats_hide, LocaleController.getString(R.string.TigiNotInterestedDone), LocaleController.getString(R.string.Undo), () -> {
+                    TigiFeedPrefs.setNotInterested(currentAccount, chat.id, primary.getId(), false);
+                    onFeedFilterUndone();
+                }).show();
+            }));
+            content.addView(sheetRow(context, R.drawable.msg_block, LocaleController.formatString(R.string.TigiHideChannel, chat.title), false, () -> {
+                sheet.dismiss();
+                TigiFeedPrefs.setHidden(currentAccount, chat.id, true);
+                removeFilteredPosts();
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.chats_hide, LocaleController.formatString(R.string.TigiHideChannelDone, chat.title), LocaleController.getString(R.string.Undo), () -> {
+                    TigiFeedPrefs.setHidden(currentAccount, chat.id, false);
+                    onFeedFilterUndone();
+                }).show();
+            }));
         }
         if (sent && editTarget.canEditMessage(chat)) {
-            options.add(R.drawable.msg_edit, LocaleController.getString(post.media.isEmpty() ? R.string.Edit : R.string.EditCaption), () -> {
+            content.addView(sheetRow(context, R.drawable.msg_edit, LocaleController.getString(post.media.isEmpty() ? R.string.Edit : R.string.EditCaption), false, () -> {
+                sheet.dismiss();
                 final Bundle args = new Bundle();
                 args.putLong("chat_id", chat.id);
                 args.putInt("message_id", editTarget.getId());
                 final ChatActivity chatActivity = new ChatActivity(args);
                 chatActivity.setTigiEditMessage(editTarget);
                 presentFragment(chatActivity);
-            });
+            }));
         }
         if (sent && ChatObject.canPinMessages(chat)) {
             final boolean pinned = primary.messageOwner.pinned;
-            options.add(pinned ? R.drawable.msg_unpin : R.drawable.msg_pin, LocaleController.getString(pinned ? R.string.UnpinMessage : R.string.PinMessage), () -> {
+            content.addView(sheetRow(context, pinned ? R.drawable.msg_unpin : R.drawable.msg_pin, LocaleController.getString(pinned ? R.string.UnpinMessage : R.string.PinMessage), false, () -> {
+                sheet.dismiss();
                 getMessagesController().pinMessage(chat, null, primary.getId(), pinned, false, false);
                 primary.messageOwner.pinned = !pinned;
-            });
+            }));
         }
         if (sent && full != null && full.can_view_stats) {
-            options.add(R.drawable.msg_stats, LocaleController.getString(R.string.Statistics), () -> presentFragment(new MessageStatisticActivity(primary)));
+            content.addView(sheetRow(context, R.drawable.msg_stats, LocaleController.getString(R.string.Statistics), false, () -> {
+                sheet.dismiss();
+                presentFragment(new MessageStatisticActivity(primary));
+            }));
+        }
+        if (sent) {
+            content.addView(sheetRow(context, R.drawable.msg_link, LocaleController.getString(R.string.CopyLink), false, () -> {
+                sheet.dismiss();
+                AndroidUtilities.addToClipboard(postLink(chat, primary));
+                BulletinFactory.of(this).createCopyLinkBulletin(TextUtils.isEmpty(ChatObject.getPublicUsername(chat))).show();
+            }));
+        }
+        content.addView(sheetRow(context, R.drawable.msg_openin, LocaleController.getString(R.string.ViewInChat), false, () -> {
+            sheet.dismiss();
+            openPostInChat(post, primary);
+        }));
+        if (!manages && !ChatObject.isNotInChat(chat) && !chat.creator) {
+            content.addView(sheetRow(context, R.drawable.msg_leave, LocaleController.getString(R.string.TigiUnfollow), false, () -> {
+                sheet.dismiss();
+                confirmUnfollow(chat);
+            }));
         }
         if (sent && !primary.isOut() && !ChatObject.canPost(chat)) {
             // other people's content must stay reportable (Google Play user-generated content policy)
-            options.add(R.drawable.msg_report, LocaleController.getString(R.string.ReportChat), () -> ReportBottomSheet.openMessage(this, primary));
+            content.addView(sheetRow(context, R.drawable.msg_report, LocaleController.getString(R.string.ReportChat), true, () -> {
+                sheet.dismiss();
+                ReportBottomSheet.openMessage(this, primary);
+            }));
         }
         if (primary.canDeleteMessage(false, chat)) {
-            options.add(R.drawable.msg_delete, LocaleController.getString(R.string.Delete), true, () -> confirmDelete(post, chat));
+            content.addView(sheetRow(context, R.drawable.msg_delete, LocaleController.getString(R.string.Delete), true, () -> {
+                sheet.dismiss();
+                confirmDelete(post, chat);
+            }));
         }
-        options.show();
+        sheet.setCustomView(content);
+        showDialog(sheet);
+    }
+
+    private static String postLink(TLRPC.Chat chat, MessageObject message) {
+        final String username = ChatObject.getPublicUsername(chat);
+        return !TextUtils.isEmpty(username)
+            ? "https://t.me/" + username + "/" + message.getId()
+            : "https://t.me/c/" + chat.id + "/" + message.getId();
+    }
+
+    private View sheetTile(Context context, int icon, String text, Runnable action) {
+        final LinearLayout tile = new LinearLayout(context);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(Gravity.CENTER);
+        final int text1 = Theme.getColor(Theme.key_dialogTextBlack, getResourceProvider());
+        tile.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(16), Theme.multAlpha(text1, 0.06f), Theme.multAlpha(text1, 0.12f)));
+        final ImageView image = new ImageView(context);
+        image.setImageResource(icon);
+        image.setColorFilter(new PorterDuffColorFilter(text1, PorterDuff.Mode.SRC_IN));
+        tile.addView(image, LayoutHelper.createLinear(24, 24));
+        final TextView label = new TextView(context);
+        label.setText(text);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        label.setTypeface(TigiStyle.displayBold());
+        label.setTextColor(text1);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        tile.addView(label, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+        tile.setContentDescription(text);
+        tile.setOnClickListener(v -> action.run());
+        return tile;
+    }
+
+    private View sheetRow(Context context, int icon, String text, boolean destructive, Runnable action) {
+        final TextView row = new TextView(context);
+        final int color = destructive ? Theme.getColor(Theme.key_text_RedBold, getResourceProvider()) : Theme.getColor(Theme.key_dialogTextBlack, getResourceProvider());
+        row.setText(text);
+        row.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        row.setTextColor(color);
+        row.setSingleLine(true);
+        row.setEllipsize(TextUtils.TruncateAt.END);
+        row.setGravity(Gravity.CENTER_VERTICAL | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT));
+        final Drawable drawable = context.getResources().getDrawable(icon).mutate();
+        drawable.setColorFilter(new PorterDuffColorFilter(destructive ? color : Theme.getColor(Theme.key_dialogIcon, getResourceProvider()), PorterDuff.Mode.SRC_IN));
+        drawable.setBounds(0, 0, dp(24), dp(24));
+        if (LocaleController.isRTL) {
+            row.setCompoundDrawables(null, null, drawable, null);
+        } else {
+            row.setCompoundDrawables(drawable, null, null, null);
+        }
+        row.setCompoundDrawablePadding(dp(20));
+        row.setPadding(dp(12), 0, dp(12), 0);
+        row.setMinHeight(dp(50));
+        row.setBackground(Theme.createRadSelectorDrawable(Theme.getColor(Theme.key_listSelector, getResourceProvider()), 12, 12));
+        row.setOnClickListener(v -> action.run());
+        final LinearLayout.LayoutParams params = LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 50);
+        row.setLayoutParams(params);
+        return row;
+    }
+
+    private void confirmUnfollow(TLRPC.Chat chat) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity(), getResourceProvider())
+            .setTitle(LocaleController.getString(R.string.TigiUnfollow))
+            .setMessage(LocaleController.formatString(R.string.TigiUnfollowText, chat.title))
+            .setPositiveButton(LocaleController.getString(R.string.TigiUnfollow), (dialog, which) -> {
+                getMessagesController().deleteParticipantFromChat(chat.id, getUserConfig().getCurrentUser());
+                if (appliesFeedFilter()) {
+                    // the channel's posts leave the feed with it
+                    for (int i = posts.size() - 1; i >= 0; i--) {
+                        if (posts.get(i).chat != null && posts.get(i).chat.id == chat.id) {
+                            posts.remove(i);
+                        }
+                    }
+                    notifyPostsChanged();
+                }
+            })
+            .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+            .makeRed(org.telegram.ui.ActionBar.AlertDialog.BUTTON_POSITIVE)
+            .show();
+    }
+
+    /** Drops posts the user just hid or marked "Not interested" from the screen. */
+    protected void removeFilteredPosts() {
+        if (!appliesFeedFilter()) {
+            return;
+        }
+        final TigiFeedPrefs.Filter filter = TigiFeedPrefs.filter(currentAccount);
+        boolean changed = false;
+        for (int i = posts.size() - 1; i >= 0; i--) {
+            final FeedPost item = posts.get(i);
+            if (item.chat != null && !item.messages.isEmpty() && !item.sponsored && filter.skips(item.chat.id, item.primary().getId())) {
+                posts.remove(i);
+                changed = true;
+            }
+        }
+        if (changed) {
+            notifyPostsChanged();
+        }
+    }
+
+    /** Undo of hide / not interested: the post comes back with the next refresh. */
+    protected void onFeedFilterUndone() {
     }
 
     private void confirmDelete(FeedPost post, TLRPC.Chat chat) {

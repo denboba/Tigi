@@ -647,12 +647,45 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
         final ArrayList<FeedPost> valid = new ArrayList<>();
         for (int i = 0; i < out.size(); i++) {
-            if (out.get(i).isValid()) {
+            if (out.get(i).isValid() && !isLowValue(out.get(i))) {
                 valid.add(out.get(i));
             }
         }
         Collections.sort(valid, (a, b) -> b.date - a.date);
         return valid;
+    }
+
+    /**
+     * Posts that only make sense in the chat: text made only of punctuation (".", "...", "-") and short replies to
+     * another post, which read as fragments without it. Only text-only posts are judged; anything with media, a poll,
+     * audio, a file or a link stays. The messages themselves are untouched and still show in the chat.
+     */
+    protected static boolean isLowValue(FeedPost post) {
+        if (post == null || post.sponsored || post.messages.isEmpty() || !post.media.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < post.messages.size(); i++) {
+            if (TigiAttachmentView.kindOf(post.messages.get(i)) != TigiAttachmentView.KIND_NONE) {
+                return false;
+            }
+        }
+        if (!TextUtils.isEmpty(post.fallback)) {
+            return false;
+        }
+        final String text = post.text != null ? post.text.toString().trim() : "";
+        boolean meaningful = false;
+        for (int i = 0; i < text.length() && !meaningful; ) {
+            final int cp = text.codePointAt(i);
+            final int type = Character.getType(cp);
+            // letters, digits and emoji carry meaning; punctuation and separators alone do not
+            meaningful = Character.isLetterOrDigit(cp) || type == Character.OTHER_SYMBOL || type == Character.SURROGATE;
+            i += Character.charCount(cp);
+        }
+        if (!meaningful) {
+            return true;
+        }
+        final TLRPC.Message first = post.primary().messageOwner;
+        return first.reply_to != null && first.reply_to.reply_to_msg_id != 0 && text.length() < 25;
     }
 
     /* hearts and reactions */
@@ -1509,6 +1542,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private LinearLayout actions;
         private final TextView forwardedView;
         private final LinearLayout fallbackBox;
+        private TigiAttachmentView attachmentView;
         private final TextView fallbackLabel;
         private TextView fallbackOpen;
         FeedPost post;
@@ -1642,6 +1676,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             });
             fallbackBox.setVisibility(GONE);
             addView(fallbackBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 8));
+
+            // polls, music and voice, documents and link previews shown in the card itself
+            attachmentView = new TigiAttachmentView(context, TigiFeedBase.this);
+            addView(attachmentView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             mediaFrame = new FrameLayout(context);
             pager = new RecyclerView(context);
@@ -1911,11 +1949,24 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 updatePageIndicators();
             }
 
-            if (post.media.isEmpty() && !TextUtils.isEmpty(post.fallback)) {
-                fallbackLabel.setText(post.fallback);
-                fallbackBox.setVisibility(VISIBLE);
-            } else {
+            MessageObject attached = null;
+            if (post.media.isEmpty()) {
+                for (int i = 0; i < post.messages.size() && attached == null; i++) {
+                    if (TigiAttachmentView.kindOf(post.messages.get(i)) != TigiAttachmentView.KIND_NONE) {
+                        attached = post.messages.get(i);
+                    }
+                }
+            }
+            if (attached != null && attachmentView.bind(attached)) {
                 fallbackBox.setVisibility(GONE);
+            } else {
+                attachmentView.setVisibility(GONE);
+                if (post.media.isEmpty() && !TextUtils.isEmpty(post.fallback)) {
+                    fallbackLabel.setText(post.fallback);
+                    fallbackBox.setVisibility(VISIBLE);
+                } else {
+                    fallbackBox.setVisibility(GONE);
+                }
             }
             final MessageObject first = post.primary();
             final String forwardedFrom = first.isForwarded() ? first.getForwardedName() : null;
@@ -1940,7 +1991,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             textFirst = first;
             removeView(captionBox);
             if (first) {
-                addView(captionBox, indexOfChild(actions), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                // text first, then a link preview (if any), then the actions
+                addView(captionBox, indexOfChild(attachmentView), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
                 captionBox.setPadding(dp(14), 0, dp(14), dp(6));
                 captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
             } else {
@@ -1975,6 +2027,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             fallbackLabel.setText(LocaleController.getString(R.string.SponsoredMessage2));
             fallbackOpen.setText(!TextUtils.isEmpty(message.sponsoredButtonText) ? message.sponsoredButtonText : LocaleController.getString(R.string.TigiSponsoredOpen));
             fallbackBox.setVisibility(TextUtils.isEmpty(message.sponsoredUrl) ? GONE : VISIBLE);
+            attachmentView.setVisibility(GONE);
             placeCaption(false);
             updateCaption();
             logSponsoredView(message);

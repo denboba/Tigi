@@ -10670,6 +10670,9 @@
     <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileShareProfile">Share profile</string>
     <string name="TigiYourStory">Your story</string>
+    <string name="NilakVote">Vote</string>
+    <string name="NilakTapToOpen">Tap to open</string>
+    <string name="NilakDownloading">Downloading…</string>
     <string name="NilakPickMedia">Choose photos or videos</string>
     <string name="NilakAddMedia">Add photos or videos</string>
     <string name="NilakDiscardTitle">Discard this post?</string>

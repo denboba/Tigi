@@ -68,6 +68,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     private long chatId;
     private long userId;
     private boolean self;
+    private int knownTopMessage;
     private boolean hasMainTabs;
     private TLRPC.Chat chat;
     private TLRPC.User user;
@@ -291,8 +292,14 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 getMessagesController().loadFullChat(chatId, classGuid, false);
                 resetGrid();
             }
-        } else if (tiles[tab].isEmpty() && !loading[tab]) {
-            resetGrid();
+        } else {
+            // a post made since the last visit: read the grid again so it shows
+            final TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(-chatId);
+            final int top = dialog != null ? dialog.top_message : 0;
+            if (tiles[tab].isEmpty() && !loading[tab] || top != 0 && knownTopMessage != 0 && top != knownTopMessage) {
+                resetGrid();
+            }
+            knownTopMessage = top;
         }
         updateTopBar();
         if (header != null) {

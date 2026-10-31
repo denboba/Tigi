@@ -10670,6 +10670,13 @@
     <string name="TigiStorySeen">Story from %1$s</string>
     <string name="TigiProfileShareProfile">Share profile</string>
     <string name="TigiYourStory">Your story</string>
+    <string name="NilakPickMedia">Choose photos or videos</string>
+    <string name="NilakAddMedia">Add photos or videos</string>
+    <string name="NilakDiscardTitle">Discard this post?</string>
+    <string name="NilakDiscardText">The photos and caption you added will be lost.</string>
+    <string name="NilakDiscard">Discard</string>
+    <string name="NilakKeepEditing">Keep editing</string>
+    <string name="NilakPosting">Posting… It shows at the top of Home while it uploads.</string>
     <string name="NilakReelNeedsVideo">A reel is a video. Pick a video to continue.</string>
     <string name="NilakNewReel">New reel</string>
     <string name="NilakNewPost">New post</string>

@@ -68,46 +68,17 @@ public class TigiComposeActivity extends BaseFragment {
     private TextView counter;
     private boolean sent;
 
-    /** Starts a post, reel or text post into chat: gallery first for media, then this screen. */
+    private static final int REQUEST_PICK = 4731;
+
+    /**
+     * Starts a post, reel or text post into chat. For media the composer opens Android's photo picker (no storage
+     * permission needed) and shows what was picked; nothing is posted before Share.
+     */
     public static void start(BaseFragment fragment, TLRPC.Chat chat, int mode) {
         if (fragment == null || fragment.getParentActivity() == null || chat == null) {
             return;
         }
-        if (mode == MODE_TEXT) {
-            fragment.presentFragment(create(chat, mode, null));
-            return;
-        }
-        final Activity activity = fragment.getParentActivity();
-        if (!hasGalleryPermission(activity)) {
-            // Android asks; the user taps Post again after allowing
-            if (Build.VERSION.SDK_INT >= 33) {
-                activity.requestPermissions(new String[]{Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO}, BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE);
-            } else if (Build.VERSION.SDK_INT >= 23) {
-                activity.requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, BasePermissionsActivity.REQUEST_CODE_EXTERNAL_STORAGE);
-            }
-            return;
-        }
-        final PhotoAlbumPickerActivity picker = new PhotoAlbumPickerActivity(PhotoAlbumPickerActivity.SELECT_TYPE_ALL, mode == MODE_POST, false, null);
-        picker.setMaxSelectedPhotos(mode == MODE_REEL ? 1 : 10, true);
-        picker.setDelegate(new PhotoAlbumPickerActivity.PhotoAlbumPickerActivityDelegate() {
-            @Override
-            public void didSelectPhotos(ArrayList<SendMessagesHelper.SendingMediaInfo> photos, boolean notify, int scheduleDate) {
-                if (photos == null || photos.isEmpty()) {
-                    return;
-                }
-                if (mode == MODE_REEL && !photos.get(0).isVideo) {
-                    BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakReelNeedsVideo)).show();
-                    return;
-                }
-                // after the picker has closed itself
-                AndroidUtilities.runOnUIThread(() -> fragment.presentFragment(create(chat, mode, photos)));
-            }
-
-            @Override
-            public void startPhotoSelectActivity() {
-            }
-        });
-        fragment.presentFragment(picker);
+        fragment.presentFragment(create(chat, mode, null));
     }
 
     private static TigiComposeActivity create(TLRPC.Chat chat, int mode, ArrayList<SendMessagesHelper.SendingMediaInfo> media) {
@@ -119,16 +90,6 @@ public class TigiComposeActivity extends BaseFragment {
             activity.media = new ArrayList<>(media);
         }
         return activity;
-    }
-
-    private static boolean hasGalleryPermission(Activity activity) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            return activity.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-                || activity.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED;
-        } else if (Build.VERSION.SDK_INT >= 23) {
-            return activity.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        }
-        return true;
     }
 
     public TigiComposeActivity(Bundle args) {
@@ -164,7 +125,13 @@ public class TigiComposeActivity extends BaseFragment {
         close.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
         close.setContentDescription(LocaleController.getString(R.string.Close));
         close.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
-        close.setOnClickListener(v -> finishFragment());
+        close.setOnClickListener(v -> {
+            if (!sent && (!media.isEmpty() || input != null && input.length() > 0)) {
+                confirmDiscard();
+            } else {
+                finishFragment();
+            }
+        });
         bar.addView(close, LayoutHelper.createFrame(48, 48, Gravity.CENTER_VERTICAL | Gravity.LEFT, 6, 0, 0, 0));
         final TextView title = new TextView(context);
         title.setText(LocaleController.getString(mode == MODE_REEL ? R.string.NilakNewReel : mode == MODE_TEXT ? R.string.TigiCreateText : R.string.NilakNewPost));
@@ -225,20 +192,15 @@ public class TigiComposeActivity extends BaseFragment {
         who.addView(names, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 10, 0, 0, 0));
         body.addView(who, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-        if (!media.isEmpty()) {
+        if (mode != MODE_TEXT) {
             final HorizontalScrollView strip = new HorizontalScrollView(context);
             strip.setHorizontalScrollBarEnabled(false);
-            final LinearLayout tiles = new LinearLayout(context);
+            tiles = new LinearLayout(context);
             tiles.setOrientation(LinearLayout.HORIZONTAL);
             tiles.setPadding(dp(12), dp(4), dp(12), dp(4));
-            final boolean single = media.size() == 1;
-            for (int i = 0; i < media.size(); i++) {
-                tiles.addView(mediaTile(context, media.get(i), i, single), single
-                    ? LayoutHelper.createLinear((int) (AndroidUtilities.displaySize.x / AndroidUtilities.density) - 24, 320)
-                    : LayoutHelper.createLinear(150, 190, 4, 0, 4, 0));
-            }
             strip.addView(tiles);
             body.addView(strip, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            rebuildTiles();
         }
 
         input = new EditTextBoldCursor(context);
@@ -295,16 +257,169 @@ public class TigiComposeActivity extends BaseFragment {
         return fragmentView;
     }
 
+    private LinearLayout tiles;
+    private boolean pickerShown;
+
+    private void rebuildTiles() {
+        if (tiles == null || getParentActivity() == null) {
+            return;
+        }
+        tiles.removeAllViews();
+        final Context context = getParentActivity();
+        final boolean single = media.size() == 1;
+        for (int i = 0; i < media.size(); i++) {
+            tiles.addView(mediaTile(context, media.get(i), i, single), single
+                ? LayoutHelper.createLinear((int) (AndroidUtilities.displaySize.x / AndroidUtilities.density) - 24, 340)
+                : LayoutHelper.createLinear(150, 190, 4, 0, 4, 0));
+        }
+        if (mode == MODE_POST && media.size() < 10 || media.isEmpty()) {
+            // add more (or pick again)
+            final TextView add = new TextView(context);
+            add.setText(media.isEmpty() ? LocaleController.getString(R.string.NilakPickMedia) : "+");
+            add.setTextSize(TypedValue.COMPLEX_UNIT_DIP, media.isEmpty() ? 15 : 28);
+            add.setTypeface(TigiStyle.displayBold());
+            add.setTextColor(TigiStyle.accent());
+            add.setGravity(Gravity.CENTER);
+            add.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.multAlpha(TigiStyle.accent(), 0.08f)));
+            add.setContentDescription(LocaleController.getString(R.string.NilakAddMedia));
+            add.setOnClickListener(v -> openPicker());
+            tiles.addView(add, media.isEmpty()
+                ? LayoutHelper.createLinear((int) (AndroidUtilities.displaySize.x / AndroidUtilities.density) - 24, 200)
+                : LayoutHelper.createLinear(96, 190, 4, 0, 4, 0));
+        }
+        updateShare();
+    }
+
+    private void openPicker() {
+        final android.content.Intent intent;
+        final int max = mode == MODE_REEL ? 1 : 10 - media.size();
+        if (Build.VERSION.SDK_INT >= 33) {
+            intent = new android.content.Intent(android.provider.MediaStore.ACTION_PICK_IMAGES);
+            if (mode == MODE_REEL) {
+                intent.setType("video/*");
+            }
+            if (max > 1) {
+                intent.putExtra(android.provider.MediaStore.EXTRA_PICK_IMAGES_MAX, Math.min(max, android.provider.MediaStore.getPickImagesMaxLimit()));
+            }
+        } else {
+            intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            if (mode == MODE_REEL) {
+                intent.setType("video/*");
+            } else {
+                intent.setType("*/*");
+                intent.putExtra(android.content.Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
+                intent.putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, max > 1);
+            }
+        }
+        try {
+            startActivityForResult(intent, REQUEST_PICK);
+        } catch (Exception e) {
+            org.telegram.messenger.FileLog.e(e);
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiPostErrorGeneric)).show();
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (mode != MODE_TEXT && media.isEmpty() && !pickerShown) {
+            pickerShown = true;
+            AndroidUtilities.runOnUIThread(this::openPicker, 150);
+        }
+    }
+
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResultFragment(requestCode, resultCode, data);
+        if (requestCode != REQUEST_PICK) {
+            return;
+        }
+        final ArrayList<android.net.Uri> uris = new ArrayList<>();
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            if (data.getClipData() != null) {
+                for (int i = 0; i < data.getClipData().getItemCount(); i++) {
+                    uris.add(data.getClipData().getItemAt(i).getUri());
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+        }
+        if (uris.isEmpty()) {
+            if (media.isEmpty() && input != null && input.length() == 0) {
+                // nothing picked on the first open: leave without a trace
+                finishFragment();
+            }
+            return;
+        }
+        final android.content.ContentResolver resolver = getParentActivity() != null ? getParentActivity().getContentResolver() : null;
+        for (int i = 0; i < uris.size() && media.size() < 10; i++) {
+            final android.net.Uri uri = uris.get(i);
+            final String type = resolver != null ? resolver.getType(uri) : null;
+            final boolean video = type != null && type.startsWith("video/");
+            if (mode == MODE_REEL && !video) {
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakReelNeedsVideo)).show();
+                continue;
+            }
+            final SendMessagesHelper.SendingMediaInfo info = new SendMessagesHelper.SendingMediaInfo();
+            info.uri = uri;
+            info.isVideo = video;
+            media.add(info);
+        }
+        rebuildTiles();
+    }
+
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        if (!sent && (!media.isEmpty() || input != null && input.length() > 0)) {
+            if (invoked) {
+                confirmDiscard();
+            }
+            return false;
+        }
+        return super.onBackPressed(invoked);
+    }
+
+    private void confirmDiscard() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity(), getResourceProvider())
+            .setTitle(LocaleController.getString(R.string.NilakDiscardTitle))
+            .setMessage(LocaleController.getString(R.string.NilakDiscardText))
+            .setPositiveButton(LocaleController.getString(R.string.NilakDiscard), (d, w) -> {
+                sent = true;
+                finishFragment();
+            })
+            .setNegativeButton(LocaleController.getString(R.string.NilakKeepEditing), null)
+            .makeRed(org.telegram.ui.ActionBar.AlertDialog.BUTTON_POSITIVE)
+            .show();
+    }
+
     private View mediaTile(Context context, SendMessagesHelper.SendingMediaInfo info, int index, boolean single) {
         final FrameLayout tile = new FrameLayout(context);
-        final BackupImageView image = new BackupImageView(context);
-        image.setRoundRadius(dp(14));
+        final ImageView image = new ImageView(context);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         image.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
-        final String preview = info.isVideo ? (info.thumbPath != null ? info.thumbPath : info.coverPath) : (info.path != null ? info.path : info.thumbPath);
-        if (preview != null) {
-            image.setImage(preview, single ? "600_600" : "300_300", null);
-        }
+        image.setClipToOutline(true);
+        image.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(14));
+            }
+        });
+        loadPreview(image, info, single ? 900 : 400);
         tile.addView(image, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        final ImageView remove = new ImageView(context);
+        remove.setScaleType(ImageView.ScaleType.CENTER);
+        remove.setImageResource(R.drawable.ic_close_white);
+        remove.setBackground(Theme.createRoundRectDrawable(dp(14), 0x99000000));
+        remove.setContentDescription(LocaleController.getString(R.string.Delete));
+        remove.setOnClickListener(v -> {
+            media.remove(info);
+            rebuildTiles();
+        });
+        tile.addView(remove, LayoutHelper.createFrame(28, 28, Gravity.TOP | Gravity.LEFT, 8, 8, 0, 0));
         if (info.isVideo) {
             final ImageView play = new ImageView(context);
             play.setImageResource(R.drawable.tigi_play_24);
@@ -326,13 +441,53 @@ public class TigiComposeActivity extends BaseFragment {
         return tile;
     }
 
+    /** A preview bitmap off the main thread (photos and video frames, from the picker's content Uri). */
+    private void loadPreview(ImageView image, SendMessagesHelper.SendingMediaInfo info, int size) {
+        final Activity activity = getParentActivity();
+        if (activity == null || info.uri == null) {
+            return;
+        }
+        final android.content.ContentResolver resolver = activity.getContentResolver();
+        org.telegram.messenger.Utilities.globalQueue.postRunnable(() -> {
+            android.graphics.Bitmap bitmap = null;
+            try {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    bitmap = resolver.loadThumbnail(info.uri, new android.util.Size(size, size), null);
+                } else if (info.isVideo) {
+                    final android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+                    retriever.setDataSource(activity, info.uri);
+                    bitmap = retriever.getFrameAtTime(0);
+                    retriever.release();
+                } else {
+                    final android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+                    options.inSampleSize = 4;
+                    try (java.io.InputStream stream = resolver.openInputStream(info.uri)) {
+                        bitmap = android.graphics.BitmapFactory.decodeStream(stream, null, options);
+                    }
+                }
+            } catch (Throwable e) {
+                org.telegram.messenger.FileLog.e(e);
+            }
+            final android.graphics.Bitmap result = bitmap;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (result != null) {
+                    image.setImageBitmap(result);
+                }
+            });
+        });
+    }
+
     private void updateShare() {
-        final boolean ready = !media.isEmpty() || input != null && input.getText().toString().trim().length() > 0;
-        shareButton.setEnabled(ready);
-        shareButton.setAlpha(ready ? 1f : 0.5f);
-        final int max = mode == MODE_TEXT ? MAX_TEXT : MAX_CAPTION;
-        final int length = input != null ? input.length() : 0;
-        counter.setText(length > max * 0.8f ? (max - length) + "" : "");
+        final boolean ready = mode == MODE_TEXT ? input != null && input.getText().toString().trim().length() > 0 : !media.isEmpty();
+        if (shareButton != null) {
+            shareButton.setEnabled(ready);
+            shareButton.setAlpha(ready ? 1f : 0.5f);
+        }
+        if (counter != null) {
+            final int max = mode == MODE_TEXT ? MAX_TEXT : MAX_CAPTION;
+            final int length = input != null ? input.length() : 0;
+            counter.setText(length > max * 0.8f ? (max - length) + "" : "");
+        }
     }
 
     private void share() {
@@ -365,10 +520,11 @@ public class TigiComposeActivity extends BaseFragment {
             SendMessagesHelper.prepareSendingMedia(AccountInstance.getInstance(currentAccount), media, -chatId, null, null, null, null,
                 false, media.size() > 1, null, true, 0, 0, 0, false, null, null, 0, false, 0, 0, null);
         }
-        // back to Home, where the new post shows at the top while it uploads
+        // back to Home, where the new post shows at the top with its upload progress
         final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
         if (tabs != null) {
             tabs.openHomeTab();
+            BulletinFactory.of(tabs).createSimpleBulletin(R.raw.forward, LocaleController.getString(R.string.NilakPosting)).show();
         }
         finishFragment();
     }

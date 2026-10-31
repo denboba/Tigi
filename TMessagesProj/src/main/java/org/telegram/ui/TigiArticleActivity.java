@@ -24,6 +24,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import org.json.JSONObject;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
@@ -46,14 +47,16 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Locale;
 
 /**
- * Nilak article composer. Cover photo, title, subtitle and a body in Nilak Markdown with a toolbar for headings,
- * bold, italic, highlight, quotes, callouts, lists, links, dividers, photos and videos. Photos and videos are
- * copied into the draft folder and referenced from the text, so the draft survives closing the app. Preview opens
- * the real reader on the draft; Publish packs a .nilak file (see {@link TigiArticle}) and posts it to the channel
- * as one document, its caption the title and subtitle.
+ * Nilak article composer. What you write is what readers see: bold looks bold, headings are big, quotes and
+ * callouts are drawn, photos and videos show as themselves, and no markup appears (see {@link TigiArticleEditor}).
+ * Photos and videos upload in the background to the writer's media channel and the article keeps only their links
+ * ({@link TigiArticleMedia}); without a media channel they travel inside the article file instead. Preview opens the
+ * real reader; Publish posts one small .nilak file to the channel (see {@link TigiArticle}).
  */
 public class TigiArticleActivity extends BaseFragment {
 
@@ -61,12 +64,13 @@ public class TigiArticleActivity extends BaseFragment {
     private static final String KEY_SUBTITLE = "nilak_article_draft_subtitle";
     private static final String KEY_BODY = "nilak_article_draft_body";
     private static final String KEY_COVER = "nilak_article_draft_cover";
+    private static final String KEY_COVER_LOCAL = "nilak_article_draft_cover_local";
+    private static final String KEY_MEDIA = "nilak_article_draft_media";
     private static final int REQUEST_IMAGE = 4741;
     private static final int REQUEST_VIDEO = 4742;
     private static final int REQUEST_COVER = 4743;
     private static final int MAX_TITLE = 160;
     private static final int MAX_SUBTITLE = 280;
-    /** Telegram takes far bigger files; this keeps articles quick to open on mobile data. */
     private static final long MAX_ARTICLE_BYTES = 150L * 1024 * 1024;
 
     private long chatId;
@@ -78,7 +82,13 @@ public class TigiArticleActivity extends BaseFragment {
     private TextView publishButton;
     private TextView countView;
     private boolean publishing;
-    private String coverPath;
+    private boolean editing;
+    private boolean destroyed;
+    /** Cover: its link (or pending token, or local path when kept inside) and the local copy. */
+    private String coverRef;
+    private String coverLocal;
+    /** media reference (link or token) → local copy inside the draft folder, for pictures in the editor */
+    private final HashMap<String, String> localByRef = new HashMap<>();
 
     public TigiArticleActivity() {
         super();
@@ -119,8 +129,18 @@ public class TigiArticleActivity extends BaseFragment {
         return super.onFragmentCreate();
     }
 
+    @Override
+    public void onFragmentDestroy() {
+        destroyed = true;
+        super.onFragmentDestroy();
+    }
+
     private SharedPreferences prefs() {
         return MessagesController.getMainSettings(currentAccount);
+    }
+
+    private int editorWidth() {
+        return Math.max(dp(200), AndroidUtilities.displaySize.x - dp(36));
     }
 
     @Override
@@ -132,7 +152,6 @@ public class TigiArticleActivity extends BaseFragment {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(0, AndroidUtilities.statusBarHeight, 0, 0);
 
-        // bar: close · New article · Preview · Publish
         final LinearLayout bar = new LinearLayout(context);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
@@ -176,7 +195,6 @@ public class TigiArticleActivity extends BaseFragment {
         fields.setOrientation(LinearLayout.VERTICAL);
         fields.setPadding(dp(18), dp(4), dp(18), dp(24));
 
-        // cover
         final FrameLayout cover = new FrameLayout(context);
         cover.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.multAlpha(TigiStyle.accent(), 0.10f)));
         coverView = new ImageView(context);
@@ -199,9 +217,10 @@ public class TigiArticleActivity extends BaseFragment {
         cover.setContentDescription(LocaleController.getString(R.string.NilakAddCover));
         cover.setOnClickListener(v -> pick("image/*", REQUEST_COVER));
         cover.setOnLongClickListener(v -> {
-            if (coverPath != null) {
-                coverPath = null;
-                prefs().edit().remove(KEY_COVER).apply();
+            if (coverRef != null) {
+                coverRef = null;
+                coverLocal = null;
+                saveDraft();
                 bindCover();
             }
             return true;
@@ -220,7 +239,6 @@ public class TigiArticleActivity extends BaseFragment {
         bodyInput.setLineSpacing(dp(4), 1f);
         bodyInput.setMinLines(10);
         bodyInput.setGravity(Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT));
-        bodyInput.setText(prefs().getString(KEY_BODY, ""));
         fields.addView(bodyInput, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         countView = new TextView(context);
@@ -242,30 +260,80 @@ public class TigiArticleActivity extends BaseFragment {
         column.addView(toolbar(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         root.addView(column, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        final TextWatcher watcher = new TextWatcher() {
+        loadDraft();
+        titleInput.addTextChangedListener(new SimpleWatcher(this::updateState));
+        bodyInput.addTextChangedListener(new TextWatcher() {
+            private int newlineAt = -1;
+
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
             }
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
+                newlineAt = !editing && count == 1 && before == 0 && start < s.length() && s.charAt(start) == '\n' ? start : -1;
             }
 
             @Override
             public void afterTextChanged(Editable s) {
+                if (editing) {
+                    return;
+                }
+                editing = true;
+                try {
+                    // Enter on an empty list item or quote ends the list, like every editor
+                    if (newlineAt > 0) {
+                        final int lineStart = TigiArticleEditor.paragraphStart(s, newlineAt);
+                        final TigiArticleEditor.Block block = TigiArticleEditor.blockAt(s, lineStart);
+                        if ((block instanceof TigiArticleEditor.Bullet || block instanceof TigiArticleEditor.Numbered || block instanceof TigiArticleEditor.Quote)
+                            && TigiArticleEditor.isEmptyLine(s, lineStart, newlineAt)) {
+                            s.delete(newlineAt, newlineAt + 1);
+                            TigiArticleEditor.removeBlocks(s, lineStart);
+                        } else if (block instanceof TigiArticleEditor.Media || block instanceof TigiArticleEditor.Divider) {
+                            // a new line after a photo starts plain text
+                            final int next = newlineAt + 1;
+                            for (TigiArticleEditor.Block b : s.getSpans(next, next, TigiArticleEditor.Block.class)) {
+                                if (s.getSpanStart(b) >= next) {
+                                    s.removeSpan(b);
+                                }
+                            }
+                        }
+                    }
+                    TigiArticleEditor.normalize(s);
+                } catch (Exception e) {
+                    FileLog.e(e);
+                } finally {
+                    editing = false;
+                }
                 updateState();
             }
-        };
-        titleInput.addTextChangedListener(watcher);
-        bodyInput.addTextChangedListener(watcher);
-        coverPath = prefs().getString(KEY_COVER, null);
-        if (coverPath != null && !new File(draftDir(), coverPath).exists()) {
-            coverPath = null;
-        }
+        });
         bindCover();
         updateState();
+        resolvePendingUploads();
         fragmentView = root;
         return root;
+    }
+
+    private static class SimpleWatcher implements TextWatcher {
+        private final Runnable onChange;
+
+        SimpleWatcher(Runnable onChange) {
+            this.onChange = onChange;
+        }
+
+        @Override
+        public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+        }
+
+        @Override
+        public void onTextChanged(CharSequence s, int start, int before, int count) {
+        }
+
+        @Override
+        public void afterTextChanged(Editable s) {
+            onChange.run();
+        }
     }
 
     private EditTextBoldCursor field(Context context, int hint, int sizeDp, boolean bold, int maxLength) {
@@ -287,14 +355,119 @@ public class TigiArticleActivity extends BaseFragment {
         return input;
     }
 
+    /* draft */
+
+    private void loadDraft() {
+        localByRef.clear();
+        try {
+            final JSONObject map = new JSONObject(prefs().getString(KEY_MEDIA, "{}"));
+            final Iterator<String> keys = map.keys();
+            while (keys.hasNext()) {
+                final String key = keys.next();
+                localByRef.put(key, map.getString(key));
+            }
+        } catch (Exception ignore) {
+        }
+        coverRef = prefs().getString(KEY_COVER, null);
+        coverLocal = prefs().getString(KEY_COVER_LOCAL, null);
+        editing = true;
+        bodyInput.setText(TigiArticleEditor.fromMarkdown(prefs().getString(KEY_BODY, ""), draftDir(), localByRef, editorWidth()));
+        editing = false;
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        saveDraft();
+    }
+
+    private void saveDraft() {
+        if (titleInput == null || publishing) {
+            return;
+        }
+        final JSONObject map = new JSONObject();
+        try {
+            for (TigiArticleEditor.Media media : TigiArticleEditor.media(bodyInput.getText())) {
+                if (media.ref != null && media.localPath != null) {
+                    map.put(media.ref, media.localPath);
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        final SharedPreferences.Editor editor = prefs().edit()
+            .putString(KEY_TITLE, titleInput.getText().toString())
+            .putString(KEY_SUBTITLE, subtitleInput.getText().toString())
+            .putString(KEY_BODY, TigiArticleEditor.toMarkdown(bodyInput.getText(), false))
+            .putString(KEY_MEDIA, map.toString());
+        if (coverRef != null) {
+            editor.putString(KEY_COVER, coverRef).putString(KEY_COVER_LOCAL, coverLocal);
+        } else {
+            editor.remove(KEY_COVER).remove(KEY_COVER_LOCAL);
+        }
+        editor.apply();
+    }
+
+    private void clearDraft() {
+        prefs().edit().remove(KEY_TITLE).remove(KEY_SUBTITLE).remove(KEY_BODY).remove(KEY_COVER).remove(KEY_COVER_LOCAL).remove(KEY_MEDIA).apply();
+        TigiArticle.deleteRecursive(draftDir());
+    }
+
+    /** Uploads that finished while the composer was closed: found by their tokens and linked. */
+    private void resolvePendingUploads() {
+        for (TigiArticleEditor.Media media : TigiArticleEditor.media(bodyInput.getText())) {
+            if (TigiArticleMedia.isPending(media.ref)) {
+                final String token = media.ref;
+                TigiArticleMedia.resolvePending(currentAccount, token, link -> {
+                    if (link != null) {
+                        setLink(token, link);
+                    }
+                });
+            }
+        }
+        if (TigiArticleMedia.isPending(coverRef)) {
+            final String token = coverRef;
+            TigiArticleMedia.resolvePending(currentAccount, token, link -> {
+                if (link != null && token.equals(coverRef)) {
+                    coverRef = link;
+                    saveDraft();
+                }
+            });
+        }
+    }
+
+    private void setLink(String token, String link) {
+        if (destroyed || bodyInput == null) {
+            return;
+        }
+        for (TigiArticleEditor.Media media : TigiArticleEditor.media(bodyInput.getText())) {
+            if (token.equals(media.ref)) {
+                media.ref = link;
+                // redraw without the upload mark
+                final Editable text = bodyInput.getText();
+                final int start = text.getSpanStart(media);
+                final int end = text.getSpanEnd(media);
+                if (start >= 0) {
+                    final TigiArticleEditor.Media done = new TigiArticleEditor.Media(
+                        TigiArticleEditor.mediaDrawable(draftDir(), media.localPath, media.video, editorWidth(), false), link, media.localPath, media.video, media.caption);
+                    editing = true;
+                    text.removeSpan(media);
+                    text.setSpan(done, start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    editing = false;
+                }
+            }
+        }
+        saveDraft();
+        updateState();
+    }
+
     private void bindCover() {
-        if (coverPath == null) {
+        if (coverLocal == null) {
             coverView.setImageDrawable(null);
             coverHint.setVisibility(View.VISIBLE);
             return;
         }
         coverHint.setVisibility(View.GONE);
-        final File file = new File(draftDir(), coverPath);
+        final File file = new File(draftDir(), coverLocal);
         Utilities.globalQueue.postRunnable(() -> {
             Bitmap bitmap = null;
             try {
@@ -313,34 +486,27 @@ public class TigiArticleActivity extends BaseFragment {
         });
     }
 
+    private int pendingCount() {
+        int count = TigiArticleMedia.isPending(coverRef) ? 1 : 0;
+        for (TigiArticleEditor.Media media : TigiArticleEditor.media(bodyInput.getText())) {
+            if (TigiArticleMedia.isPending(media.ref)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private void updateState() {
-        final int words = TigiArticle.countWords(bodyInput.getText().toString());
-        countView.setText(LocaleController.formatString(R.string.NilakArticleCount, words, TigiArticle.minutesFor(words)));
-        final boolean ready = !publishing && titleInput.length() > 0 && bodyInput.getText().toString().trim().length() > 0 && chatId != 0;
-        publishButton.setEnabled(ready);
-        publishButton.setAlpha(ready ? 1f : 0.5f);
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        saveDraft();
-    }
-
-    private void saveDraft() {
-        if (titleInput == null || publishing) {
+        if (bodyInput == null) {
             return;
         }
-        prefs().edit()
-            .putString(KEY_TITLE, titleInput.getText().toString())
-            .putString(KEY_SUBTITLE, subtitleInput.getText().toString())
-            .putString(KEY_BODY, bodyInput.getText().toString())
-            .apply();
-    }
-
-    private void clearDraft() {
-        prefs().edit().remove(KEY_TITLE).remove(KEY_SUBTITLE).remove(KEY_BODY).remove(KEY_COVER).apply();
-        TigiArticle.deleteRecursive(draftDir());
+        final int words = TigiArticle.countWords(bodyInput.getText().toString().replace(String.valueOf(TigiArticleEditor.OBJECT), " "));
+        final int uploading = pendingCount();
+        final String count = LocaleController.formatString(R.string.NilakArticleCount, words, TigiArticle.minutesFor(words));
+        countView.setText(uploading > 0 ? count + " · " + LocaleController.formatPluralString("NilakUploadingMedia", uploading) : count);
+        final boolean ready = !publishing && titleInput.length() > 0 && TigiArticleEditor.hasText(bodyInput.getText()) && chatId != 0;
+        publishButton.setEnabled(ready);
+        publishButton.setAlpha(ready ? 1f : 0.5f);
     }
 
     /* toolbar */
@@ -352,18 +518,20 @@ public class TigiArticleActivity extends BaseFragment {
         final LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(dp(10), dp(6), dp(10), dp(6));
-        addTool(row, "H", R.string.NilakFormatHeading, () -> linePrefix("## "));
-        addTool(row, "B", R.string.NilakFormatBold, () -> wrap("**"));
-        addTool(row, "I", R.string.NilakFormatItalic, () -> wrap("_"));
-        addTool(row, "≡", R.string.NilakFormatHighlight, () -> wrap("=="));
-        addTool(row, "❝", R.string.NilakFormatQuote, () -> linePrefix("> "));
-        addTool(row, "ⓘ", R.string.NilakFormatCallout, () -> linePrefix("> [!NOTE] "));
-        addTool(row, "•", R.string.NilakFormatList, () -> linePrefix("- "));
-        addTool(row, "1.", R.string.NilakFormatNumbered, () -> linePrefix("1. "));
+        addTool(row, "H", R.string.NilakFormatHeading, this::toggleHeading);
+        addTool(row, "B", R.string.NilakFormatBold, () -> inline(TigiArticleEditor.Bold.class));
+        addTool(row, "I", R.string.NilakFormatItalic, () -> inline(TigiArticleEditor.Italic.class));
+        addTool(row, "S", R.string.NilakFormatStrike, () -> inline(TigiArticleEditor.Strike.class));
+        addTool(row, "≡", R.string.NilakFormatHighlight, () -> inline(TigiArticleEditor.Mark.class));
+        addTool(row, "❝", R.string.NilakFormatQuote, () -> toggleBlock(TigiArticleEditor.Quote.class));
+        addTool(row, "ⓘ", R.string.NilakFormatCallout, () -> toggleBlock(TigiArticleEditor.Callout.class));
+        addTool(row, "•", R.string.NilakFormatList, () -> toggleBlock(TigiArticleEditor.Bullet.class));
+        addTool(row, "1.", R.string.NilakFormatNumbered, () -> toggleBlock(TigiArticleEditor.Numbered.class));
+        addTool(row, "{ }", R.string.NilakFormatCode, () -> toggleBlock(TigiArticleEditor.Code.class));
         addTool(row, "🔗", R.string.NilakFormatLink, this::insertLink);
         addTool(row, "🖼", R.string.NilakFormatImage, () -> pick("image/*", REQUEST_IMAGE));
         addTool(row, "▶", R.string.NilakFormatVideo, () -> pick("video/*", REQUEST_VIDEO));
-        addTool(row, "—", R.string.NilakFormatDivider, () -> insertBlock("---"));
+        addTool(row, "—", R.string.NilakFormatDivider, this::insertDivider);
         scroll.addView(row);
         return scroll;
     }
@@ -377,41 +545,107 @@ public class TigiArticleActivity extends BaseFragment {
         button.setGravity(Gravity.CENTER);
         button.setContentDescription(LocaleController.getString(description));
         button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(10), Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.2f)));
-        button.setOnClickListener(v -> action.run());
+        button.setOnClickListener(v -> {
+            action.run();
+            updateState();
+        });
         row.addView(button, LayoutHelper.createLinear(44, 40, 0, 0, 8, 0));
     }
 
-    private void wrap(String marker) {
+    /** The selection, or the word at the cursor when nothing is selected. */
+    private int[] range() {
         final Editable text = bodyInput.getText();
-        final int start = Math.max(0, bodyInput.getSelectionStart());
-        final int end = Math.max(start, bodyInput.getSelectionEnd());
-        text.insert(end, marker);
-        text.insert(start, marker);
-        bodyInput.setSelection(start == end ? start + marker.length() : end + marker.length() * 2);
-        bodyInput.requestFocus();
-    }
-
-    private void linePrefix(String prefix) {
-        final Editable text = bodyInput.getText();
-        final int start = Math.max(0, bodyInput.getSelectionStart());
-        int lineStart = start;
-        while (lineStart > 0 && text.charAt(lineStart - 1) != '\n') {
-            lineStart--;
+        int start = Math.max(0, bodyInput.getSelectionStart());
+        int end = Math.max(start, bodyInput.getSelectionEnd());
+        if (start == end) {
+            while (start > 0 && Character.isLetterOrDigit(text.charAt(start - 1))) {
+                start--;
+            }
+            while (end < text.length() && Character.isLetterOrDigit(text.charAt(end))) {
+                end++;
+            }
         }
-        text.insert(lineStart, prefix);
-        bodyInput.setSelection(Math.min(text.length(), start + prefix.length()));
+        return new int[]{start, end};
+    }
+
+    private void inline(Class<?> type) {
+        final int[] r = range();
+        if (r[0] >= r[1]) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.info, LocaleController.getString(R.string.NilakSelectTextFirst)).show();
+            return;
+        }
+        editing = true;
+        TigiArticleEditor.toggleInline(bodyInput.getText(), r[0], r[1], type);
+        editing = false;
         bodyInput.requestFocus();
     }
 
-    /** Puts a block on its own line (empty lines around it) at the cursor. */
-    private void insertBlock(String block) {
+    private int currentParagraph() {
+        return TigiArticleEditor.paragraphStart(bodyInput.getText(), Math.max(0, bodyInput.getSelectionStart()));
+    }
+
+    /** None → heading → subheading → none. */
+    private void toggleHeading() {
         final Editable text = bodyInput.getText();
-        final int at = Math.max(0, bodyInput.getSelectionStart());
-        final boolean needBefore = at > 0 && text.charAt(at - 1) != '\n';
-        final String insert = (needBefore ? "\n\n" : (at > 0 ? "\n" : "")) + block + "\n\n";
-        text.insert(at, insert);
-        bodyInput.setSelection(Math.min(text.length(), at + insert.length()));
+        final int start = currentParagraph();
+        final TigiArticleEditor.Block block = TigiArticleEditor.blockAt(text, start);
+        if (block instanceof TigiArticleEditor.Media || block instanceof TigiArticleEditor.Divider) {
+            return;
+        }
+        editing = true;
+        if (block instanceof TigiArticleEditor.Heading) {
+            TigiArticleEditor.setBlock(text, start, ((TigiArticleEditor.Heading) block).level <= 2 ? new TigiArticleEditor.Heading(3) : null);
+        } else {
+            TigiArticleEditor.setBlock(text, start, new TigiArticleEditor.Heading(2));
+        }
+        editing = false;
         bodyInput.requestFocus();
+    }
+
+    private void toggleBlock(Class<?> type) {
+        final Editable text = bodyInput.getText();
+        final int start = currentParagraph();
+        final TigiArticleEditor.Block block = TigiArticleEditor.blockAt(text, start);
+        if (block instanceof TigiArticleEditor.Media || block instanceof TigiArticleEditor.Divider) {
+            return;
+        }
+        editing = true;
+        if (block != null && block.getClass() == type) {
+            TigiArticleEditor.setBlock(text, start, null);
+        } else {
+            final TigiArticleEditor.Block created = type == TigiArticleEditor.Quote.class ? new TigiArticleEditor.Quote()
+                : type == TigiArticleEditor.Callout.class ? new TigiArticleEditor.Callout("NOTE")
+                : type == TigiArticleEditor.Bullet.class ? new TigiArticleEditor.Bullet()
+                : type == TigiArticleEditor.Numbered.class ? new TigiArticleEditor.Numbered()
+                : new TigiArticleEditor.Code();
+            TigiArticleEditor.setBlock(text, start, created);
+        }
+        TigiArticleEditor.renumber(text);
+        editing = false;
+        bodyInput.invalidate();
+        bodyInput.requestFocus();
+    }
+
+    /** Puts an object (photo, video, divider) on its own line at the cursor. */
+    private void insertObject(TigiArticleEditor.Block span) {
+        final Editable text = bodyInput.getText();
+        int at = Math.max(0, bodyInput.getSelectionEnd());
+        editing = true;
+        if (at > 0 && text.charAt(at - 1) != '\n') {
+            text.insert(at, "\n");
+            at++;
+        }
+        text.insert(at, String.valueOf(TigiArticleEditor.OBJECT));
+        text.setSpan(span, at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.insert(at + 1, "\n");
+        editing = false;
+        bodyInput.setSelection(Math.min(text.length(), at + 2));
+        bodyInput.requestFocus();
+        saveDraft();
+    }
+
+    private void insertDivider() {
+        insertObject(new TigiArticleEditor.Divider(TigiArticleEditor.dividerDrawable(editorWidth())));
     }
 
     private void insertLink() {
@@ -419,6 +653,7 @@ public class TigiArticleActivity extends BaseFragment {
             return;
         }
         final Context context = getParentActivity();
+        final int[] selection = {Math.max(0, bodyInput.getSelectionStart()), Math.max(0, bodyInput.getSelectionEnd())};
         final EditTextBoldCursor url = new EditTextBoldCursor(context);
         url.setHint("https://");
         url.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
@@ -437,16 +672,23 @@ public class TigiArticleActivity extends BaseFragment {
                 value = "https://" + value;
             }
             final Editable text = bodyInput.getText();
-            final int start = Math.max(0, bodyInput.getSelectionStart());
-            final int end = Math.max(start, bodyInput.getSelectionEnd());
+            final int start = Math.min(selection[0], selection[1]);
+            final int end = Math.max(selection[0], selection[1]);
+            editing = true;
             if (start == end) {
-                // no selected words: a link card on its own line
-                insertBlock(value);
+                // no selected words: the link on its own line, shown to readers as a link card
+                int at = start;
+                if (at > 0 && text.charAt(at - 1) != '\n') {
+                    text.insert(at, "\n");
+                    at++;
+                }
+                text.insert(at, value + "\n");
+                text.setSpan(new TigiArticleEditor.Link(value), at, at + value.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             } else {
-                text.insert(end, "](" + value + ")");
-                text.insert(start, "[");
-                bodyInput.setSelection(Math.min(text.length(), end + value.length() + 4));
+                text.setSpan(new TigiArticleEditor.Link(value), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
+            editing = false;
+            updateState();
         });
         builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
         showDialog(builder.create());
@@ -479,28 +721,58 @@ public class TigiArticleActivity extends BaseFragment {
         final boolean video = requestCode == REQUEST_VIDEO;
         Utilities.globalQueue.postRunnable(() -> {
             final String path = copyIntoDraft(uri, video, requestCode == REQUEST_COVER);
+            final android.graphics.drawable.Drawable picture = path != null && requestCode != REQUEST_COVER
+                ? TigiArticleEditor.mediaDrawable(draftDir(), path, video, editorWidth(), true) : null;
             AndroidUtilities.runOnUIThread(() -> {
-                if (bodyInput == null) {
+                if (destroyed || bodyInput == null) {
                     return;
                 }
                 if (path == null) {
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiPostErrorGeneric)).show();
                     return;
                 }
+                final String token = TigiArticleMedia.newToken();
                 if (requestCode == REQUEST_COVER) {
-                    coverPath = path;
-                    prefs().edit().putString(KEY_COVER, path).apply();
+                    coverLocal = path;
+                    coverRef = token;
                     bindCover();
                 } else {
-                    // the caption goes between the brackets; empty means none
-                    insertBlock("![](" + path + ")");
-                    saveDraft();
+                    insertObject(new TigiArticleEditor.Media(picture, token, path, video, null));
                 }
+                saveDraft();
+                updateState();
+                upload(token, path, video, requestCode == REQUEST_COVER);
             });
         });
     }
 
-    /** Copies the picked file into the draft's media folder; returns its path relative to the draft. */
+    /** Sends the file to the media channel; without one, the article keeps the file inside (its local path). */
+    private void upload(String token, String path, boolean video, boolean cover) {
+        TigiArticleMedia.ensureStore(currentAccount, store -> {
+            if (destroyed) {
+                return;
+            }
+            if (store == null) {
+                applyLink(token, path, cover);
+                return;
+            }
+            TigiArticleMedia.upload(currentAccount, store, new File(draftDir(), path).getAbsolutePath(), video, token,
+                link -> AndroidUtilities.runOnUIThread(() -> applyLink(token, link != null ? link : path, cover)));
+        });
+    }
+
+    private void applyLink(String token, String link, boolean cover) {
+        if (cover) {
+            if (token.equals(coverRef)) {
+                coverRef = link;
+                saveDraft();
+                updateState();
+            }
+        } else {
+            setLink(token, link);
+        }
+    }
+
     private String copyIntoDraft(Uri uri, boolean video, boolean cover) {
         try {
             String extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(ApplicationLoader.applicationContext.getContentResolver().getType(uri));
@@ -530,10 +802,10 @@ public class TigiArticleActivity extends BaseFragment {
 
     /* preview and publish */
 
-    /** Writes manifest.json and article.md into the draft folder from the fields. */
-    private TigiArticle.Meta writeDraftFiles() throws Exception {
+    /** manifest.json and article.md in the draft folder; localMedia writes local paths (for the preview). */
+    private TigiArticle.Meta writeDraftFiles(boolean localMedia) throws Exception {
         final File dir = draftDir();
-        final String body = bodyInput.getText().toString();
+        final String body = TigiArticleEditor.toMarkdown(bodyInput.getText(), localMedia);
         final TigiArticle.Meta meta = new TigiArticle.Meta();
         meta.title = titleInput.getText().toString().trim();
         meta.subtitle = subtitleInput.getText().toString().trim();
@@ -541,8 +813,8 @@ public class TigiArticleActivity extends BaseFragment {
         final TLRPC.Chat chat = getMessagesController().getChat(chatId);
         meta.author = chat != null ? chat.title : me != null ? UserObject.getUserName(me) : "";
         meta.lang = TigiRegion.language();
-        meta.cover = coverPath;
-        meta.words = TigiArticle.countWords(body);
+        meta.cover = localMedia ? coverLocal : (TigiArticleMedia.isPending(coverRef) ? coverLocal : coverRef);
+        meta.words = TigiArticle.countWords(TigiArticle.plainText(body));
         meta.minutes = TigiArticle.minutesFor(meta.words);
         meta.created = System.currentTimeMillis() / 1000;
         TigiArticle.writeMeta(dir, meta);
@@ -553,7 +825,7 @@ public class TigiArticleActivity extends BaseFragment {
     private void openPreview() {
         saveDraft();
         try {
-            writeDraftFiles();
+            writeDraftFiles(true);
             TigiArticleReaderActivity.preview(this, draftDir());
         } catch (Exception e) {
             FileLog.e(e);
@@ -565,6 +837,11 @@ public class TigiArticleActivity extends BaseFragment {
         final TLRPC.Chat chat = getMessagesController().getChat(chatId);
         if (chat == null || !TigiArticle.canWrite(currentAccount, chat)) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakArticlesChannelsOnly)).show();
+            return;
+        }
+        final int uploading = pendingCount();
+        if (uploading > 0) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.info, LocaleController.formatPluralString("NilakWaitUploads", uploading)).show();
             return;
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
@@ -587,8 +864,10 @@ public class TigiArticleActivity extends BaseFragment {
         progress.setCanCancel(false);
         showDialog(progress);
         final TigiArticle.Meta meta;
+        final String plainLead;
         try {
-            meta = writeDraftFiles();
+            meta = writeDraftFiles(false);
+            plainLead = TigiArticle.plainText(TigiArticleEditor.toMarkdown(bodyInput.getText(), false));
         } catch (Exception e) {
             FileLog.e(e);
             progress.dismiss();
@@ -597,11 +876,12 @@ public class TigiArticleActivity extends BaseFragment {
             return;
         }
         Utilities.globalQueue.postRunnable(() -> {
-            File packed = null;
+            File packed;
             try {
                 final File outDir = new File(ApplicationLoader.applicationContext.getCacheDir(), "nilak_publish");
                 outDir.mkdirs();
                 packed = new File(outDir, TigiArticle.slug(meta.title) + TigiArticle.EXT);
+                // only media kept inside (no media channel) are packed; linked media stay links
                 TigiArticle.pack(draftDir(), packed);
             } catch (Exception e) {
                 FileLog.e(e);
@@ -624,20 +904,20 @@ public class TigiArticleActivity extends BaseFragment {
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.formatString(R.string.NilakArticleTooBig, AndroidUtilities.formatFileSize(MAX_ARTICLE_BYTES))).show();
                     return;
                 }
-                // the caption: title, then the subtitle (or the start of the text) for feeds and search
                 String lead = meta.subtitle;
                 if (TextUtils.isEmpty(lead)) {
-                    final String plain = TigiArticle.plainText(bodyInput.getText().toString());
-                    lead = plain.length() > 180 ? plain.substring(0, 180).trim() + "…" : plain;
+                    lead = plainLead.length() > 180 ? plainLead.substring(0, 180).trim() + "…" : plainLead;
                 }
                 final String caption = meta.title + (TextUtils.isEmpty(lead) ? "" : "\n" + lead);
                 SendMessagesHelper.prepareSendingDocument(AccountInstance.getInstance(currentAccount), file.getAbsolutePath(), file.getAbsolutePath(), null,
                     caption, TigiArticle.MIME, -chat.id, null, null, null, null, null, true, 0, null, null, false);
                 TigiPosting.setLastChannel(currentAccount, chat.id);
                 clearDraft();
+                editing = true;
                 titleInput.setText("");
                 subtitleInput.setText("");
                 bodyInput.setText("");
+                editing = false;
                 final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
                 if (tabs != null) {
                     tabs.openHomeTab();

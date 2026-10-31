@@ -517,6 +517,7 @@ public final class TigiArticle {
             + "|(?<![\\w*])\\*(?!\\s)(.+?)(?<!\\s)\\*(?!\\*)" // 7 italic *
             + "|(?<![\\w])_(?!\\s)(.+?)(?<!\\s)_(?![\\w])"    // 8 italic _
             + "|(https?://[^\\s<>()]+[^\\s<>().,;:!?'\"])"   // 9 bare link
+            + "|\\\\([\\\\*_~=`\\[\\]#>!.\\-0-9])"            // 10 escaped character
     );
 
     /** Inline markup as spans; nested markup inside bold/italic/links is parsed too. */
@@ -554,6 +555,8 @@ public final class TigiArticle {
             } else if (m.group(9) != null) {
                 out.append(m.group(9));
                 out.setSpan(new URLSpan(m.group(9)), start, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else if (m.group(10) != null) {
+                out.append(m.group(10));
             }
             last = m.end();
         }

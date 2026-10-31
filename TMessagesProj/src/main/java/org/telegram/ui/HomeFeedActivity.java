@@ -219,6 +219,28 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         showDialog(builder.create());
     }
 
+    /**
+     * Articles (Nilak articles, Instant View pages, long posts) are taken out and placed back every few posts, in
+     * an order that changes each day, so the feed mixes reading with photos and video instead of burying them.
+     */
+    private void spreadArticles(ArrayList<FeedPost> result) {
+        final ArrayList<FeedPost> articles = new ArrayList<>();
+        for (int i = result.size() - 1; i >= 0; i--) {
+            if (TigiTopicFeedActivity.isArticle(result.get(i))) {
+                articles.add(0, result.remove(i));
+            }
+        }
+        if (articles.isEmpty()) {
+            return;
+        }
+        Collections.shuffle(articles, new java.util.Random(getConnectionsManager().getCurrentTime() / 86400 + currentAccount));
+        int position = Math.min(2, result.size());
+        for (FeedPost article : articles) {
+            result.add(Math.min(position, result.size()), article);
+            position += 5;
+        }
+    }
+
     /** For you: views (log scale) lifted by how often the user opens the channel, fading over two days. */
     private double forYouScore(FeedPost post) {
         final int now = getConnectionsManager().getCurrentTime();
@@ -593,6 +615,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 scores.put(item, forYouScore(item));
             }
             Collections.sort(result, (a, b) -> Double.compare(scores.get(b), scores.get(a)));
+            spreadArticles(result);
         }
         final ArrayList<FeedPost> unsent = unsentPosts();
         posts.clear();

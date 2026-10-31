@@ -70,6 +70,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
     private ArrayList<TigiArticle.Block> blocks;
     private boolean destroyed;
     private VideoView playing;
+    /** Messages behind the article's t.me media links, loaded once. */
+    private final java.util.HashMap<String, MessageObject> linked = new java.util.HashMap<>();
+    private TigiInlinePlayer inlinePlayer;
 
     public static void open(BaseFragment fragment, MessageObject message) {
         if (fragment == null || message == null || !TigiArticle.isArticle(message)) {
@@ -102,6 +105,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
         if (playing != null) {
             playing.stopPlayback();
         }
+        if (inlinePlayer != null) {
+            inlinePlayer.stop();
+        }
         super.onFragmentDestroy();
     }
 
@@ -110,6 +116,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
         super.onPause();
         if (playing != null && playing.isPlaying()) {
             playing.pause();
+        }
+        if (inlinePlayer != null) {
+            inlinePlayer.pause();
         }
     }
 
@@ -297,9 +306,31 @@ public class TigiArticleReaderActivity extends BaseFragment {
                     meta.title = TigiArticle.titleOf(message);
                 }
                 blocks = parsed;
-                spinner.setVisibility(View.GONE);
-                statusView.setVisibility(View.GONE);
-                render();
+                // photos and videos kept as Telegram links: fetch those messages (small) before laying out
+                final ArrayList<String> refs = new ArrayList<>();
+                if (TigiArticleMedia.isTelegramRef(meta.cover)) {
+                    refs.add(meta.cover);
+                }
+                for (TigiArticle.Block block : parsed) {
+                    if ((block.type == TigiArticle.BLOCK_IMAGE || block.type == TigiArticle.BLOCK_VIDEO) && TigiArticleMedia.isTelegramRef(block.path)) {
+                        refs.add(block.path);
+                    }
+                }
+                if (refs.isEmpty()) {
+                    spinner.setVisibility(View.GONE);
+                    statusView.setVisibility(View.GONE);
+                    render();
+                    return;
+                }
+                TigiArticleMedia.loadMessages(currentAccount, refs, found -> {
+                    if (destroyed) {
+                        return;
+                    }
+                    linked.putAll(found);
+                    spinner.setVisibility(View.GONE);
+                    statusView.setVisibility(View.GONE);
+                    render();
+                });
             });
         });
     }
@@ -321,10 +352,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
         final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
 
         if (!TextUtils.isEmpty(meta.cover)) {
-            final File cover = new File(articleDir, meta.cover);
-            if (cover.exists()) {
-                final ImageView image = imageView(context, cover, true);
-                column.addView(image, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 16));
+            final View cover = mediaView(context, meta.cover, false);
+            if (cover != null) {
+                column.addView(cover, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 16));
             }
         }
         final TextView title = new TextView(context);
@@ -453,25 +483,15 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 box.addView(view);
                 return box;
             }
-            case TigiArticle.BLOCK_IMAGE: {
-                final File file = new File(articleDir, block.path);
-                if (!file.getAbsolutePath().startsWith(articleDir.getAbsolutePath()) || !file.exists()) {
-                    return null;
-                }
-                final LinearLayout box = new LinearLayout(context);
-                box.setOrientation(LinearLayout.VERTICAL);
-                box.addView(imageView(context, file, false), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-                addCaption(context, box, block.caption, gray);
-                return box;
-            }
+            case TigiArticle.BLOCK_IMAGE:
             case TigiArticle.BLOCK_VIDEO: {
-                final File file = new File(articleDir, block.path);
-                if (!file.getAbsolutePath().startsWith(articleDir.getAbsolutePath()) || !file.exists()) {
+                final View media = mediaView(context, block.path, block.type == TigiArticle.BLOCK_VIDEO);
+                if (media == null) {
                     return null;
                 }
                 final LinearLayout box = new LinearLayout(context);
                 box.setOrientation(LinearLayout.VERTICAL);
-                box.addView(videoView(context, file), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                box.addView(media, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
                 addCaption(context, box, block.caption, gray);
                 return box;
             }
@@ -497,6 +517,93 @@ public class TigiArticleReaderActivity extends BaseFragment {
             }
         }
         return null;
+    }
+
+    /**
+     * A photo or video from its reference: a Telegram post link (loaded and cached by Telegram, photos sharpen as
+     * they load, videos stream), a web image link, or a file inside the package (older articles, previews).
+     */
+    private View mediaView(Context context, String ref, boolean videoHint) {
+        if (TextUtils.isEmpty(ref)) {
+            return null;
+        }
+        if (TigiArticleMedia.isTelegramRef(ref)) {
+            final MessageObject media = linked.get(TigiArticleMedia.key(ref));
+            if (media == null) {
+                return null;
+            }
+            return telegramMediaView(context, media);
+        }
+        if (TigiArticleMedia.isWebImage(ref)) {
+            final org.telegram.ui.Components.BackupImageView image = new org.telegram.ui.Components.BackupImageView(context);
+            image.setRoundRadius(dp(12));
+            image.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray)));
+            image.setImage(ref, null, null);
+            final FrameLayout box = new FrameLayout(context);
+            box.addView(image, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 220));
+            return box;
+        }
+        final File file = new File(articleDir, ref);
+        if (!file.getAbsolutePath().startsWith(articleDir.getAbsolutePath()) || !file.exists()) {
+            return null;
+        }
+        return videoHint || TigiArticle.isVideoPath(ref) ? videoView(context, file) : imageView(context, file, false);
+    }
+
+    private View telegramMediaView(Context context, MessageObject media) {
+        final int width = AndroidUtilities.displaySize.x - dp(40);
+        int w = 0, h = 0;
+        if (media.photoThumbs != null && !media.photoThumbs.isEmpty()) {
+            final TLRPC.PhotoSize biggest = org.telegram.messenger.FileLoader.getClosestPhotoSizeWithSize(media.photoThumbs, AndroidUtilities.getPhotoSize());
+            if (biggest != null) {
+                w = biggest.w;
+                h = biggest.h;
+            }
+        }
+        final int height = w > 0 && h > 0 ? Math.max(dp(120), Math.min(dp(520), Math.round(width * h / (float) w))) : dp(220);
+        final FrameLayout box = new FrameLayout(context);
+        box.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray)));
+        box.setClipToOutline(true);
+        box.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(12));
+            }
+        });
+        final org.telegram.ui.Components.BackupImageView image = new org.telegram.ui.Components.BackupImageView(context);
+        final TLRPC.PhotoSize size = org.telegram.messenger.FileLoader.getClosestPhotoSizeWithSize(media.photoThumbs, AndroidUtilities.getPhotoSize());
+        final TLRPC.PhotoSize thumb = org.telegram.messenger.FileLoader.getClosestPhotoSizeWithSize(media.photoThumbs, 40);
+        image.getImageReceiver().setImage(
+            org.telegram.messenger.ImageLocation.getForObject(size, media.photoThumbsObject), "800_800",
+            org.telegram.messenger.ImageLocation.getForObject(thumb, media.photoThumbsObject), "40_40_b",
+            0, null, media, 0);
+        box.addView(image, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        if (media.isVideo()) {
+            final ImageView play = new ImageView(context);
+            play.setImageResource(R.drawable.tigi_play_big);
+            play.setScaleType(ImageView.ScaleType.CENTER);
+            box.addView(play, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            box.setContentDescription(LocaleController.getString(R.string.AttachVideo));
+            box.setOnClickListener(v -> {
+                if (inlinePlayer == null) {
+                    inlinePlayer = new TigiInlinePlayer(currentAccount);
+                    inlinePlayer.setLooping(false);
+                }
+                play.setVisibility(View.GONE);
+                inlinePlayer.play(box, media, (msg, rendering, failed) -> {
+                    if (failed) {
+                        play.setVisibility(View.VISIBLE);
+                    }
+                });
+            });
+        } else {
+            box.setContentDescription(LocaleController.getString(R.string.AttachPhoto));
+        }
+        final LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height);
+        box.setLayoutParams(params);
+        final LinearLayout wrapper = new LinearLayout(context);
+        wrapper.addView(box, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height));
+        return wrapper;
     }
 
     private TextView text(Context context, CharSequence value, float sizeDp, int color) {

@@ -71,7 +71,7 @@ public class BuildVars {
     // Premium, Stars, Gram wallet, Business and gift rows in Settings. Off while IS_BILLING_UNAVAILABLE: Google Play
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.
     public static boolean TIGI_PAID_FEATURES = false;
-    public static boolean TIGI_READ_TAB = true; // bottom bar: Read (articles) in the middle, Create moves to "+" in Home's top bar
+    public static boolean TIGI_READ_TAB = false; // bottom bar: Read (articles) in the middle, Create moves to "+" in Home's top bar
 
     // Tigi links (owner: fill these in before a store release)
     public static String TIGI_SOURCE_URL = "https://github.com/denboba/Tigi"; // GPL: where the full source lives

@@ -10741,6 +10741,7 @@
     <string name="NilakReplyingTo">Replying to %1$s</string>
     <string name="NilakCommentsCount_one">%1$d comment</string>
     <string name="NilakCommentsCount_other">%1$d comments</string>
+    <string name="NilakEarlierComments">View earlier comments</string>
     <string name="NilakCommentsOff">Comments are off for this post.</string>
     <string name="NilakTurnOnComments">Turn on comments</string>
     <string name="NilakCommentsTurnedOn">Comments are on. Your next posts will have them.</string>

@@ -62,6 +62,12 @@ public class TigiCommentsSheet extends BottomSheet {
     private final TLRPC.Chat channel;
     private final MessageObject post;
     private final ArrayList<MessageObject> comments = new ArrayList<>();
+    private final java.util.HashMap<Integer, MessageObject> byId = new java.util.HashMap<>();
+    private final java.util.HashSet<Integer> nested = new java.util.HashSet<>();
+    private int oldestId;
+    private boolean reachedOldest;
+    private boolean loadingOlder;
+    private int totalCount;
     private MessageObject discussionTop;
     private long discussionChatId;
     private MessageObject replyTo;
@@ -191,7 +197,7 @@ public class TigiCommentsSheet extends BottomSheet {
             lastKeyboardHeight = keyboardHeight;
             containerView.requestLayout();
             if (!comments.isEmpty()) {
-                listView.post(() -> listView.scrollToPosition(comments.size() - 1));
+                listView.post(() -> listView.scrollToPosition(adapter.getItemCount() - 1));
             }
         }
     }
@@ -265,41 +271,148 @@ public class TigiCommentsSheet extends BottomSheet {
         }));
     }
 
+    /** The newest page; also after sending, merged into what is loaded so older pages stay. */
     private void loadComments() {
+        loadPage(0);
+    }
+
+    /** Older comments, as the list reaches its top. */
+    private void loadOlder() {
+        if (loadingOlder || reachedOldest || oldestId == 0) {
+            return;
+        }
+        loadPage(oldestId);
+    }
+
+    private void loadPage(int offsetId) {
+        final boolean older = offsetId != 0;
+        if (older) {
+            loadingOlder = true;
+        }
         final TLRPC.TL_messages_getReplies req = new TLRPC.TL_messages_getReplies();
         req.peer = fragment.getMessagesController().getInputPeer(-channel.id);
         req.msg_id = post.getId();
+        req.offset_id = offsetId;
         req.limit = PAGE;
         ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
             if (destroyed) {
                 return;
             }
             loading = false;
+            loadingOlder = false;
             if (response instanceof TLRPC.messages_Messages) {
                 final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
                 fragment.getMessagesController().putUsers(res.users, false);
                 fragment.getMessagesController().putChats(res.chats, false);
-                comments.clear();
+                int added = 0;
+                int newestAdded = 0;
                 for (int i = 0; i < res.messages.size(); i++) {
                     final TLRPC.Message message = res.messages.get(i);
+                    if (message.id > 0 && (oldestId == 0 || message.id < oldestId)) {
+                        oldestId = message.id;
+                    }
                     if (message instanceof TLRPC.TL_messageService || TextUtils.isEmpty(message.message) && message.media == null) {
                         continue;
                     }
-                    comments.add(new MessageObject(account, message, true, true));
+                    if (!byId.containsKey(message.id)) {
+                        added++;
+                        newestAdded = Math.max(newestAdded, message.id);
+                    }
+                    byId.put(message.id, new MessageObject(account, message, true, true));
                 }
-                // oldest first, newest at the bottom next to the input
-                Collections.reverse(comments);
-                final int total = res.count > 0 ? res.count : comments.size();
-                titleView.setText(total > 0 ? LocaleController.formatPluralString("NilakCommentsCount", total) : LocaleController.getString(R.string.TigiComments));
+                if (older) {
+                    reachedOldest = res.messages.size() < PAGE;
+                } else if (!reachedOldest && byId.size() < PAGE && res.messages.size() < PAGE) {
+                    reachedOldest = true;
+                }
+                if (!older && res.count > 0) {
+                    totalCount = res.count;
+                }
                 errorText = null;
+                // keep what the user is looking at in place when older comments arrive above it
+                final LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
+                final int firstVisible = manager.findFirstVisibleItemPosition();
+                final View firstView = manager.findViewByPosition(firstVisible);
+                final int offset = firstView != null ? firstView.getTop() : 0;
+                final int before = comments.size();
+                rebuildThread();
+                adapter.notifyDataSetChanged();
+                if (older) {
+                    manager.scrollToPositionWithOffset(Math.max(0, firstVisible + (comments.size() - before)), offset);
+                } else if (!comments.isEmpty() && added > 0) {
+                    int target = adapter.getItemCount() - 1;
+                    if (before > 0) {
+                        // a refresh after sending: go to the new comment, which may sit under its parent
+                        for (int i = 0; i < comments.size(); i++) {
+                            if (comments.get(i).getId() == newestAdded) {
+                                target = i + adapter.head();
+                                break;
+                            }
+                        }
+                    }
+                    listView.scrollToPosition(target);
+                }
             } else {
-                errorText = LocaleController.getString(R.string.TigiFeedError);
+                if (comments.isEmpty()) {
+                    errorText = LocaleController.getString(R.string.TigiFeedError);
+                }
+                adapter.notifyDataSetChanged();
             }
-            adapter.notifyDataSetChanged();
-            if (!comments.isEmpty()) {
-                listView.scrollToPosition(comments.size() - 1);
-            }
+            final int total = Math.max(totalCount, comments.size());
+            titleView.setText(total > 0 ? LocaleController.formatPluralString("NilakCommentsCount", total) : LocaleController.getString(R.string.TigiComments));
         }));
+    }
+
+    /**
+     * Top-level comments oldest first, each followed by the replies to it (and to its replies), oldest first,
+     * one level of indentation like Instagram. A reply whose parent is not loaded yet shows as top-level.
+     */
+    private void rebuildThread() {
+        final int topId = discussionTop != null ? discussionTop.getId() : 0;
+        final ArrayList<MessageObject> all = new ArrayList<>(byId.values());
+        Collections.sort(all, (a, b) -> a.getId() - b.getId());
+        final java.util.HashMap<Integer, ArrayList<MessageObject>> children = new java.util.HashMap<>();
+        final ArrayList<MessageObject> roots = new ArrayList<>();
+        nested.clear();
+        for (MessageObject comment : all) {
+            final int root = rootOf(comment, topId);
+            if (root == 0 || root == comment.getId()) {
+                roots.add(comment);
+            } else {
+                ArrayList<MessageObject> list = children.get(root);
+                if (list == null) {
+                    children.put(root, list = new ArrayList<>());
+                }
+                list.add(comment);
+                nested.add(comment.getId());
+            }
+        }
+        comments.clear();
+        for (MessageObject root : roots) {
+            comments.add(root);
+            final ArrayList<MessageObject> replies = children.get(root.getId());
+            if (replies != null) {
+                comments.addAll(replies);
+            }
+        }
+    }
+
+    /** The top-level comment this one belongs under: follow reply_to upward while the parent is loaded. */
+    private int rootOf(MessageObject comment, int topId) {
+        MessageObject current = comment;
+        for (int guard = 0; guard < 50; guard++) {
+            final TLRPC.MessageReplyHeader reply = current.messageOwner.reply_to;
+            final int parentId = reply != null ? reply.reply_to_msg_id : 0;
+            if (parentId == 0 || parentId == topId) {
+                return current.getId();
+            }
+            final MessageObject parent = byId.get(parentId);
+            if (parent == null) {
+                return current.getId();
+            }
+            current = parent;
+        }
+        return current.getId();
     }
 
     private void showCommentsOff() {
@@ -444,10 +557,15 @@ public class TigiCommentsSheet extends BottomSheet {
         static final int TYPE_COMMENT = 0;
         static final int TYPE_LOADING = 1;
         static final int TYPE_STATE = 2;
+        static final int TYPE_EARLIER = 3;
+
+        private int head() {
+            return !comments.isEmpty() && !reachedOldest ? 1 : 0;
+        }
 
         @Override
         public int getItemCount() {
-            return comments.isEmpty() ? 1 : comments.size();
+            return comments.isEmpty() ? 1 : comments.size() + head();
         }
 
         @Override
@@ -455,7 +573,7 @@ public class TigiCommentsSheet extends BottomSheet {
             if (comments.isEmpty()) {
                 return loading ? TYPE_LOADING : TYPE_STATE;
             }
-            return TYPE_COMMENT;
+            return position < head() ? TYPE_EARLIER : TYPE_COMMENT;
         }
 
         @Override
@@ -468,6 +586,16 @@ public class TigiCommentsSheet extends BottomSheet {
             final View view;
             if (viewType == TYPE_COMMENT) {
                 view = new CommentCell(parent.getContext());
+            } else if (viewType == TYPE_EARLIER) {
+                final TextView earlier = new TextView(parent.getContext());
+                earlier.setText(LocaleController.getString(R.string.NilakEarlierComments));
+                earlier.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                earlier.setTypeface(TigiStyle.displayBold());
+                earlier.setTextColor(TigiStyle.accent());
+                earlier.setGravity(Gravity.CENTER);
+                earlier.setPadding(0, dp(10), 0, dp(10));
+                earlier.setOnClickListener(v -> loadOlder());
+                view = earlier;
             } else if (viewType == TYPE_LOADING) {
                 final FlickerLoadingView flicker = new FlickerLoadingView(parent.getContext(), resourcesProvider);
                 flicker.setViewType(FlickerLoadingView.DIALOG_TYPE);
@@ -486,8 +614,11 @@ public class TigiCommentsSheet extends BottomSheet {
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-            if (holder.getItemViewType() == TYPE_COMMENT) {
-                ((CommentCell) holder.itemView).bind(comments.get(position));
+            if (holder.getItemViewType() == TYPE_EARLIER) {
+                // reaching the top loads the next older page
+                loadOlder();
+            } else if (holder.getItemViewType() == TYPE_COMMENT) {
+                ((CommentCell) holder.itemView).bind(comments.get(position - head()));
             } else if (holder.getItemViewType() == TYPE_STATE) {
                 final LinearLayout box = (LinearLayout) holder.itemView;
                 box.removeAllViews();
@@ -584,6 +715,13 @@ public class TigiCommentsSheet extends BottomSheet {
 
         void bind(MessageObject comment) {
             this.comment = comment;
+            final boolean isReply = nested.contains(comment.getId());
+            final int inset = dp(isReply ? 54 : 14);
+            setPadding(LocaleController.isRTL ? dp(8) : inset, dp(isReply ? 4 : 8), LocaleController.isRTL ? inset : dp(8), dp(isReply ? 4 : 8));
+            final ViewGroup.LayoutParams avatarParams = avatar.getLayoutParams();
+            avatarParams.width = avatarParams.height = dp(isReply ? 24 : 32);
+            avatar.setRoundRadius(dp(isReply ? 12 : 16));
+            avatar.setLayoutParams(avatarParams);
             final TLObject from = fragment.getMessagesController().getUserOrChat(comment.getFromChatId());
             final AvatarDrawable drawable = new AvatarDrawable();
             if (from instanceof TLRPC.User) {
@@ -605,6 +743,11 @@ public class TigiCommentsSheet extends BottomSheet {
                 final int start = line.length();
                 line.append("  ").append(LocaleController.getString(R.string.NilakAuthor));
                 line.setSpan(new android.text.style.ForegroundColorSpan(TigiStyle.accent()), start, line.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            final TLRPC.MessageReplyHeader replyHeader = comment.messageOwner.reply_to;
+            final MessageObject parentComment = isReply && replyHeader != null ? byId.get(replyHeader.reply_to_msg_id) : null;
+            if (parentComment != null && nested.contains(parentComment.getId())) {
+                line.append("  ▸ ").append(authorName(parentComment));
             }
             line.append("  ").append(LocaleController.stringForMessageListDate(comment.messageOwner.date));
             header.setText(line);

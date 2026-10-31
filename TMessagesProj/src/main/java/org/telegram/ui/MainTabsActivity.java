@@ -995,7 +995,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (getParentActivity() == null) {
             return;
         }
-        TigiCreateSheet.show(this);
+        // straight to the compose screen; stories and live stay where Telegram has them (stories row, channel menu)
+        TigiCreateSheet.openCompose(this);
     }
 
     private DialogsActivity dialogsActivity;

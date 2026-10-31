@@ -212,9 +212,9 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             write.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
             write.setOnClickListener(v -> {
                 if (mode == MODE_READ) {
-                    TigiCreateSheet.pickChannel(this, ChatActivity.TIGI_COMPOSE_TEXT, chat -> TigiArticleActivity.start(this, chat));
+                    TigiCreateSheet.openCompose(this);
                 } else {
-                    TigiCreateSheet.show(this);
+                    TigiCreateSheet.openCompose(this);
                 }
             });
             row.addView(write, LayoutHelper.createLinear(48, 48, 0, 0, 4, 0));

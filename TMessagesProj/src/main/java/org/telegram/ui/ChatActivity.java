@@ -1690,6 +1690,13 @@ public class ChatActivity extends BaseFragment implements
     // Tigi "+" > Post / Text: open Telegram's own composer right away and go back once the post is sent
     public static final int TIGI_COMPOSE_MEDIA = 1;
     public static final int TIGI_COMPOSE_TEXT = 2;
+    /** Nilak's compose screen: the channel as Nilak cards above Telegram's message bar; stays open after sending. */
+    public static final int TIGI_COMPOSE_FEED = 3;
+    private TigiComposeOverlay tigiComposeOverlay;
+
+    public boolean isNilakCompose() {
+        return tigiCompose == TIGI_COMPOSE_FEED;
+    }
     private int tigiCompose;
     private boolean tigiComposeStarted;
     private boolean tigiComposeSent;
@@ -3419,6 +3426,10 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
+        if (tigiComposeOverlay != null) {
+            tigiComposeOverlay.onDestroy();
+            tigiComposeOverlay = null;
+        }
         if (messageMetricsView != null) {
             messageMetricsView.finish();
         }
@@ -7045,6 +7056,12 @@ public class ChatActivity extends BaseFragment implements
         });
 
         contentView.addView(chatListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        if (tigiCompose == TIGI_COMPOSE_FEED && DialogObject.isChatDialog(dialog_id)) {
+            if (tigiComposeOverlay != null) {
+                tigiComposeOverlay.onDestroy();
+            }
+            tigiComposeOverlay = new TigiComposeOverlay(this, contentView, chatListView, -dialog_id);
+        }
 
         chatActivityFadeView = new ChatActivityFadeView(context);
         chatActivityFadeView.setup(navbarContentDrawableFactory);
@@ -12965,7 +12982,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void afterMessageSend() {
-        if (tigiCompose != 0 && !tigiComposeSent) {
+        if (tigiCompose != 0 && tigiCompose != TIGI_COMPOSE_FEED && !tigiComposeSent) {
             tigiComposeSent = true;
             // the upload goes on in SendMessagesHelper; the feeds show the post while it is sending
             AndroidUtilities.runOnUIThread(() -> {
@@ -30103,6 +30120,9 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onResume() {
         super.onResume();
+        if (tigiComposeOverlay != null) {
+            tigiComposeOverlay.onResume();
+        }
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {
@@ -30315,6 +30335,9 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onPause() {
         super.onPause();
+        if (tigiComposeOverlay != null) {
+            tigiComposeOverlay.onPause();
+        }
         scrolling = false;
         if (scrimPopupWindow != null) {
             scrimPopupWindow.setPauseNotifications(false);

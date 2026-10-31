@@ -1279,7 +1279,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                     // own empty profile: an invitation to post, tapping it opens Create
                     state.setText(LocaleController.getString(R.string.TigiProfileFirstPost));
                     state.setTextColor(TigiStyle.accent());
-                    state.setOnClickListener(v -> TigiCreateSheet.show(TigiProfileActivity.this));
+                    state.setOnClickListener(v -> TigiCreateSheet.openCompose(TigiProfileActivity.this));
                 } else if (chat.restricted) {
                     state.setText(LocaleController.getString(R.string.TigiProfileRestricted));
                 } else {

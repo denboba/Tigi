@@ -233,6 +233,20 @@ public class TigiCreateSheet {
     /* the channel */
 
     /** One channel: straight to it. Several: "Post as" with the last used first. None: offer a personal channel. */
+    /**
+     * Create: the user's channel opened as Nilak's compose screen, their posts as cards above Telegram's full
+     * message bar (emoji, GIFs, stickers, photos, videos, files, music, polls, location, articles, scheduling).
+     * The channel is made quietly on first use.
+     */
+    public static void openCompose(BaseFragment fragment) {
+        pickChannel(fragment, ChatActivity.TIGI_COMPOSE_TEXT, chat -> {
+            final Bundle args = new Bundle();
+            args.putLong("chat_id", chat.id);
+            args.putInt("tigi_compose", ChatActivity.TIGI_COMPOSE_FEED);
+            fragment.presentFragment(new ChatActivity(args));
+        });
+    }
+
     static void pickChannel(BaseFragment fragment, int composeMode) {
         pickChannel(fragment, composeMode, chat -> compose(fragment, chat, composeMode));
     }

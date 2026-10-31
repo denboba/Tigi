@@ -131,7 +131,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             createButton.setImageResource(R.drawable.tigi_add_24);
             createButton.setContentDescription(LocaleController.getString(R.string.TigiCreate));
             createButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
-            createButton.setOnClickListener(v -> TigiCreateSheet.show(this));
+            createButton.setOnClickListener(v -> TigiCreateSheet.openCompose(this));
             final int offset = BuildVars.TIGI_ACTIVITY ? 102 : 54;
             bar.addView(createButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), LocaleController.isRTL ? offset : 6, 4, LocaleController.isRTL ? 6 : offset, 0));
         }

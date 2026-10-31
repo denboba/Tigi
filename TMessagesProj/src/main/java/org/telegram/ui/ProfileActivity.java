@@ -2692,7 +2692,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         tigiArgs.putLong("user_id", getUserConfig().getClientUserId());
                         presentFragment(new TigiProfileActivity(tigiArgs));
                     } else {
-                        TigiCreateSheet.show(ProfileActivity.this);
+                        TigiCreateSheet.openCompose(ProfileActivity.this);
                     }
                 } else if (id == edit_profile) {
                     presentFragment(new UserInfoActivity());

@@ -518,6 +518,7 @@ public final class TigiArticle {
             + "|(?<![\\w])_(?!\\s)(.+?)(?<!\\s)_(?![\\w])"    // 8 italic _
             + "|(https?://[^\\s<>()]+[^\\s<>().,;:!?'\"])"   // 9 bare link
             + "|\\\\([\\\\*_~=`\\[\\]#>!.\\-0-9])"            // 10 escaped character
+            + "|\\[([^\\]]+)]\\(emoji:(\\d{1,20})\\)"            // 11,12 Telegram custom emoji (alt, id)
     );
 
     /** Inline markup as spans; nested markup inside bold/italic/links is parsed too. */
@@ -557,6 +558,13 @@ public final class TigiArticle {
                 out.setSpan(new URLSpan(m.group(9)), start, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             } else if (m.group(10) != null) {
                 out.append(m.group(10));
+            } else if (m.group(11) != null) {
+                // shown as Telegram's own (animated) emoji in the reader; the alt text everywhere else
+                out.append(m.group(11));
+                try {
+                    out.setSpan(new org.telegram.ui.Components.AnimatedEmojiSpan(Long.parseLong(m.group(12)), null), start, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } catch (NumberFormatException ignore) {
+                }
             }
             last = m.end();
         }

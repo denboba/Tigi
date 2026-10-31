@@ -809,6 +809,19 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     }
 
     public boolean sendSelectedItems(boolean notify, int scheduleDate, int scheduleRepeatPeriod, long effectId, boolean invertMedia) {
+        if (nilakArticle()) {
+            if (!listView.hasAnyText() || listView.hasPendingUploads()) {
+                return false;
+            }
+            final ArrayList<TL_iv.PageBlock> blocks = listView.flattenRowsToBlocks();
+            if (blocks.isEmpty()) {
+                return false;
+            }
+            org.telegram.ui.TigiRichArticle.publish(parentAlert.baseFragment, parentAlert.getDialogId(), blocks,
+                listView.collectPhotos(), listView.collectDocuments(), notify, scheduleDate);
+            parentAlert.dismiss(true);
+            return true;
+        }
         if (isSendLocked()) {
             showConversionSheet();
             return false;
@@ -1138,7 +1151,7 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
         if (toolbar != null) {
             final boolean premiumLocked = !MessagesController.getInstance(currentAccount).richEditorAllowed()
                 && !UserConfig.getInstance(currentAccount).isPremium();
-            toolbar.getSendButton().setLocked(premiumLocked && listView.isLossy());
+            toolbar.getSendButton().setLocked(premiumLocked && listView.isLossy() && !nilakArticle());
             toolbar.setPremiumLocked(premiumLocked);
         }
     }
@@ -1146,7 +1159,19 @@ public class ChatAttachAlertRichLayout extends ChatAttachAlert.AttachAlertLayout
     private boolean isSendLocked() {
         return !MessagesController.getInstance(currentAccount).richEditorAllowed()
             && !UserConfig.getInstance(currentAccount).isPremium()
-            && listView.isLossy();
+            && listView.isLossy()
+            && !nilakArticle();
+    }
+
+    /**
+     * Nilak: in Nilak's compose screen, a writer without Premium keeps the article's formatting: it is published as
+     * a Nilak article (see org.telegram.ui.TigiRichArticle) instead of being flattened to a plain message.
+     */
+    private boolean nilakArticle() {
+        return parentAlert.baseFragment instanceof ChatActivity
+            && ((ChatActivity) parentAlert.baseFragment).isNilakCompose()
+            && !MessagesController.getInstance(currentAccount).richEditorAllowed()
+            && !UserConfig.getInstance(currentAccount).isPremium();
     }
 
     private void showConversionSheet() {

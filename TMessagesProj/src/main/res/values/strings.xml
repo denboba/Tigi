@@ -10798,6 +10798,7 @@
     <string name="NilakTopicAll">All</string>
     <string name="NilakTopicMarkets">Markets</string>
     <string name="NilakTopicPolitics">Politics</string>
+    <string name="NilakArticlePublishing">Publishing your article…</string>
     <string name="NilakFormatStrike">Strikethrough</string>
     <string name="NilakFormatCode">Code</string>
     <string name="NilakSelectTextFirst">Select some words first.</string>

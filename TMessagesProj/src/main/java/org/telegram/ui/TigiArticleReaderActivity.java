@@ -5,6 +5,7 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
@@ -606,16 +607,45 @@ public class TigiArticleReaderActivity extends BaseFragment {
         return wrapper;
     }
 
+    /**
+     * Text the way Telegram draws it: emoji as Telegram's emoji images, custom emoji animated, links tappable
+     * (opened in Nilak's browser or Instant View).
+     */
     private TextView text(Context context, CharSequence value, float sizeDp, int color) {
-        final TextView view = new TextView(context);
-        view.setText(value);
+        final org.telegram.ui.Components.LinkSpanDrawable.LinksTextView view = new org.telegram.ui.Components.LinkSpanDrawable.LinksTextView(context);
         view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, sizeDp);
         view.setTextColor(color);
         view.setLinkTextColor(TigiStyle.accent());
         view.setLineSpacing(0, 1.5f);
-        view.setTextIsSelectable(true);
-        view.setMovementMethod(LinkMovementMethod.getInstance());
+        view.setOnLinkPressListener(span -> {
+            if (span instanceof android.text.style.URLSpan) {
+                Browser.openUrl(getParentActivity(), ((android.text.style.URLSpan) span).getURL());
+            } else {
+                span.onClick(view);
+            }
+        });
+        view.setText(nativeText(value, view.getPaint()));
         return view;
+    }
+
+    private static CharSequence nativeText(CharSequence value, android.text.TextPaint paint) {
+        if (value == null) {
+            return "";
+        }
+        final android.text.SpannableStringBuilder out = new android.text.SpannableStringBuilder(value);
+        final Paint.FontMetricsInt metrics = paint.getFontMetricsInt();
+        org.telegram.messenger.Emoji.replaceEmoji(out, metrics, false);
+        final int size = Math.round(paint.getTextSize() * 1.2f);
+        for (org.telegram.ui.Components.AnimatedEmojiSpan span : out.getSpans(0, out.length(), org.telegram.ui.Components.AnimatedEmojiSpan.class)) {
+            span.setSize(size);
+            // the animated emoji draws itself; no static emoji image under it
+            final int start = out.getSpanStart(span);
+            final int end = out.getSpanEnd(span);
+            for (org.telegram.messenger.Emoji.EmojiSpan emoji : out.getSpans(start, end, org.telegram.messenger.Emoji.EmojiSpan.class)) {
+                out.removeSpan(emoji);
+            }
+        }
+        return out;
     }
 
     private void addCaption(Context context, LinearLayout box, String caption, int gray) {

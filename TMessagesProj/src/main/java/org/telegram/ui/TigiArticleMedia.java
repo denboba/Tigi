@@ -171,6 +171,25 @@ public final class TigiArticleMedia {
             false, false, null, false, 0, 0, 0, false, null, null, 0, false, 0, 0, null);
     }
 
+    /**
+     * Posts a photo or video that is already on Telegram's servers (from Telegram's article editor) to the media
+     * channel, without uploading it again; onLink gets the t.me link, or null when it cannot be posted.
+     */
+    public static void postExisting(int account, TLRPC.Chat store, TLRPC.Photo photo, TLRPC.Document document, String token, Utilities.Callback<String> onLink) {
+        listen(account);
+        if (photo instanceof TLRPC.TL_photo) {
+            pending.put(token, onLink);
+            SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of((TLRPC.TL_photo) photo, null, -store.id, null, null,
+                token, null, null, null, false, 0, 0, 0, null, false));
+        } else if (document instanceof TLRPC.TL_document) {
+            pending.put(token, onLink);
+            SendMessagesHelper.getInstance(account).sendMessage(SendMessagesHelper.SendMessageParams.of((TLRPC.TL_document) document, null, null, -store.id, null, null,
+                token, null, null, null, false, 0, 0, 0, null, null, false));
+        } else {
+            onLink.run(null);
+        }
+    }
+
     private static void listen(int account) {
         if (observer != null && observerAccount == account) {
             return;

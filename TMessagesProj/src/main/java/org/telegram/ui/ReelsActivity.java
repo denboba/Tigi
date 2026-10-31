@@ -533,6 +533,21 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         }
     }
 
+    /** Reels are short clips shot upright (or square); size unknown counts as upright, as most channel clips are. */
+    static boolean isVerticalOrSquare(MessageObject object) {
+        final TLRPC.Document document = object.getDocument();
+        if (document == null) {
+            return false;
+        }
+        for (int i = 0; i < document.attributes.size(); i++) {
+            final TLRPC.DocumentAttribute attribute = document.attributes.get(i);
+            if (attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.w > 0 && attribute.h > 0) {
+                return attribute.w <= attribute.h * 1.1f;
+            }
+        }
+        return true;
+    }
+
     private FeedPost toReel(TLRPC.Chat chat, TLRPC.Message message) {
         if (message == null || message instanceof TLRPC.TL_messageService) {
             return null;
@@ -541,7 +556,8 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         if (!object.isVideo() || object.isRoundVideo() || object.getDocument() == null || object.needDrawBluredPreview()) {
             return null;
         }
-        if (object.getDuration() > MAX_DURATION_SECONDS) {
+        if (object.getDuration() > MAX_DURATION_SECONDS || !isVerticalOrSquare(object)) {
+            // long-form and landscape videos stay in the feeds, where they open in the full player
             return null;
         }
         if (TigiFeedPrefs.isNotInterested(currentAccount, chat.id, object.getId())) {

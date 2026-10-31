@@ -7,6 +7,7 @@ import android.view.TextureView;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.FileStreamLoadOperation;
 import org.telegram.messenger.MessageObject;
@@ -18,7 +19,8 @@ import org.telegram.ui.Components.VideoPlayer;
 /**
  * Tigi: the one video player of a feed (Home, channel feed, reels). Only one video plays at a time; starting another
  * stops the previous one and the player is released whenever nothing plays, so memory stays bounded.
- * Muted by default, the mute choice is remembered. Telegram's VideoPlayer streams from the cloud while downloading.
+ * Sound on by default unless the phone is on silent or its media volume is off; a mute choice the user makes is
+ * remembered and wins. Telegram's VideoPlayer streams from the cloud while downloading.
  */
 public class TigiInlinePlayer {
 
@@ -28,6 +30,7 @@ public class TigiInlinePlayer {
     }
 
     private static final String KEY_MUTED = "tigi_feed_muted";
+    private static final long FIRST_FRAME_TIMEOUT = 20_000;
 
     private final int account;
     private final String muteKey;
@@ -47,7 +50,24 @@ public class TigiInlinePlayer {
     public TigiInlinePlayer(int account, String muteKey) {
         this.account = account;
         this.muteKey = muteKey;
-        muted = prefs().getBoolean(muteKey, true);
+        muted = defaultMuted();
+    }
+
+    /** The user's own choice when they made one, else whatever the phone says: silent/vibrate or no media volume mutes. */
+    private boolean defaultMuted() {
+        final SharedPreferences prefs = prefs();
+        if (prefs.contains(muteKey)) {
+            return prefs.getBoolean(muteKey, false);
+        }
+        try {
+            final android.media.AudioManager audio = (android.media.AudioManager) org.telegram.messenger.ApplicationLoader.applicationContext.getSystemService(android.content.Context.AUDIO_SERVICE);
+            if (audio == null) {
+                return false;
+            }
+            return audio.getRingerMode() != android.media.AudioManager.RINGER_MODE_NORMAL || audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) == 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private SharedPreferences prefs() {
@@ -171,6 +191,18 @@ public class TigiInlinePlayer {
             }
         });
         videoPlayer.preparePlayer(uri, "other");
+        // never wait forever: no first frame within the limit counts as a failure, so the page shows its retry
+        AndroidUtilities.runOnUIThread(() -> {
+            if (videoPlayer == player && textureView != null && textureView.getAlpha() < 1f && !isPaused()) {
+                final MessageObject failed = TigiInlinePlayer.this.message;
+                final Listener l = TigiInlinePlayer.this.listener;
+                stop();
+                if (l != null) {
+                    l.onStateChanged(failed, false, true);
+                }
+            }
+        }, FIRST_FRAME_TIMEOUT);
+        muted = defaultMuted();
         videoPlayer.setMute(muted);
         videoPlayer.handleAudioFocus(!muted);
         try {

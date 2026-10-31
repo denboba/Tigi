@@ -72,7 +72,6 @@ public class BuildVars {
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
-    public static boolean TIGI_COMPOSE_CARDS = false; // compose screen shows the channel as Nilak cards over the chat (off: normal channel screen) // bottom bar: Read (articles) in the middle, Create moves to "+" in Home's top bar
 
     // Tigi links (owner: fill these in before a store release)
     public static String TIGI_SOURCE_URL = "https://github.com/denboba/Tigi"; // GPL: where the full source lives

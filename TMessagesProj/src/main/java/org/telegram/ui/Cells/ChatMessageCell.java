@@ -13380,6 +13380,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                  boolean topNear,
                                  boolean firstInChat,
                                  boolean lastInChatList) {
+        if (org.telegram.ui.ActionBar.MessageDrawable.nilakCards && messageObject != null && messageObject.getDialogId() < 0) {
+            // a card has no tail: drawn the way Telegram draws a post followed by another
+            bottomNear = true;
+        }
         if (attachedToWindow && !frozen) {
             setMessageContent(messageObject, groupedMessages, bottomNear, topNear, firstInChat, lastInChatList);
         } else {

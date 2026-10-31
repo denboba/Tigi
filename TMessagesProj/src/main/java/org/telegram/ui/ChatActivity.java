@@ -1692,7 +1692,6 @@ public class ChatActivity extends BaseFragment implements
     public static final int TIGI_COMPOSE_TEXT = 2;
     /** Nilak's compose screen: the channel as Nilak cards above Telegram's message bar; stays open after sending. */
     public static final int TIGI_COMPOSE_FEED = 3;
-    private TigiComposeOverlay tigiComposeOverlay;
 
     public boolean isNilakCompose() {
         return tigiCompose == TIGI_COMPOSE_FEED;
@@ -2784,6 +2783,10 @@ public class ChatActivity extends BaseFragment implements
         needRemovePreviousSameChatActivity = arguments.getBoolean("need_remove_previous_same_chat_activity", true);
         justCreatedChat = arguments.getBoolean("just_created_chat", false);
         tigiCompose = arguments.getInt("tigi_compose", 0);
+        if (tigiCompose == TIGI_COMPOSE_FEED) {
+            // the first cells are laid out before onResume: card style from the start
+            org.telegram.ui.ActionBar.MessageDrawable.nilakCards = true;
+        }
         wallpaperRandomSeed = Utilities.random.nextLong();
         if (quickReplyShortcut != null) {
             QuickRepliesController.QuickReply quickReply = QuickRepliesController.getInstance(currentAccount).findReply(quickReplyShortcut);
@@ -3426,9 +3429,8 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
-        if (tigiComposeOverlay != null) {
-            tigiComposeOverlay.onDestroy();
-            tigiComposeOverlay = null;
+        if (isNilakCompose()) {
+            org.telegram.ui.ActionBar.MessageDrawable.nilakCards = false;
         }
         if (messageMetricsView != null) {
             messageMetricsView.finish();
@@ -7056,12 +7058,6 @@ public class ChatActivity extends BaseFragment implements
         });
 
         contentView.addView(chatListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        if (tigiCompose == TIGI_COMPOSE_FEED && BuildVars.TIGI_COMPOSE_CARDS && DialogObject.isChatDialog(dialog_id)) {
-            if (tigiComposeOverlay != null) {
-                tigiComposeOverlay.onDestroy();
-            }
-            tigiComposeOverlay = new TigiComposeOverlay(this, contentView, chatListView, -dialog_id);
-        }
 
         chatActivityFadeView = new ChatActivityFadeView(context);
         chatActivityFadeView.setup(navbarContentDrawableFactory);
@@ -18971,6 +18967,10 @@ public class ChatActivity extends BaseFragment implements
         }
 
         protected Drawable getNewDrawable() {
+            if (isNilakCompose()) {
+                // Nilak's compose screen: the plain feed background, not a chat wallpaper
+                return new android.graphics.drawable.ColorDrawable(TigiFeedBase.feedBackground());
+            }
             Drawable drawable = themeDelegate.getWallpaperDrawable();
             return drawable != null ? drawable : super.getNewDrawable();
         }
@@ -27636,6 +27636,11 @@ public class ChatActivity extends BaseFragment implements
                 AndroidUtilities.runOnUIThread(this::openAttachMenu, 50);
             } else if (tigiCompose == TIGI_COMPOSE_TEXT) {
                 chatActivityEnterView.openKeyboard();
+            } else if (tigiCompose == TIGI_COMPOSE_FEED && arguments != null && !TextUtils.isEmpty(arguments.getString("tigi_text"))) {
+                // a repost with comment: the link is in the field, the cursor before it
+                chatActivityEnterView.setFieldText(arguments.getString("tigi_text"));
+                chatActivityEnterView.setSelection(0);
+                chatActivityEnterView.openKeyboard();
             }
         }
         if (isOpen) {
@@ -30120,8 +30125,10 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onResume() {
         super.onResume();
-        if (tigiComposeOverlay != null) {
-            tigiComposeOverlay.onResume();
+        // posts drawn as Nilak cards while this screen is in front
+        org.telegram.ui.ActionBar.MessageDrawable.nilakCards = isNilakCompose();
+        if (isNilakCompose() && contentView != null) {
+            contentView.setBackgroundImage(new android.graphics.drawable.ColorDrawable(TigiFeedBase.feedBackground()), false);
         }
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
@@ -30335,8 +30342,8 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onPause() {
         super.onPause();
-        if (tigiComposeOverlay != null) {
-            tigiComposeOverlay.onPause();
+        if (isNilakCompose()) {
+            org.telegram.ui.ActionBar.MessageDrawable.nilakCards = false;
         }
         scrolling = false;
         if (scrimPopupWindow != null) {
@@ -44586,8 +44593,8 @@ public class ChatActivity extends BaseFragment implements
             return;
         }
         if (contentView.getBackgroundImage() == null || AndroidUtilities.isTablet()) {
-            final Drawable drawable = Theme.getCachedWallpaper();
-            contentView.setBackgroundImage(drawable, Theme.isWallpaperMotion());
+            final Drawable drawable = isNilakCompose() ? new android.graphics.drawable.ColorDrawable(TigiFeedBase.feedBackground()) : Theme.getCachedWallpaper();
+            contentView.setBackgroundImage(drawable, !isNilakCompose() && Theme.isWallpaperMotion());
         }
     }
 

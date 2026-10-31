@@ -46,7 +46,6 @@ public class ChannelFeedActivity extends TigiFeedBase {
     private boolean reachedEnd;
     private boolean loadFailed;
     private boolean mediaOnly;
-    private boolean embedded;
     private boolean markedRead;
     private int requestId;
     private final HashMap<Long, FeedPost> albums = new HashMap<>();
@@ -68,7 +67,6 @@ public class ChannelFeedActivity extends TigiFeedBase {
         if (arguments != null) {
             chatId = arguments.getLong("chat_id", 0);
             mediaOnly = arguments.getBoolean("media_only", false);
-            embedded = arguments.getBoolean("embedded", false);
             // from a profile grid tile: start at that post and go back in time from there
             final int startId = arguments.getInt("start_message_id", 0);
             if (startId > 0) {
@@ -202,10 +200,6 @@ public class ChannelFeedActivity extends TigiFeedBase {
         header.addView(row, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56, Gravity.TOP | Gravity.LEFT));
         updateHeaderColors();
         updateJoinButton();
-        if (embedded) {
-            // inside Nilak's compose screen, under Telegram's own top bar
-            header.setVisibility(View.GONE);
-        }
         return header;
     }
 

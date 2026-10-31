@@ -31,6 +31,9 @@ import java.util.Arrays;
 
 public class MessageDrawable extends Drawable {
 
+    /** Nilak: while the compose screen is in front, posts are drawn as cards (no tail, even corners). */
+    public static boolean nilakCards;
+
     private Shader gradientShader;
     private int currentBackgroundHeight;
     public Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -590,6 +593,10 @@ public class MessageDrawable extends Drawable {
         } else if (currentType == TYPE_PREVIEW) {
             rad = dp(6);
             nearRad = dp(6);
+        } else if (nilakCards) {
+            // Nilak's compose screen: every post a card with the feed's corner radius
+            rad = dp(18);
+            nearRad = dp(18);
         } else {
             rad = dp(SharedConfig.bubbleRadius);
             nearRad = dp(Math.min(6, SharedConfig.bubbleRadius));
@@ -653,6 +660,10 @@ public class MessageDrawable extends Drawable {
         } else if (currentType == TYPE_PREVIEW) {
             rad = dp(6);
             nearRad = dp(6);
+        } else if (nilakCards) {
+            // Nilak's compose screen: every post a card with the feed's corner radius
+            rad = dp(18);
+            nearRad = dp(18);
         } else {
             rad = dp(SharedConfig.bubbleRadius);
             nearRad = dp(Math.min(6, SharedConfig.bubbleRadius));

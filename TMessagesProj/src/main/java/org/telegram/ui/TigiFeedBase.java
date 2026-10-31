@@ -1349,8 +1349,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             // quote-repost: the user's comment on top, the original as a link preview under it, posted to their channel
             content.addView(sheetRow(context, R.drawable.menu_quote_specific, LocaleController.getString(R.string.NilakRepostComment), false, () -> {
                 sheet.dismiss();
-                TigiCreateSheet.pickChannel(this, ChatActivity.TIGI_COMPOSE_TEXT, target ->
-                    TigiComposeActivity.startText(this, target, "\n\n" + postLink(chat, primary)));
+                TigiCreateSheet.openCompose(this, "\n\n" + postLink(chat, primary));
             }));
         }
         if (sent) {

@@ -131,6 +131,12 @@ public class TigiFeedPrefs {
         return map;
     }
 
+    /** How often the user opened this channel lately (0 when never). */
+    public static int affinityOf(int account, long chatId) {
+        final Integer score = affinity(account).get(String.valueOf(chatId));
+        return score == null ? 0 : score;
+    }
+
     public static void bumpAffinity(int account, long chatId) {
         final java.util.LinkedHashMap<String, Integer> map = affinity(account);
         final String key = String.valueOf(chatId);

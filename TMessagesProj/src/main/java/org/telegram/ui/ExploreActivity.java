@@ -300,6 +300,12 @@ public class ExploreActivity extends BaseFragment {
         chipsRow.removeAllViews();
         chipViews.clear();
         addChip(LocaleController.getString(R.string.TigiReelsForYou), null);
+        // the other ways in: each opens its own screen
+        addChip(LocaleController.getString(R.string.NilakApps), "@apps");
+        addChip(LocaleController.getString(R.string.NilakText), "@text");
+        addChip(LocaleController.getString(R.string.NilakRead), "@read");
+        addChip(LocaleController.getString(R.string.NilakFriends), "@friends");
+        addChip(LocaleController.getString(R.string.NilakBrief), "@brief");
         final ArrayList<String> tags = new ArrayList<>(tagCounts.keySet());
         Collections.sort(tags, (a, b) -> tagCounts.get(b) - tagCounts.get(a));
         if (!TextUtils.isEmpty(hashtag) && !tags.contains(hashtag)) {
@@ -320,6 +326,10 @@ public class ExploreActivity extends BaseFragment {
         chip.setGravity(Gravity.CENTER);
         chip.setPadding(dp(14), 0, dp(14), 0);
         chip.setOnClickListener(v -> {
+            if (tag != null && tag.startsWith("@")) {
+                openHub(tag);
+                return;
+            }
             if (tag == null) {
                 searchField.setText("");
             } else {
@@ -332,10 +342,27 @@ public class ExploreActivity extends BaseFragment {
         chipViews.add(chip);
     }
 
+    private void openHub(String tag) {
+        AndroidUtilities.hideKeyboard(searchField);
+        switch (tag) {
+            case "@apps": TigiAppsActivity.open(this); break;
+            case "@text": presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_TEXT)); break;
+            case "@read": presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_READ)); break;
+            case "@friends": presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
+            case "@brief": presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_BRIEF)); break;
+        }
+    }
+
     private void updateChips() {
         for (int i = 0; i < chipViews.size(); i++) {
             final TextView chip = chipViews.get(i);
             final String tag = (String) chip.getTag();
+            if (tag != null && tag.startsWith("@")) {
+                chip.setTextColor(TigiStyle.accent());
+                chip.setBackground(Theme.createRoundRectDrawable(dp(16), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
+                chip.setSelected(false);
+                continue;
+            }
             final boolean on = tag == null ? mode == MODE_FOR_YOU : mode == MODE_HASHTAG && tag.equalsIgnoreCase(hashtag);
             chip.setTextColor(on ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             chip.setBackground(on ? TigiStyle.primaryPill(16) : Theme.createRoundRectDrawable(dp(16), Theme.getColor(Theme.key_windowBackgroundGray)));

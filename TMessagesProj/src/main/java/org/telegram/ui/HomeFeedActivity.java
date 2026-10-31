@@ -76,6 +76,8 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         scrollingPart.setOrientation(LinearLayout.VERTICAL);
         storiesRow = new TigiStoriesRow(context, this);
         scrollingPart.addView(storiesRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        briefCard = createBriefCard(context);
+        scrollingPart.addView(briefCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 2, 12, 8));
         suggestedRow = new TigiSuggestedRow(context, this, () -> followedSinceLoad = true);
         scrollingPart.addView(suggestedRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         header.addView(scrollingPart, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
@@ -151,6 +153,67 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     }
     private ImageView searchButton;
     private ImageView activityButton;
+    private LinearLayout briefCard;
+    private TextView briefTitle;
+
+    private static final int BRIEF_MIN_UNREAD = 5;
+
+    /** "312 new posts in your channels · Open brief": shown while the channels hold enough unread posts. */
+    private LinearLayout createBriefCard(Context context) {
+        final LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(12), AndroidUtilities.dp(12), AndroidUtilities.dp(12));
+        final android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TL_BR, new int[]{TigiStyle.PRIMARY, TigiStyle.PRIMARY_PRESSED});
+        background.setCornerRadius(AndroidUtilities.dp(18));
+        card.setBackground(background);
+        final LinearLayout texts = new LinearLayout(context);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        final TextView kicker = new TextView(context);
+        kicker.setText(LocaleController.getString(R.string.NilakBriefKicker));
+        kicker.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
+        kicker.setTypeface(TigiStyle.displayBold());
+        kicker.setTextColor(0xCCFFFFFF);
+        texts.addView(kicker);
+        briefTitle = new TextView(context);
+        briefTitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        briefTitle.setTypeface(TigiStyle.displayExtraBold());
+        briefTitle.setTextColor(0xFFFFFFFF);
+        texts.addView(briefTitle, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+        card.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 0, 0, 8, 0));
+        final TextView open = new TextView(context);
+        open.setText(LocaleController.getString(R.string.NilakOpenBrief));
+        open.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        open.setTypeface(TigiStyle.displayBold());
+        open.setTextColor(TigiStyle.PRIMARY);
+        open.setGravity(Gravity.CENTER);
+        open.setPadding(AndroidUtilities.dp(14), 0, AndroidUtilities.dp(14), 0);
+        open.setBackground(Theme.createRoundRectDrawable(AndroidUtilities.dp(17), 0xFFFFFFFF));
+        card.addView(open, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 34));
+        card.setOnClickListener(v -> presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_BRIEF)));
+        card.setVisibility(View.GONE);
+        return card;
+    }
+
+    private void updateBriefCard() {
+        if (briefCard == null) {
+            return;
+        }
+        int unread = 0;
+        for (TLRPC.Chat chat : TigiPosting.followedChannels(currentAccount)) {
+            final TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(-chat.id);
+            if (dialog != null) {
+                unread += dialog.unread_count;
+            }
+        }
+        final boolean show = unread >= BRIEF_MIN_UNREAD;
+        if (show) {
+            briefTitle.setText(LocaleController.formatPluralString("NilakBriefNewPosts", unread));
+            briefCard.setContentDescription(briefTitle.getText() + ", " + LocaleController.getString(R.string.NilakOpenBrief));
+        }
+        briefCard.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
     private TigiStoriesRow storiesRow;
     private LinearLayout scrollingPart;
     private TigiSuggestedRow suggestedRow;
@@ -247,6 +310,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             // read state changes while the story viewer was open
             storiesRow.update();
         }
+        updateBriefCard();
         if (BuildVars.TIGI_POST) {
             TigiPosting.archiveOwnChannelOnce(currentAccount);
             TigiPosting.setPersonalChannelOnce(currentAccount);
@@ -432,6 +496,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             if (BuildVars.TIGI_POST) {
                 TigiPosting.archiveOwnChannelOnce(currentAccount);
             }
+            updateBriefCard();
             // on a cold start the chat list arrives after this tab was created
             if (posts.isEmpty() && lastLoadTime == 0 && !loading && !isDead()) {
                 loadFeed();

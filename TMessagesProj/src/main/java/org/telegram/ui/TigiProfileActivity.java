@@ -240,11 +240,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             telegramProfileButton = topIcon(context, R.drawable.msg_qrcode, R.string.TigiProfileAccount);
             telegramProfileButton.setOnClickListener(v -> openInfo());
             icons.addView(telegramProfileButton, LayoutHelper.createLinear(48, 48));
-            regionButton = topIcon(context, R.drawable.msg_language, R.string.NilakContentRegion);
-            regionButton.setOnClickListener(v -> TigiRegion.showPicker(this, () -> {
-                TigiPosting.clearSuggestedCache(currentAccount);
-                BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.NilakContentFrom, TigiRegion.summary())).show();
-            }));
+            regionButton = topIcon(context, R.drawable.ic_ab_other, R.string.NilakMore);
+            regionButton.setOnClickListener(v -> showNilakMenu());
             icons.addView(regionButton, LayoutHelper.createLinear(48, 48));
             settingsButton = topIcon(context, R.drawable.msg_settings, R.string.Settings);
             settingsButton.setOnClickListener(v -> presentFragment(new SettingsActivity()));
@@ -666,6 +663,37 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }, err -> true);
     }
 
+    /** Nilak's own settings and places: country and language, data saver, apps, friends, brief. */
+    private void showNilakMenu() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final CharSequence[] items = {
+            LocaleController.getString(R.string.NilakContentRegion) + " · " + TigiRegion.summary(),
+            LocaleController.getString(R.string.NilakDataSaver),
+            LocaleController.getString(R.string.NilakApps),
+            LocaleController.getString(R.string.NilakFriends),
+            LocaleController.getString(R.string.NilakBrief)
+        };
+        final int[] icons = {R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved};
+        final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
+        builder.setItems(items, icons, (dialog, which) -> {
+            switch (which) {
+                case 0:
+                    TigiRegion.showPicker(this, () -> {
+                        TigiPosting.clearSuggestedCache(currentAccount);
+                        BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.NilakContentFrom, TigiRegion.summary())).show();
+                    });
+                    break;
+                case 1: presentFragment(new TigiDataSaverActivity()); break;
+                case 2: TigiAppsActivity.open(this); break;
+                case 3: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
+                case 4: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_BRIEF)); break;
+            }
+        });
+        showDialog(builder.create());
+    }
+
     /** The profile photo full screen with every earlier photo to swipe through; without a photo, where one is set. */
     private void openPhotos() {
         final boolean hasPhoto = user != null ? user.photo != null && !(user.photo instanceof TLRPC.TL_userProfilePhotoEmpty)
@@ -965,8 +993,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             highlights.bind();
             nameView.setText(user != null ? UserObject.getUserName(user) : chat.title);
             final String username = user != null ? UserObject.getPublicUsername(user) : ChatObject.getPublicUsername(chat);
-            usernameView.setText(TextUtils.isEmpty(username) ? null : "@" + username);
-            usernameView.setVisibility(TextUtils.isEmpty(username) ? GONE : VISIBLE);
+            // people who are each other's contacts are friends
+            final boolean friends = user != null && !self && user.mutual_contact;
+            final String handle = TextUtils.isEmpty(username) ? null : "@" + username;
+            final String line = friends ? (handle != null ? handle + " · " : "") + LocaleController.getString(R.string.NilakFriendsBadge) : handle;
+            usernameView.setText(line);
+            usernameView.setVisibility(TextUtils.isEmpty(line) ? GONE : VISIBLE);
             if (self) {
                 bindSelf();
                 return;

@@ -50,6 +50,7 @@ public class TigiCreateSheet {
     private static final int ACTION_LIVE = 3;
     private static final int ACTION_TEXT = 4;
     private static final int ACTION_OTHER_CHANNEL = 5;
+    private static final int ACTION_ARTICLE = 6;
 
     /** Live uses Telegram's channel video chat / live stream, see TigiLive. */
     static boolean liveAvailable = true;
@@ -122,6 +123,10 @@ public class TigiCreateSheet {
                 sheet.dismiss();
                 run(fragment, ACTION_TEXT);
             }), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64, 0, 0, 0, 4));
+            content.addView(tile(context, resources, ACTION_ARTICLE, true, () -> {
+                sheet.dismiss();
+                run(fragment, ACTION_ARTICLE);
+            }), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64, 0, 6, 0, 4));
 
             // "Posting to <channel> · Change" when the user runs other channels too
             final TLRPC.Chat target = TigiPosting.defaultChannel(account);
@@ -164,6 +169,9 @@ public class TigiCreateSheet {
             case ACTION_TEXT:
                 pickChannel(fragment, ChatActivity.TIGI_COMPOSE_TEXT);
                 break;
+            case ACTION_ARTICLE:
+                pickChannel(fragment, ChatActivity.TIGI_COMPOSE_TEXT, chat -> TigiArticleActivity.start(fragment, chat));
+                break;
             case ACTION_OTHER_CHANNEL:
                 pickFrom(fragment, TigiPosting.postableChannels(account), chat -> compose(fragment, chat, ChatActivity.TIGI_COMPOSE_MEDIA));
                 break;
@@ -185,6 +193,7 @@ public class TigiCreateSheet {
             case ACTION_STORY: icon = R.drawable.tigi_clock_24; title = R.string.TigiCreateStory; hint = R.string.TigiCreateStoryHint; break;
             case ACTION_LIVE: icon = R.drawable.tigi_live_24; title = R.string.TigiCreateLive; hint = R.string.TigiCreateLiveHint; break;
             case ACTION_TEXT: icon = R.drawable.tigi_text_24; title = R.string.TigiCreateText; hint = R.string.TigiCreateTextHint; break;
+            case ACTION_ARTICLE: icon = R.drawable.msg_edit; title = R.string.NilakCreateArticle; hint = R.string.NilakCreateArticleHint; break;
             default: icon = R.drawable.tigi_image_24; title = R.string.TigiCreatePost; hint = R.string.TigiCreatePostHint; break;
         }
         final int textColor = Theme.getColor(Theme.key_dialogTextBlack, resources);

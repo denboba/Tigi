@@ -798,7 +798,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /** Autoplay follows Telegram's own settings: autoplay videos/GIFs and the auto-download rules for this network. */
     protected boolean canAutoplay(MessageObject message) {
-        if (message == null || message.isRoundVideo()) {
+        if (message == null || message.isRoundVideo() || !TigiDataSaverActivity.autoplayAllowed()) {
             return false;
         }
         if (message.isGif()) {

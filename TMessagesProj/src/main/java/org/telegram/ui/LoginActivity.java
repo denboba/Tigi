@@ -3038,11 +3038,21 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 }
             }
 
-            if (countryState == COUNTRY_STATE_EMPTY) {
+            // Nilak: Google Play's review login. Telegram's test servers accept the numbers +99966 X YYYY with the
+            // fixed code XXXXX (X = 1..3), so reviewers get a login that never expires and needs no SMS. Typing
+            // such a number switches this login to the test servers; nothing else changes for real numbers.
+            final String reviewPhone = PhoneFormat.stripExceptNumbers("" + codeField.getText() + phoneField.getText());
+            final boolean reviewLogin = activityMode == MODE_LOGIN && reviewPhone.length() == 10 && reviewPhone.startsWith("99966")
+                && reviewPhone.charAt(5) >= '1' && reviewPhone.charAt(5) <= '3';
+            if (reviewLogin && !getConnectionsManager().isTestBackend()) {
+                testBackend = true;
+                getConnectionsManager().switchBackend(false);
+            }
+            if (countryState == COUNTRY_STATE_EMPTY && !reviewLogin) {
                 needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString("ChooseCountry", R.string.ChooseCountry));
                 needHideProgress(false);
                 return;
-            } else if (countryState == COUNTRY_STATE_INVALID && !BuildVars.DEBUG_VERSION && !(TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE)) {
+            } else if (countryState == COUNTRY_STATE_INVALID && !reviewLogin && !BuildVars.DEBUG_VERSION && !(TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE)) {
                 needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.WrongCountry));
                 needHideProgress(false);
                 return;

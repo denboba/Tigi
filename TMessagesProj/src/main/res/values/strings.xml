@@ -10799,6 +10799,12 @@
     <string name="NilakTopicMarkets">Markets</string>
     <string name="NilakTopicPolitics">Politics</string>
     <string name="NilakRepostComment">Repost with comment</string>
+    <string name="NilakShareTitle">Share</string>
+    <string name="NilakShareFriends">Send to friends</string>
+    <string name="NilakShareMore">More apps</string>
+    <string name="NilakShareLinkOnly">The photo or video isn\'t on your phone yet, so other apps get the link. Open it once to share the media itself.</string>
+    <string name="NilakSharedFrom">Shared from Nilak</string>
+    <string name="NilakShareFailed">Couldn\'t open that app.</string>
     <string name="NilakBriefReminder">Daily brief reminder</string>
     <string name="NilakReminderOff">Off</string>
     <string name="NilakBriefReady">Your daily brief is ready</string>

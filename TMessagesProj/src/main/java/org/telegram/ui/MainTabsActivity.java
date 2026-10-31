@@ -351,6 +351,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     @Override
     public void onResume() {
         super.onResume();
+        jumpToHomeOnce();
         blur3_updateColors();
         checkContactsTabBadge();
         checkUnreadCount(true);
@@ -364,6 +365,22 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     private boolean nilakStartChecked;
     private static boolean nilakMovedToHome;
+
+    /**
+     * Home is the first screen. Chats was resumed a moment ago by super.onResume (its first resume asks for the
+     * notification/contacts permissions and runs the storage check), and here the pager switches to Home without
+     * animation, before anything is drawn, so Chats is never seen.
+     */
+    private void jumpToHomeOnce() {
+        if (nilakMovedToHome || !BuildVars.TIGI_START_ON_HOME || POSITION_HOME < 0 || viewPager == null || fragmentView == null) {
+            return;
+        }
+        nilakMovedToHome = true;
+        if (viewPager.getCurrentPosition() == POSITION_CHATS) {
+            selectTab(POSITION_HOME, false);
+            viewPager.setPosition(POSITION_HOME);
+        }
+    }
 
     /**
      * Nilak start: first run for people with almost no channels, otherwise Home as the first screen. The app still
@@ -382,10 +399,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             presentFragment(new TigiOnboardingActivity());
             return;
         }
-        if (BuildVars.TIGI_START_ON_HOME && !nilakMovedToHome && POSITION_HOME >= 0 && viewPager != null && viewPager.getCurrentPosition() == POSITION_CHATS) {
-            nilakMovedToHome = true;
-            openHomeTab();
-        }
+        jumpToHomeOnce();
     }
 
     private void checkContactsTabBadge() {
@@ -979,7 +993,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     public boolean onBackPressed(boolean invoked) {
         final boolean result = super.onBackPressed(invoked);
         if (result) {
-            final int startPosition = getStartPosition();
+            // back from any tab goes to Home first (Nilak's first screen), and from Home it leaves the app
+            final int startPosition = BuildVars.TIGI_START_ON_HOME && POSITION_HOME >= 0 ? POSITION_HOME : getStartPosition();
             if (viewPager.getCurrentPosition() != startPosition) {
                 if (invoked) {
                     viewPager.scrollToPosition(startPosition);

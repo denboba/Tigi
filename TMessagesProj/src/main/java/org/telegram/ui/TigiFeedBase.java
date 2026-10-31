@@ -431,7 +431,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
         final FrameLayout root = new FrameLayout(context);
         rootView = root;
-        root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        root.setBackgroundColor(feedBackground());
 
         final boolean floatingHeader = headerScrollsWithList();
         final View header = createHeaderView(context);
@@ -538,11 +538,16 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     /** Re-applies theme colors after a theme or night mode switch. */
+    /** Light: soft grey behind the cards. Dark: pure black like Instagram, the cards sit flat on it. */
+    protected static int feedBackground() {
+        return Theme.getColor(Theme.isCurrentThemeDark() ? Theme.key_windowBackgroundWhite : Theme.key_windowBackgroundGray);
+    }
+
     protected void updateColors() {
         if (rootView == null) {
             return;
         }
-        rootView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        rootView.setBackgroundColor(feedBackground());
         if (emptyView != null) {
             emptyView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         }
@@ -1504,19 +1509,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             .show();
     }
 
+    /** Nilak's share sheet: friends in the app, WhatsApp, any app with the media attached, or the link. */
     protected void sharePost(FeedPost post) {
-        final String username = ChatObject.getPublicUsername(post.chat);
-        if (getParentActivity() == null) {
+        if (post == null || post.chat == null || post.messages.isEmpty() || getParentActivity() == null) {
             return;
         }
-        if (TextUtils.isEmpty(username)) {
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiSharePrivate)).show();
-            return;
-        }
-        final Intent intent = new Intent(Intent.ACTION_SEND);
-        intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_TEXT, "https://t.me/" + username + "/" + post.primary().getId());
-        getParentActivity().startActivity(Intent.createChooser(intent, post.chat.title));
+        TigiShare.show(this, post.chat, post.primary(), post.media.isEmpty() ? null : post.media.get(0), post.text);
     }
 
     /* adapter */

@@ -655,6 +655,29 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }, err -> true);
     }
 
+    /** The profile photo full screen with every earlier photo to swipe through; without a photo, where one is set. */
+    private void openPhotos() {
+        final boolean hasPhoto = user != null ? user.photo != null && !(user.photo instanceof TLRPC.TL_userProfilePhotoEmpty)
+            : chat != null && chat.photo != null && !(chat.photo instanceof TLRPC.TL_chatPhotoEmpty);
+        if (!hasPhoto) {
+            if (self) {
+                openInfo();
+            }
+            return;
+        }
+        final Bundle args = new Bundle();
+        if (user != null) {
+            args.putLong("user_id", user.id);
+            if (self) {
+                args.putBoolean("my_profile", true);
+            }
+        } else {
+            args.putLong("chat_id", chatId);
+        }
+        args.putBoolean("expandPhoto", true);
+        presentFragment(new ProfileActivity(args));
+    }
+
     private void openStories() {
         final long dialogId = user != null ? user.id : -chatId;
         if (getParentActivity() != null && getMessagesController().getStoriesController().hasStories(dialogId)) {
@@ -700,12 +723,16 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             top.setGravity(Gravity.BOTTOM);
             avatar = new StoryRingAvatar(context);
             avatar.setOnClickListener(v -> {
-                if (self && !getMessagesController().getStoriesController().hasStories(user.id)) {
-                    // own photo without stories: Telegram's profile, where the photo is set
-                    openInfo();
-                } else {
+                final long dialogId = user != null ? user.id : -chatId;
+                if (getMessagesController().getStoriesController().hasStories(dialogId)) {
                     openStories();
+                } else {
+                    openPhotos();
                 }
+            });
+            avatar.setOnLongClickListener(v -> {
+                openPhotos();
+                return true;
             });
             top.addView(avatar, LayoutHelper.createLinear(88, 88));
             top.setPadding(0, 0, 0, 0);

@@ -1831,7 +1831,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             captionBox = new LinearLayout(context);
             captionBox.setOrientation(VERTICAL);
             captionBox.setPadding(dp(12), dp(2), dp(12), dp(12));
-            captionView = new TextView(context);
+            captionView = new TigiEmojiTextView(context);
             captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             captionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             captionView.setLineSpacing(dp(2), 1f);

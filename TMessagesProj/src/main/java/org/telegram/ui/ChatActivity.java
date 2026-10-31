@@ -7056,7 +7056,7 @@ public class ChatActivity extends BaseFragment implements
         });
 
         contentView.addView(chatListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        if (tigiCompose == TIGI_COMPOSE_FEED && DialogObject.isChatDialog(dialog_id)) {
+        if (tigiCompose == TIGI_COMPOSE_FEED && BuildVars.TIGI_COMPOSE_CARDS && DialogObject.isChatDialog(dialog_id)) {
             if (tigiComposeOverlay != null) {
                 tigiComposeOverlay.onDestroy();
             }

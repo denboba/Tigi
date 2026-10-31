@@ -6,16 +6,32 @@ passes. With the placeholder, push notifications (FCM) will not work.
 """
 import json, os, sys
 
-PACKAGE = "com.tigi.app"
+def app_package():
+    # the package the app is built with (APP_PACKAGE in gradle.properties)
+    try:
+        with open("gradle.properties") as f:
+            for line in f:
+                if line.strip().startswith("APP_PACKAGE="):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return "com.tigi.app"
+
+PACKAGE = app_package()
 targets = sys.argv[1:]
 real = os.environ.get("GOOGLE_SERVICES_JSON", "").strip()
 
+data = None
 if real:
     data = json.loads(real)
     names = [c["client_info"]["android_client_info"]["package_name"] for c in data["client"]]
     if PACKAGE not in names:
-        sys.exit(f"GOOGLE_SERVICES_JSON has no client for {PACKAGE}: {names}")
-else:
+        # e.g. the Firebase app is already com.nilak.app while the build is still the old package:
+        # build with the placeholder until the package matches, instead of failing every build
+        print(f"::warning title=Firebase config waits for the package::GOOGLE_SERVICES_JSON is for {names}, the app is {PACKAGE}; using the placeholder (no background push) until they match.")
+        data = None
+        real = ""
+if data is None:
     data = {
         "project_info": {
             "project_number": "000000000000",

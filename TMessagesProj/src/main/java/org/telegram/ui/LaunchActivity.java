@@ -1509,6 +1509,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @SuppressLint("Range")
     private boolean handleIntent(Intent intent, boolean isNew, boolean restore, boolean fromPassword, Browser.Progress progress, boolean rebuildFragments, boolean openedTelegram) {
+        if (intent != null && org.telegram.messenger.TigiBriefReminder.ACTION_OPEN.equals(intent.getAction())) {
+            // Nilak's daily brief notification: open the app as usual, Home then opens the brief
+            org.telegram.messenger.TigiBriefReminder.pendingOpen = true;
+            intent.setAction(Intent.ACTION_MAIN);
+        }
         if (GiftInfoBottomSheet.handleIntent(intent, progress)) {
             return true;
         }

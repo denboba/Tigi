@@ -81,6 +81,16 @@ public class TigiComposeActivity extends BaseFragment {
         fragment.presentFragment(create(chat, mode, null));
     }
 
+    /** A text post with text already in it (a repost comment above a link); the cursor goes to the start. */
+    public static void startText(BaseFragment fragment, TLRPC.Chat chat, String text) {
+        if (fragment == null || fragment.getParentActivity() == null || chat == null) {
+            return;
+        }
+        final TigiComposeActivity activity = create(chat, MODE_TEXT, null);
+        activity.arguments.putString("initial_text", text);
+        fragment.presentFragment(activity);
+    }
+
     private static TigiComposeActivity create(TLRPC.Chat chat, int mode, ArrayList<SendMessagesHelper.SendingMediaInfo> media) {
         final Bundle args = new Bundle();
         args.putLong("chat_id", chat.id);
@@ -230,6 +240,11 @@ public class TigiComposeActivity extends BaseFragment {
             }
         });
         body.addView(input, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        final String initial = arguments.getString("initial_text");
+        if (!TextUtils.isEmpty(initial) && input.length() == 0) {
+            input.setText(initial);
+            input.setSelection(0);
+        }
 
         counter = new TextView(context);
         counter.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);

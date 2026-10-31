@@ -311,6 +311,15 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             storiesRow.update();
         }
         updateBriefCard();
+        org.telegram.messenger.TigiBriefReminder.schedule(getParentActivity());
+        if (org.telegram.messenger.TigiBriefReminder.pendingOpen) {
+            org.telegram.messenger.TigiBriefReminder.pendingOpen = false;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!isDead()) {
+                    presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_BRIEF));
+                }
+            }, 300);
+        }
         if (BuildVars.TIGI_POST) {
             TigiPosting.archiveOwnChannelOnce(currentAccount);
             TigiPosting.setPersonalChannelOnce(currentAccount);
@@ -466,6 +475,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         posts.addAll(result.size() > MAX_POSTS ? result.subList(0, MAX_POSTS) : result);
         adapter.notifyDataSetChanged();
         updateEmptyView();
+        prefetchOnWifi(posts);
     }
 
     @Override

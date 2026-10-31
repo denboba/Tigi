@@ -82,6 +82,18 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     private TextView subtitleView;
     private LinearLayout chipsRow;
     private TextView markReadButton;
+    private HorizontalScrollView marketScroll;
+    private LinearLayout marketStrip;
+
+    private static final int TOPIC_MARKETS = 3;
+    /** Rates people check: label, pattern (the number is group 1). Read from channel posts, not an official source. */
+    private static final int[] MARKET_LABELS = {R.string.NilakRateUsd, R.string.NilakRateEur, R.string.NilakRateGold, R.string.NilakRateFuel};
+    private static final java.util.regex.Pattern[] MARKET_PATTERNS = {
+        java.util.regex.Pattern.compile("(?i)(?:usd|us dollar|dollar|ዶላር)[^\\d\\n]{0,24}(\\d{1,6}(?:[.,]\\d{1,4})?)"),
+        java.util.regex.Pattern.compile("(?i)(?:eur|euro|ዩሮ)[^\\d\\n]{0,24}(\\d{1,6}(?:[.,]\\d{1,4})?)"),
+        java.util.regex.Pattern.compile("(?i)(?:gold|ወርቅ)[^\\d\\n]{0,24}(\\d{1,3}(?:[,]\\d{3})*(?:[.]\\d{1,2})?)"),
+        java.util.regex.Pattern.compile("(?i)(?:benzine|benzene|petrol|gasoline|fuel|ቤንዚን|ነዳጅ)[^\\d\\n]{0,24}(\\d{1,4}(?:[.,]\\d{1,2})?)")
+    };
 
     public static TigiTopicFeedActivity of(int mode) {
         final Bundle args = new Bundle();
@@ -96,6 +108,9 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     @Override
     public boolean onFragmentCreate() {
         mode = arguments != null ? arguments.getInt("mode", MODE_BRIEF) : MODE_BRIEF;
+        if (mode == MODE_BRIEF) {
+            org.telegram.messenger.TigiBriefReminder.markOpenedToday();
+        }
         return super.onFragmentCreate();
     }
 
@@ -164,6 +179,14 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
         row.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 4, 0, 8, 0));
 
         if (mode == MODE_BRIEF) {
+            final ImageView bell = new ImageView(context);
+            bell.setScaleType(ImageView.ScaleType.CENTER);
+            bell.setImageResource(R.drawable.tigi_bell_24);
+            bell.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            bell.setContentDescription(LocaleController.getString(R.string.NilakBriefReminder));
+            bell.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+            bell.setOnClickListener(v -> pickReminder());
+            row.addView(bell, LayoutHelper.createLinear(44, 48));
             markReadButton = new TextView(context);
             markReadButton.setText(LocaleController.getString(R.string.NilakMarkAllRead));
             markReadButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
@@ -217,6 +240,14 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             scroll.addView(chipsRow);
             header.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             bindChips();
+            marketScroll = new HorizontalScrollView(context);
+            marketScroll.setHorizontalScrollBarEnabled(false);
+            marketStrip = new LinearLayout(context);
+            marketStrip.setOrientation(LinearLayout.HORIZONTAL);
+            marketStrip.setPadding(dp(12), 0, dp(12), dp(10));
+            marketScroll.addView(marketStrip);
+            marketScroll.setVisibility(View.GONE);
+            header.addView(marketScroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }
         return header;
     }
@@ -437,6 +468,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             all.clear();
             all.addAll(kept.size() > MAX_POSTS ? kept.subList(0, MAX_POSTS) : kept);
         }
+        prefetchOnWifi(all);
         applyTopic();
     }
 
@@ -493,7 +525,83 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
         return Math.log10(views + 10) * (1 + 0.15 * Math.min(affinity, 20)) - hoursOld * 0.03;
     }
 
+    /** The newest value each market pattern finds in the loaded posts, as tiles; tap opens the post it came from. */
+    private void bindMarkets() {
+        if (marketScroll == null) {
+            return;
+        }
+        marketStrip.removeAllViews();
+        if (topic != TOPIC_MARKETS) {
+            marketScroll.setVisibility(View.GONE);
+            return;
+        }
+        for (int i = 0; i < MARKET_PATTERNS.length; i++) {
+            FeedPost source = null;
+            String value = null;
+            for (FeedPost post : all) {
+                if (post.text == null) {
+                    continue;
+                }
+                final java.util.regex.Matcher matcher = MARKET_PATTERNS[i].matcher(post.text);
+                while (matcher.find()) {
+                    final String number = matcher.group(1);
+                    // a bare year or a phone-number fragment is not a price
+                    if (number.matches("(19|20)\\d\\d") || number.replaceAll("[^0-9]", "").length() > 8) {
+                        continue;
+                    }
+                    if (source == null || post.date > source.date) {
+                        source = post;
+                        value = number;
+                    }
+                    break;
+                }
+            }
+            if (source != null) {
+                marketStrip.addView(marketTile(MARKET_LABELS[i], value, source), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 0, 8, 0));
+            }
+        }
+        marketScroll.setVisibility(marketStrip.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    private View marketTile(int label, String value, FeedPost source) {
+        final Context context = getParentActivity();
+        final LinearLayout tile = new LinearLayout(context);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setPadding(dp(12), dp(8), dp(14), dp(8));
+        tile.setMinimumWidth(dp(120));
+        tile.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
+        final TextView name = new TextView(context);
+        name.setText(LocaleController.getString(label));
+        name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
+        name.setTypeface(TigiStyle.displayBold());
+        name.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        tile.addView(name);
+        final TextView number = new TextView(context);
+        number.setText(value);
+        number.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 19);
+        number.setTypeface(TigiStyle.displayExtraBold());
+        number.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        tile.addView(number);
+        final TextView from = new TextView(context);
+        from.setText(source.chat.title + " · " + LocaleController.stringForMessageListDate(source.date));
+        from.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 10);
+        from.setMaxWidth(dp(150));
+        from.setSingleLine(true);
+        from.setEllipsize(TextUtils.TruncateAt.END);
+        from.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        tile.addView(from);
+        tile.setContentDescription(LocaleController.getString(label) + " " + value + ", " + source.chat.title);
+        tile.setOnClickListener(v -> {
+            final Bundle args = new Bundle();
+            args.putLong("chat_id", source.chat.id);
+            args.putInt("start_message_id", source.primary().getId());
+            presentFragment(new ChannelFeedActivity(args));
+        });
+        return tile;
+    }
+
     private void applyTopic() {
+        bindMarkets();
         posts.clear();
         if (mode != MODE_TEXT || topic == 0) {
             posts.addAll(all);
@@ -518,6 +626,37 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             }
         }
         return false;
+    }
+
+    private static final int[] REMINDER_HOURS = {7, 8, 9, 12, 18, 21};
+
+    /** Off, or one of a few hours; the current choice is marked. */
+    private void pickReminder() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final boolean on = org.telegram.messenger.TigiBriefReminder.isEnabled();
+        final int hour = org.telegram.messenger.TigiBriefReminder.hour();
+        final CharSequence[] items = new CharSequence[REMINDER_HOURS.length + 1];
+        items[0] = (!on ? "✓  " : "") + LocaleController.getString(R.string.NilakReminderOff);
+        for (int i = 0; i < REMINDER_HOURS.length; i++) {
+            final java.util.Calendar time = java.util.Calendar.getInstance();
+            time.set(java.util.Calendar.HOUR_OF_DAY, REMINDER_HOURS[i]);
+            time.set(java.util.Calendar.MINUTE, 0);
+            final String label = LocaleController.getInstance().getFormatterDay().format(time.getTime());
+            items[i + 1] = (on && hour == REMINDER_HOURS[i] ? "✓  " : "") + label;
+        }
+        final org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.NilakBriefReminder));
+        builder.setItems(items, (dialog, which) -> {
+            if (which == 0) {
+                org.telegram.messenger.TigiBriefReminder.setEnabled(false);
+            } else {
+                org.telegram.messenger.TigiBriefReminder.setHour(REMINDER_HOURS[which - 1]);
+                org.telegram.messenger.TigiBriefReminder.setEnabled(true);
+            }
+        });
+        showDialog(builder.create());
     }
 
     private void markAllRead() {

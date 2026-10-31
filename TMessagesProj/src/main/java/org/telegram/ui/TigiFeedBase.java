@@ -797,6 +797,33 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     /* video */
 
     /** Autoplay follows Telegram's own settings: autoplay videos/GIFs and the auto-download rules for this network. */
+    private static final int PREFETCH_POSTS = 40;
+
+    /**
+     * On Wi-Fi (and when the user allows it), downloads the photos of the first posts in the background, so the feed
+     * opens instantly and reads without mobile data later. Video thumbnails only; videos stream when played.
+     */
+    protected void prefetchOnWifi(ArrayList<FeedPost> list) {
+        if (list == null || !TigiDataSaverActivity.prefetchAllowed()) {
+            return;
+        }
+        final FileLoader loader = FileLoader.getInstance(currentAccount);
+        for (int i = 0; i < list.size() && i < PREFETCH_POSTS; i++) {
+            final FeedPost post = list.get(i);
+            for (int m = 0; m < post.media.size(); m++) {
+                final MessageObject object = post.media.get(m);
+                if (object.photoThumbs == null || object.photoThumbs.isEmpty()) {
+                    continue;
+                }
+                final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(object.photoThumbs, AndroidUtilities.getPhotoSize());
+                final ImageLocation location = ImageLocation.getForObject(size, object.photoThumbsObject);
+                if (location != null) {
+                    loader.loadFile(location, object, "jpg", FileLoader.PRIORITY_LOW, 1);
+                }
+            }
+        }
+    }
+
     protected boolean canAutoplay(MessageObject message) {
         if (message == null || message.isRoundVideo() || !TigiDataSaverActivity.autoplayAllowed()) {
             return false;
@@ -1309,6 +1336,14 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             content.addView(sheetRow(context, R.drawable.msg_stats, LocaleController.getString(R.string.Statistics), false, () -> {
                 sheet.dismiss();
                 presentFragment(new MessageStatisticActivity(primary));
+            }));
+        }
+        if (sent && BuildVars.TIGI_SILENT_POST && !TextUtils.isEmpty(ChatObject.getPublicUsername(chat))) {
+            // quote-repost: the user's comment on top, the original as a link preview under it, posted to their channel
+            content.addView(sheetRow(context, R.drawable.menu_quote_specific, LocaleController.getString(R.string.NilakRepostComment), false, () -> {
+                sheet.dismiss();
+                TigiCreateSheet.pickChannel(this, ChatActivity.TIGI_COMPOSE_TEXT, target ->
+                    TigiComposeActivity.startText(this, target, "\n\n" + postLink(chat, primary)));
             }));
         }
         if (sent) {

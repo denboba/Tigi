@@ -416,6 +416,10 @@
         </receiver>
 
         <receiver
+            android:name=".TigiBriefReminder"
+            android:exported="false" />
+
+        <receiver
             android:name=".CopyCodeReceiver"
             android:exported="false">
             <intent-filter>

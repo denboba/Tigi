@@ -32,6 +32,12 @@ import org.telegram.ui.Components.Switch;
 public class TigiDataSaverActivity extends BaseFragment {
 
     private static final String KEY_AUTOPLAY_MOBILE = "nilak_autoplay_mobile";
+    private static final String KEY_PREFETCH_WIFI = "nilak_prefetch_wifi";
+
+    /** Feed photos may be downloaded ahead of time: on Wi-Fi only, when the user allows it. */
+    public static boolean prefetchAllowed() {
+        return MessagesController.getGlobalMainSettings().getBoolean(KEY_PREFETCH_WIFI, true) && !isMetered();
+    }
 
     /** Feed videos may start by themselves: always on Wi-Fi, on mobile data only when the user allows it. */
     public static boolean autoplayAllowed() {
@@ -115,6 +121,7 @@ public class TigiDataSaverActivity extends BaseFragment {
         card.setOnClickListener(v -> presentFragment(new DataUsage2Activity()));
         body.addView(card, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 12));
 
+        body.addView(toggleRow(context, R.string.NilakPrefetchWifi, R.string.NilakPrefetchWifiHint, KEY_PREFETCH_WIFI));
         body.addView(toggleRow(context, R.string.NilakAutoplayMobile, R.string.NilakAutoplayMobileHint, KEY_AUTOPLAY_MOBILE));
         body.addView(linkRow(context, R.string.NilakAutoDownload, R.string.NilakAutoDownloadHint, () -> presentFragment(new DataSettingsActivity())));
         body.addView(linkRow(context, R.string.NilakDataDetails, R.string.NilakDataDetailsHint, () -> presentFragment(new DataUsage2Activity())));

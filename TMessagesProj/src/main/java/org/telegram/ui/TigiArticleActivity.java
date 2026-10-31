@@ -169,6 +169,10 @@ public class TigiArticleActivity extends BaseFragment {
 
         scroll.addView(fields);
         column.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0, 1f));
+        final View divider = new View(context);
+        divider.setBackgroundColor(Theme.getColor(Theme.key_divider));
+        column.addView(divider, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
+        column.addView(formatBar(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         root.addView(column, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         final TextWatcher watcher = new TextWatcher() {
@@ -251,17 +255,7 @@ public class TigiArticleActivity extends BaseFragment {
                     final JSONObject account = call("createAccount", "short_name=" + enc("nilak") + "&author_name=" + enc(author));
                     accessToken = account.getString("access_token");
                 }
-                final JSONArray content = new JSONArray();
-                for (String paragraph : body.split("\\n\\s*\\n")) {
-                    final String text = paragraph.trim();
-                    if (text.isEmpty()) {
-                        continue;
-                    }
-                    final JSONObject node = new JSONObject();
-                    node.put("tag", "p");
-                    node.put("children", new JSONArray().put(text));
-                    content.put(node);
-                }
+                final JSONArray content = toNodes(body);
                 final JSONObject page = call("createPage", "access_token=" + enc(accessToken) + "&title=" + enc(title)
                     + "&author_name=" + enc(author) + "&content=" + enc(content.toString()) + "&return_content=false");
                 url = page.getString("url");
@@ -283,7 +277,9 @@ public class TigiArticleActivity extends BaseFragment {
                 }
                 prefs().edit().putString(KEY_TOKEN, finalToken).remove(KEY_DRAFT_TITLE).remove(KEY_DRAFT_BODY).apply();
                 // the post: title, a short excerpt and the link, which shows as an Instant View preview
-                final String excerpt = body.length() > 200 ? body.substring(0, 200).trim() + "…" : body;
+                // the excerpt without the composer's markup
+                final String plain = body.replace("**", "").replaceAll("(?m)^(#{1,2}|>|-|•) ", "").replaceAll("(?<![\\w])_(.+?)_(?![\\w])", "$1");
+                final String excerpt = plain.length() > 200 ? plain.substring(0, 200).trim() + "…" : plain;
                 final String text = title + "\n\n" + excerpt + "\n\n" + finalUrl;
                 SendMessagesHelper.getInstance(currentAccount).sendMessage(SendMessagesHelper.SendMessageParams.of(text, -chat.id, null, null, null, true, null, null, null, true, 0, 0, null, false));
                 TigiPosting.setLastChannel(currentAccount, chat.id);
@@ -297,6 +293,136 @@ public class TigiArticleActivity extends BaseFragment {
                 finishFragment();
             });
         });
+    }
+
+    /**
+     * The composer's light markup as Telegraph nodes: "# " heading, "## " subheading, "> " quote, "- " list item,
+     * **bold**, _italic_ and links; an empty line separates paragraphs, a single line break stays a line break.
+     */
+    static JSONArray toNodes(String body) throws Exception {
+        final JSONArray out = new JSONArray();
+        JSONArray list = null;
+        for (String block : body.split("\\n\\s*\\n")) {
+            final String[] lines = block.trim().split("\\n");
+            JSONArray paragraph = null;
+            for (String raw : lines) {
+                final String line = raw.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                if (line.startsWith("- ") || line.startsWith("• ")) {
+                    if (list == null) {
+                        list = new JSONArray();
+                        out.put(new JSONObject().put("tag", "ul").put("children", list));
+                    }
+                    list.put(new JSONObject().put("tag", "li").put("children", inline(line.substring(2))));
+                    continue;
+                }
+                list = null;
+                if (line.startsWith("## ")) {
+                    out.put(new JSONObject().put("tag", "h4").put("children", inline(line.substring(3))));
+                    paragraph = null;
+                } else if (line.startsWith("# ")) {
+                    out.put(new JSONObject().put("tag", "h3").put("children", inline(line.substring(2))));
+                    paragraph = null;
+                } else if (line.startsWith("> ")) {
+                    out.put(new JSONObject().put("tag", "blockquote").put("children", inline(line.substring(2))));
+                    paragraph = null;
+                } else {
+                    if (paragraph == null) {
+                        paragraph = new JSONArray();
+                        out.put(new JSONObject().put("tag", "p").put("children", paragraph));
+                    } else {
+                        paragraph.put(new JSONObject().put("tag", "br"));
+                    }
+                    final JSONArray parts = inline(line);
+                    for (int i = 0; i < parts.length(); i++) {
+                        paragraph.put(parts.get(i));
+                    }
+                }
+            }
+            list = null;
+        }
+        return out;
+    }
+
+    private static final java.util.regex.Pattern INLINE = java.util.regex.Pattern.compile(
+        "\\*\\*(.+?)\\*\\*|(?<![\\w])_(.+?)_(?![\\w])|(https?://[^\\s]+)");
+
+    private static JSONArray inline(String text) throws Exception {
+        final JSONArray out = new JSONArray();
+        final java.util.regex.Matcher matcher = INLINE.matcher(text);
+        int last = 0;
+        while (matcher.find()) {
+            if (matcher.start() > last) {
+                out.put(text.substring(last, matcher.start()));
+            }
+            if (matcher.group(1) != null) {
+                out.put(new JSONObject().put("tag", "strong").put("children", new JSONArray().put(matcher.group(1))));
+            } else if (matcher.group(2) != null) {
+                out.put(new JSONObject().put("tag", "em").put("children", new JSONArray().put(matcher.group(2))));
+            } else {
+                final String url = matcher.group(3);
+                out.put(new JSONObject().put("tag", "a").put("attrs", new JSONObject().put("href", url)).put("children", new JSONArray().put(url)));
+            }
+            last = matcher.end();
+        }
+        if (last < text.length()) {
+            out.put(text.substring(last));
+        }
+        return out;
+    }
+
+    /** Wraps the selection in a marker, or puts a line prefix at the start of the current line. */
+    private void format(String wrap, String linePrefix) {
+        final Editable text = bodyInput.getText();
+        int start = Math.max(0, bodyInput.getSelectionStart());
+        int end = Math.max(start, bodyInput.getSelectionEnd());
+        if (linePrefix != null) {
+            int lineStart = start;
+            while (lineStart > 0 && text.charAt(lineStart - 1) != '\n') {
+                lineStart--;
+            }
+            text.insert(lineStart, linePrefix);
+            bodyInput.setSelection(Math.min(text.length(), end + linePrefix.length()));
+        } else {
+            text.insert(end, wrap);
+            text.insert(start, wrap);
+            bodyInput.setSelection(start == end ? start + wrap.length() : end + wrap.length() * 2);
+        }
+        bodyInput.requestFocus();
+    }
+
+    private View formatBar(Context context) {
+        final LinearLayout bar = new LinearLayout(context);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(10), dp(6), dp(10), dp(6));
+        bar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        final String[] labels = {"B", "I", "H", "❝", "•"};
+        final int[] descriptions = {R.string.NilakFormatBold, R.string.NilakFormatItalic, R.string.NilakFormatHeading, R.string.NilakFormatQuote, R.string.NilakFormatList};
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            final TextView button = new TextView(context);
+            button.setText(labels[i]);
+            button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            button.setTypeface(i == 1 ? android.graphics.Typeface.create(TigiStyle.displayBold(), android.graphics.Typeface.ITALIC) : TigiStyle.displayExtraBold());
+            button.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            button.setGravity(Gravity.CENTER);
+            button.setContentDescription(LocaleController.getString(descriptions[i]));
+            button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(10), Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.2f)));
+            button.setOnClickListener(v -> {
+                switch (index) {
+                    case 0: format("**", null); break;
+                    case 1: format("_", null); break;
+                    case 2: format(null, "# "); break;
+                    case 3: format(null, "> "); break;
+                    default: format(null, "- "); break;
+                }
+            });
+            bar.addView(button, LayoutHelper.createLinear(44, 40, 0, 0, 8, 0));
+        }
+        return bar;
     }
 
     private static String enc(String value) throws Exception {

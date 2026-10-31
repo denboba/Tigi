@@ -32,7 +32,7 @@ public class BuildVars {
     // SafetyNet key for Google Identity SDK, set it to empty to disable
     // Tigi: Telegram's key only works for its own package; empty = login codes come by SMS/app instead of Firebase SMS
     public static String SAFETYNET_KEY = "";
-    public static String PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=com.tigi.app";
+    public static String PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=com.nilak.app";
     public static String HUAWEI_STORE_URL = "https://appgallery.huawei.com/app/C101184875";
     public static String GOOGLE_AUTH_CLIENT_ID = "760348033671-81kmi3pi84p11ub8hp9a1funsv0rn2p9.apps.googleusercontent.com";
 
@@ -44,12 +44,12 @@ public class BuildVars {
     // works only on official app ids, disable on your forks
     public static boolean SUPPORTS_PASSKEYS = false;
 
-    // Tigi: "Sign in with Google" for login email needs an OAuth client registered for com.tigi.app
+    // Tigi: "Sign in with Google" for login email needs an OAuth client registered for com.nilak.app
     public static boolean TIGI_GOOGLE_SIGN_IN = false;
 
     // Tigi: account type of the synced contacts, must match res/xml/auth.xml and sync_contacts.xml.
     // Must differ from the official app or the two installs fight over the same authenticator.
-    public static final String CONTACTS_ACCOUNT_TYPE = "com.tigi.app";
+    public static final String CONTACTS_ACCOUNT_TYPE = "com.nilak.app";
 
     // Tigi: folder in shared storage (Android 10 and older). Telegram uses "Telegram"; sharing it would let either
     // app clear or move the other's files. The app-private folder (getExternalFilesDir) keeps its old name.
@@ -75,8 +75,8 @@ public class BuildVars {
 
     // Tigi links (owner: fill these in before a store release)
     public static String TIGI_SOURCE_URL = "https://github.com/denboba/Tigi"; // GPL: where the full source lives
-    public static String TIGI_PRIVACY_POLICY_URL = ""; // Tigi's own policy; empty = only Telegram's is shown
-    public static String TIGI_SUPPORT_EMAIL = "";      // empty = "Report a problem" opens a GitHub issue
+    public static String TIGI_PRIVACY_POLICY_URL = "https://denboba.github.io/Tigi/privacy-policy.html"; // Tigi's own policy; empty = only Telegram's is shown
+    public static String TIGI_SUPPORT_EMAIL = "bitpyrus@gmail.com";      // empty = "Report a problem" opens a GitHub issue
 
     static {
         if (ApplicationLoader.applicationContext != null) {

@@ -10,7 +10,7 @@ also builds the Play bundle (AAB, all ABIs), an APK with arm64 + armv7, and keep
 | Secret | Needed | What it is |
 |---|---|---|
 | `TG_API_ID`, `TG_API_HASH` | yes | Your app credentials from my.telegram.org. Never commit them. They are compiled into the APK (every Telegram client ships them; they identify the app, not a user). |
-| `GOOGLE_SERVICES_JSON` | for push | The full `google-services.json` of your Firebase project. It must contain an Android client for `com.tigi.app`. Without it the build uses a placeholder: no background push, messages arrive only while the app is open. CI shows a warning. |
+| `GOOGLE_SERVICES_JSON` | for push | The full `google-services.json` of your Firebase project. It must contain an Android client for `com.nilak.app`. Without it the build uses a placeholder: no background push, messages arrive only while the app is open. CI shows a warning. |
 | `TIGI_KEYSTORE_B64`, `TIGI_KEYSTORE_PASSWORD`, `TIGI_KEY_ALIAS` | strongly recommended | The signing key as base64 (`base64 -w0 tigi.keystore`), its password, alias (default `tigi`). |
 | `TIGI_KEY_BACKUP_PASSPHRASE` | once | Passphrase used to encrypt the key backup export. |
 
@@ -43,7 +43,7 @@ you uploaded.
 - [ ] Keystore in secrets (above) and a backup verified by decrypting it once.
 - [ ] Real `GOOGLE_SERVICES_JSON`; send a message to a test account with the app in the background and screen off; a notification must arrive.
 - [ ] `BuildVars.TIGI_PRIVACY_POLICY_URL` and `TIGI_SUPPORT_EMAIL` filled in (Play requires a privacy policy; "Report a problem" otherwise opens a public GitHub issue).
-- [ ] Optional: register an OAuth client for `com.tigi.app` + your signing SHA-1 and set `TIGI_GOOGLE_SIGN_IN = true`, otherwise "Sign in with Google" stays hidden in login.
+- [ ] Optional: register an OAuth client for `com.nilak.app` + your signing SHA-1 and set `TIGI_GOOGLE_SIGN_IN = true`, otherwise "Sign in with Google" stays hidden in login.
 - [ ] Play listing: name, icon, screenshots, short/long description that says Tigi is an unofficial app using the Telegram API, content rating questionnaire (user-generated content, chat), data safety form (phone number, contacts if synced, messages handled by Telegram's servers).
 - [ ] Manual regression pass (`docs/TIGI_TEST_CHECKLIST.md`) on the release APK.
 

@@ -50,7 +50,7 @@ with font scale 200% and with TalkBack on.
 - [ ] Channel not joined (from search): Join button works; unread badge of a joined channel clears after opening its feed.
 
 ## 6. Reels (★)
-- [ ] 100 swipes: no crash, memory stable (Android Studio profiler or `adb shell dumpsys meminfo com.tigi.app`), one sound at a time.
+- [ ] 100 swipes: no crash, memory stable (Android Studio profiler or `adb shell dumpsys meminfo com.nilak.app`), one sound at a time.
 - [ ] Tap pause/play, double-tap heart, long-press reactions, mute toggle remembered after restart.
 - [ ] Headphones unplugged: playback pauses. Incoming call: playback stops and resumes cleanly after.
 - [ ] Airplane mode with an empty list: error with "Try again".
@@ -68,4 +68,4 @@ with font scale 200% and with TalkBack on.
 - [ ] TalkBack: every new button announces a label (like, comments, share, more, mute, full screen, join, live, tabs).
 - [ ] Font scale 200%: no clipped tab labels, buttons or counts; bold type (weight 650) not clipped.
 - [ ] Tablet: channels open as chats in the right pane; feed menu item opens the feed.
-- [ ] Cold start time not slower than the previous build (`adb shell am start -W com.tigi.app/org.telegram.ui.LaunchActivity`, 5 runs, compare).
+- [ ] Cold start time not slower than the previous build (`adb shell am start -W com.nilak.app/org.telegram.ui.LaunchActivity`, 5 runs, compare).

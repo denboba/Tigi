@@ -15,7 +15,7 @@ def app_package():
                     return line.split("=", 1)[1].strip()
     except OSError:
         pass
-    return "com.tigi.app"
+    return "com.nilak.app"
 
 PACKAGE = app_package()
 targets = sys.argv[1:]

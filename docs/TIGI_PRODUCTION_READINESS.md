@@ -9,12 +9,12 @@ behaviour below is verified only by reading the code paths (marked *reasoned*) u
 
 | File | Issue | Severity | Fix |
 |---|---|---|---|
-| `res/xml/auth.xml`, `sync_contacts.xml`, `ContactsController` | Contacts account type stayed `org.telegram.messenger`: with the official app installed, the two apps share one authenticator; Tigi's contact sync fails or writes into Telegram's account | High | Own account type `com.tigi.app` (`BuildVars.CONTACTS_ACCOUNT_TYPE`) |
-| `res/xml/auth_menu.xml` | "Account settings" in Android's account screen opened the official Telegram app | Medium | Targets `com.tigi.app` |
-| `AndroidManifest.xml`, `contacts.xml`, `LaunchActivity`, `ContactsController` | Contact mime types `vnd.org.telegram.messenger.*`: both apps answer each other's "message/call" contact actions | Medium | `vnd.com.tigi.app.android.*` |
+| `res/xml/auth.xml`, `sync_contacts.xml`, `ContactsController` | Contacts account type stayed `org.telegram.messenger`: with the official app installed, the two apps share one authenticator; Tigi's contact sync fails or writes into Telegram's account | High | Own account type `com.nilak.app` (`BuildVars.CONTACTS_ACCOUNT_TYPE`) |
+| `res/xml/auth_menu.xml` | "Account settings" in Android's account screen opened the official Telegram app | Medium | Targets `com.nilak.app` |
+| `AndroidManifest.xml`, `contacts.xml`, `LaunchActivity`, `ContactsController` | Contact mime types `vnd.org.telegram.messenger.*`: both apps answer each other's "message/call" contact actions | Medium | `vnd.com.nilak.app.android.*` |
 | `ImageLoader`, `SharedConfig`, `FilesMigrationService` | On Android ≤ 10 Tigi used `/sdcard/Telegram` (shared with the official app): either app's "clear cache" deletes the other's files, and the scoped-storage migration would **move Telegram's files into Tigi** | High | Own public folder `Tigi` (`BuildVars.PUBLIC_ROOT_DIR`); app-private folders unchanged |
 | `BuildVars.SAFETYNET_KEY` | Telegram's SafetyNet key only works for Telegram's package: Firebase SMS verification fails then retries | Medium | Emptied: codes come by SMS / in-app |
-| `LoginActivity` | "Sign in with Google" needs an OAuth client for `com.tigi.app`; it silently failed | Low | Hidden until `TIGI_GOOGLE_SIGN_IN` |
+| `LoginActivity` | "Sign in with Google" needs an OAuth client for `com.nilak.app`; it silently failed | Low | Hidden until `TIGI_GOOGLE_SIGN_IN` |
 | `MediaDataController`, `ReactionsLayoutInBubble`, `TigiFeedBase` | Heart detected with `startsWith("❤")`: heart-on-fire / mending heart counted as likes | Medium | Exact match (`TigiHeart`) |
 | `ChatMessageCell.isTigiCardMedia` | Full-width media used 32dp margins instead of the 64dp Telegram's own full-width case uses: with avatars (groups) or the share button the bubble ran off screen | High | Same margins as stock full-width |
 | `MessageObject.GroupedMessages` "tigiStack" | Row heights computed from `displaySize` (wrong on tablets, landscape, split screen) | Medium | Cell sizes each row from its real width and aspect ratio (4:5 … 16:9) |
@@ -71,11 +71,11 @@ Built: run 15 green (`fcc2e767c`).
 
 ## What the owner must provide
 
-- Firebase project with an Android app `com.tigi.app` → `GOOGLE_SERVICES_JSON` secret.
+- Firebase project with an Android app `com.nilak.app` → `GOOGLE_SERVICES_JSON` secret.
 - Signing keystore in secrets + verified offline backup (`TIGI_RELEASE.md`).
 - Tigi privacy policy URL and a support e-mail (`BuildVars.TIGI_PRIVACY_POLICY_URL`, `TIGI_SUPPORT_EMAIL`).
 - Play listing assets and texts (stating "unofficial app using the Telegram API"), content rating, data safety form.
-- Optional: Google OAuth client for `com.tigi.app` (login "Sign in with Google").
+- Optional: Google OAuth client for `com.nilak.app` (login "Sign in with Google").
 - Legal review of the GPL source offer and the Telegram API terms for your distribution.
 
 ## Rollback

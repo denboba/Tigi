@@ -59,7 +59,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Nilak: no REQUEST_INSTALL_PACKAGES (Google Play restricts it; Nilak does not install apps) -->
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
@@ -253,7 +253,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
-                <data android:mimeType="vnd.android.cursor.item/vnd.com.tigi.app.android.profile"/>
+                <data android:mimeType="vnd.android.cursor.item/vnd.com.nilak.app.android.profile"/>
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
@@ -309,8 +309,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
-                <data android:mimeType="vnd.android.cursor.item/vnd.com.tigi.app.android.call"/>
-                <data android:mimeType="vnd.android.cursor.item/vnd.com.tigi.app.android.call.video"/>
+                <data android:mimeType="vnd.android.cursor.item/vnd.com.nilak.app.android.call"/>
+                <data android:mimeType="vnd.android.cursor.item/vnd.com.nilak.app.android.call.video"/>
             </intent-filter>
         </activity-alias>
         <activity

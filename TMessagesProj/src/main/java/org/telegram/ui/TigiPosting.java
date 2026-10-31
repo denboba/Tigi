@@ -94,6 +94,12 @@ public class TigiPosting {
      * Public channels Telegram recommends to this account (channels.getChannelRecommendations without a channel),
      * for people who follow none yet. Cached for 30 minutes; an empty list when there are none or on error.
      */
+    /** After the content country or language changed: the next suggestions are fetched and ranked again. */
+    public static void clearSuggestedCache(int account) {
+        suggested[account] = null;
+        suggestedTime[account] = 0;
+    }
+
     public static void loadSuggestedChannels(int account, Utilities.Callback<ArrayList<TLRPC.Chat>> onDone) {
         if (suggested[account] != null && System.currentTimeMillis() - suggestedTime[account] < 30 * 60 * 1000L) {
             onDone.run(new ArrayList<>(suggested[account]));
@@ -111,6 +117,8 @@ public class TigiPosting {
                         out.add(chat);
                     }
                 }
+                // the chosen language's channels first
+                TigiRegion.rank(out);
                 suggested[account] = new ArrayList<>(out);
                 suggestedTime[account] = System.currentTimeMillis();
             }
@@ -139,6 +147,7 @@ public class TigiPosting {
             if (next[0] >= seeds.size()) {
                 loadSuggestedChannels(account, suggested -> {
                     add.run(suggested);
+                    TigiRegion.rank(out);
                     onDone.run(out);
                 });
                 return;

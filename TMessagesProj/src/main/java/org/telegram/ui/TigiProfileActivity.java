@@ -42,6 +42,7 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 
@@ -212,6 +213,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
     private TextView topTitle;
     private ImageView settingsButton;
+    private ImageView regionButton;
     private ImageView telegramProfileButton;
 
     /** The tab page's bar: @username (or name) with Telegram's full profile and Settings. */
@@ -230,7 +232,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         topTitle.setEllipsize(TextUtils.TruncateAt.END);
         topTitle.setGravity(Gravity.CENTER_VERTICAL);
         androidx.core.view.ViewCompat.setAccessibilityHeading(topTitle, true);
-        bar.addView(topTitle, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), LocaleController.isRTL ? 112 : 16, 0, LocaleController.isRTL ? 16 : 112, 0));
+        bar.addView(topTitle, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), LocaleController.isRTL ? 160 : 16, 0, LocaleController.isRTL ? 16 : 160, 0));
 
         final LinearLayout icons = new LinearLayout(context);
         icons.setOrientation(LinearLayout.HORIZONTAL);
@@ -238,6 +240,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             telegramProfileButton = topIcon(context, R.drawable.msg_qrcode, R.string.TigiProfileAccount);
             telegramProfileButton.setOnClickListener(v -> openInfo());
             icons.addView(telegramProfileButton, LayoutHelper.createLinear(48, 48));
+            regionButton = topIcon(context, R.drawable.msg_language, R.string.NilakContentRegion);
+            regionButton.setOnClickListener(v -> TigiRegion.showPicker(this, () -> {
+                TigiPosting.clearSuggestedCache(currentAccount);
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.NilakContentFrom, TigiRegion.summary())).show();
+            }));
+            icons.addView(regionButton, LayoutHelper.createLinear(48, 48));
             settingsButton = topIcon(context, R.drawable.msg_settings, R.string.Settings);
             settingsButton.setOnClickListener(v -> presentFragment(new SettingsActivity()));
             icons.addView(settingsButton, LayoutHelper.createLinear(48, 48));
@@ -265,6 +273,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         final String username = user != null ? UserObject.getPublicUsername(user) : (chat != null ? ChatObject.getPublicUsername(chat) : null);
         topTitle.setText(!TextUtils.isEmpty(username) ? username : (user != null ? UserObject.getUserName(user) : chat.title));
         final PorterDuffColorFilter filter = new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN);
+        if (regionButton != null) {
+            regionButton.setColorFilter(filter);
+        }
         if (settingsButton != null) {
             settingsButton.setColorFilter(filter);
         }

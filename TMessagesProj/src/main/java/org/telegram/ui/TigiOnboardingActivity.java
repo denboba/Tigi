@@ -172,6 +172,7 @@ public class TigiOnboardingActivity extends BaseFragment {
         titleView.setText(LocaleController.getString(R.string.NilakOnboardingTitle));
         subtitleView.setText(LocaleController.getString(R.string.NilakOnboardingText));
         body.removeAllViews();
+        addRegionRow();
         LinearLayout row = null;
         int inRow = 0;
         for (int i = 0; i < INTERESTS.length; i++) {
@@ -203,6 +204,31 @@ public class TigiOnboardingActivity extends BaseFragment {
         updateContinue();
     }
 
+    /** "Content from Ethiopia · አማርኛ  Change": whose channels come first in the suggestions. */
+    private void addRegionRow() {
+        final TextView region = new TextView(getParentActivity());
+        final String change = LocaleController.getString(R.string.NilakChange);
+        final android.text.SpannableStringBuilder text = new android.text.SpannableStringBuilder(LocaleController.formatString(R.string.NilakContentFrom, TigiRegion.summary()));
+        text.append("  ");
+        final int start = text.length();
+        text.append(change);
+        text.setSpan(new android.text.style.ForegroundColorSpan(TigiStyle.accent()), start, text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        region.setText(text);
+        region.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        region.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        region.setGravity(Gravity.CENTER_VERTICAL);
+        region.setMinHeight(dp(44));
+        region.setPadding(dp(14), 0, dp(14), 0);
+        region.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
+        region.setOnClickListener(v -> TigiRegion.showPicker(this, () -> {
+            if (fragmentView != null && step == 0) {
+                showInterests();
+            }
+        }));
+        body.addView(region, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 16));
+    }
+
     private void bindChip(TextView chip, boolean on) {
         chip.setSelected(on);
         chip.setTextColor(on ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
@@ -224,6 +250,10 @@ public class TigiOnboardingActivity extends BaseFragment {
             if (picked.isEmpty()) {
                 return;
             }
+            if (!TigiRegion.chosen()) {
+                // keep what the phone suggested, so it stays the same later
+                TigiRegion.set(TigiRegion.country(), TigiRegion.language());
+            }
             showSuggestions();
         } else {
             finish();
@@ -244,7 +274,11 @@ public class TigiOnboardingActivity extends BaseFragment {
         updateContinue();
         suggestions.clear();
         final HashSet<Long> ids = new HashSet<>();
-        final ArrayList<Integer> queue = new ArrayList<>(picked);
+        final ArrayList<String> queue = new ArrayList<>(TigiRegion.countryQueries());
+        for (Integer interest : picked) {
+            queue.add(LocaleController.getString(interest));
+        }
+        final String language = TigiRegion.language();
         final Runnable[] stepper = new Runnable[1];
         stepper[0] = () -> {
             if (fragmentView == null || step != 1) {
@@ -262,7 +296,7 @@ public class TigiOnboardingActivity extends BaseFragment {
                 return;
             }
             final TLRPC.TL_contacts_search req = new TLRPC.TL_contacts_search();
-            req.q = LocaleController.getString(queue.remove(0));
+            req.q = queue.remove(0);
             req.limit = 20;
             ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                 if (response instanceof TLRPC.TL_contacts_found) {
@@ -277,7 +311,12 @@ public class TigiOnboardingActivity extends BaseFragment {
                             channels.add(chat);
                         }
                     }
-                    java.util.Collections.sort(channels, (a, b) -> b.participants_count - a.participants_count);
+                    // the chosen language's channels first, then the biggest
+                    java.util.Collections.sort(channels, (a, b) -> {
+                        final boolean ma = TigiRegion.matchesScript(a.title, language);
+                        final boolean mb = TigiRegion.matchesScript(b.title, language);
+                        return ma != mb ? (ma ? -1 : 1) : b.participants_count - a.participants_count;
+                    });
                     for (int i = 0, n = 0; i < channels.size() && n < 4; i++) {
                         if (ids.add(channels.get(i).id)) {
                             suggestions.add(channels.get(i));

@@ -305,7 +305,6 @@ public class ExploreActivity extends BaseFragment {
         addChip(LocaleController.getString(R.string.NilakText), "@text");
         addChip(LocaleController.getString(R.string.NilakRead), "@read");
         addChip(LocaleController.getString(R.string.NilakFriends), "@friends");
-        addChip(LocaleController.getString(R.string.NilakBrief), "@brief");
         final ArrayList<String> tags = new ArrayList<>(tagCounts.keySet());
         Collections.sort(tags, (a, b) -> tagCounts.get(b) - tagCounts.get(a));
         if (!TextUtils.isEmpty(hashtag) && !tags.contains(hashtag)) {

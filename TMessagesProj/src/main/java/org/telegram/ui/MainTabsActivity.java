@@ -109,6 +109,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private static final int POSITION_CONTACTS;
     private static final int POSITION_CALLS_OR_SETTINGS;
     private static final int POSITION_PROFILE;
+    private static final int POSITION_READ;
+    private static final int INDEX_READ;
 
     private static final int TAB_VIEWS_COUNT;
     private static final int INDEX_HOME;
@@ -135,8 +137,12 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             POSITION_REELS = reels ? p++ : -1;
             INDEX_REELS = reels ? i++ : -1;
             if (reels) map[INDEX_REELS] = POSITION_REELS;
-            INDEX_CREATE = create ? i++ : -1;
-            if (create) map[INDEX_CREATE] = -1;
+            final boolean read = BuildVars.TIGI_READ_TAB;
+            POSITION_READ = read ? p++ : -1;
+            INDEX_READ = read ? i++ : -1;
+            if (read) map[INDEX_READ] = POSITION_READ;
+            INDEX_CREATE = create && !read ? i++ : -1;
+            if (INDEX_CREATE >= 0) map[INDEX_CREATE] = -1;
             POSITION_CHATS = p++;
             INDEX_CHATS = i++;
             map[INDEX_CHATS] = POSITION_CHATS;
@@ -154,6 +160,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             if (home) map[INDEX_HOME] = POSITION_HOME;
             POSITION_REELS = -1;
             INDEX_REELS = -1;
+            POSITION_READ = -1;
+            INDEX_READ = -1;
             INDEX_CREATE = -1;
             POSITION_CHATS = p++;
             INDEX_CHATS = i++;
@@ -442,6 +450,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         }
         if (INDEX_REELS >= 0) {
             tabs[INDEX_REELS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.REELS, R.string.MainTabsReels);
+        }
+        if (INDEX_READ >= 0) {
+            tabs[INDEX_READ] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.ARTICLE, R.string.NilakRead);
         }
         if (INDEX_CREATE >= 0) {
             tabs[INDEX_CREATE] = GlassTabView.createActionTab(context, resourceProvider, R.drawable.tigi_add_24, R.string.TigiCreate);
@@ -1029,6 +1040,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             Bundle args = new Bundle();
             args.putBoolean("hasMainTabs", true);
             return new ReelsActivity(args);
+        } else if (position == POSITION_READ) {
+            Bundle args = new Bundle();
+            args.putBoolean("hasMainTabs", true);
+            args.putInt("mode", TigiTopicFeedActivity.MODE_READ);
+            return new TigiTopicFeedActivity(args);
         } else if (position == POSITION_CONTACTS) {
             Bundle args = new Bundle();
             args.putBoolean("needPhonebook", true);

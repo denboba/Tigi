@@ -643,7 +643,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             if (object.photoThumbs != null && !object.photoThumbs.isEmpty() && (object.isPhoto() || object.isVideo() || object.isGif())) {
                 post.media.add(object);
             }
-            if (post.text == null || post.text.length() == 0) {
+            if (TigiArticle.isArticle(object)) {
+                // an article's card shows its title and lead itself; the caption is not repeated above it
+            } else if (post.text == null || post.text.length() == 0) {
                 post.text = !TextUtils.isEmpty(object.caption) ? object.caption : (post.media.isEmpty() && !TextUtils.isEmpty(object.messageText) && describeUnsupported(object) == null ? object.messageText : null);
             }
             if (post.media.isEmpty() && post.fallback == null) {

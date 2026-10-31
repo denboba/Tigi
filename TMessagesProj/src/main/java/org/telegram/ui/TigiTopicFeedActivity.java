@@ -161,6 +161,11 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             back.setScaleX(-1f);
         }
         row.addView(back, LayoutHelper.createLinear(48, 56));
+        if (hasMainTabs) {
+            // a main tab: nothing to go back to
+            back.setVisibility(View.GONE);
+            row.setPadding(dp(12), 0, 0, 0);
+        }
 
         final LinearLayout texts = new LinearLayout(context);
         texts.setOrientation(LinearLayout.VERTICAL);
@@ -185,7 +190,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             bell.setColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             bell.setContentDescription(LocaleController.getString(R.string.NilakBriefReminder));
             bell.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
-            bell.setOnClickListener(v -> pickReminder());
+            bell.setOnClickListener(v -> showReminderPicker(this));
             row.addView(bell, LayoutHelper.createLinear(44, 48));
             markReadButton = new TextView(context);
             markReadButton.setText(LocaleController.getString(R.string.NilakMarkAllRead));
@@ -207,7 +212,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             write.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
             write.setOnClickListener(v -> {
                 if (mode == MODE_READ) {
-                    presentFragment(new TigiArticleActivity());
+                    TigiCreateSheet.pickChannel(this, ChatActivity.TIGI_COMPOSE_TEXT, chat -> TigiArticleActivity.start(this, chat));
                 } else {
                     TigiCreateSheet.show(this);
                 }
@@ -488,6 +493,9 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     /** A Telegraph / Instant View link, or a long written post. */
     static boolean isArticle(FeedPost post) {
         for (MessageObject message : post.messages) {
+            if (TigiArticle.isArticle(message)) {
+                return true;
+            }
             final TLRPC.MessageMedia media = message.messageOwner.media;
             if (media instanceof TLRPC.TL_messageMediaWebPage && media.webpage != null) {
                 final TLRPC.WebPage page = media.webpage;
@@ -631,8 +639,8 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     private static final int[] REMINDER_HOURS = {7, 8, 9, 12, 18, 21};
 
     /** Off, or one of a few hours; the current choice is marked. */
-    private void pickReminder() {
-        if (getParentActivity() == null) {
+    public static void showReminderPicker(org.telegram.ui.ActionBar.BaseFragment fragment) {
+        if (fragment == null || fragment.getParentActivity() == null) {
             return;
         }
         final boolean on = org.telegram.messenger.TigiBriefReminder.isEnabled();
@@ -646,7 +654,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             final String label = LocaleController.getInstance().getFormatterDay().format(time.getTime());
             items[i + 1] = (on && hour == REMINDER_HOURS[i] ? "✓  " : "") + label;
         }
-        final org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+        final org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(fragment.getParentActivity());
         builder.setTitle(LocaleController.getString(R.string.NilakBriefReminder));
         builder.setItems(items, (dialog, which) -> {
             if (which == 0) {
@@ -656,7 +664,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
                 org.telegram.messenger.TigiBriefReminder.setEnabled(true);
             }
         });
-        showDialog(builder.create());
+        fragment.showDialog(builder.create());
     }
 
     private void markAllRead() {

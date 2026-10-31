@@ -448,7 +448,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         final TLRPC.TL_messages_search req = new TLRPC.TL_messages_search();
         req.peer = getMessagesController().getInputPeer(-chatId);
         req.q = "";
-        req.filter = which == TAB_REELS ? new TLRPC.TL_inputMessagesFilterVideo() : new TLRPC.TL_inputMessagesFilterPhotoVideo();
+        // Posts: everything the channel posted (photos, videos, text posts, articles); Reels: videos
+        req.filter = which == TAB_REELS ? new TLRPC.TL_inputMessagesFilterVideo() : new TLRPC.TL_inputMessagesFilterEmpty();
         req.limit = PAGE;
         req.offset_id = offsetId[which];
         requestId[which] = getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
@@ -489,7 +490,17 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     }
 
     private void addTile(int which, MessageObject message) {
-        if (message.photoThumbs == null || message.photoThumbs.isEmpty() || message.needDrawBluredPreview()) {
+        if (message.messageOwner instanceof TLRPC.TL_messageService || message.needDrawBluredPreview()) {
+            return;
+        }
+        final boolean visual = message.photoThumbs != null && !message.photoThumbs.isEmpty() && (message.isPhoto() || message.isVideo() || message.isGif());
+        if (!visual) {
+            // text posts and articles get a text tile in Posts; anything else (stickers, voice, files) stays out
+            if (which != TAB_POSTS || !(TigiArticle.isArticle(message) || !TextUtils.isEmpty(message.messageOwner.message) && message.messageOwner.media == null
+                || message.messageOwner.media instanceof TLRPC.TL_messageMediaEmpty || message.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
+                return;
+            }
+            tiles[which].add(message);
             return;
         }
         if (which == TAB_REELS && (message.isRoundVideo() || message.getDuration() > ReelsActivity.MAX_DURATION_SECONDS)) {
@@ -591,6 +602,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     }
 
     private void openPost(MessageObject message) {
+        if (TigiArticle.isArticle(message)) {
+            TigiArticleReaderActivity.open(this, message);
+            return;
+        }
         final Bundle args = new Bundle();
         // saved tiles come from many channels
         args.putLong("chat_id", tab == TAB_SAVED ? -message.getDialogId() : chatId);
@@ -673,7 +688,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             LocaleController.getString(R.string.NilakDataSaver),
             LocaleController.getString(R.string.NilakApps),
             LocaleController.getString(R.string.NilakFriends),
-            LocaleController.getString(R.string.NilakBrief)
+            LocaleController.getString(R.string.NilakBriefReminder)
         };
         final int[] icons = {R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved};
         final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
@@ -688,7 +703,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 case 1: presentFragment(new TigiDataSaverActivity()); break;
                 case 2: TigiAppsActivity.open(this); break;
                 case 3: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
-                case 4: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_BRIEF)); break;
+                case 4: TigiTopicFeedActivity.showReminderPicker(this); break;
             }
         });
         showDialog(builder.create());
@@ -754,8 +769,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
             // a soft band from the profile photo behind the avatar
             cover = new BackupImageView(context);
-            cover.setAlpha(0.85f);
-            addView(cover, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 72, -16, 0, -16, 0));
+            // no band behind the avatar: the profile photo shows only in the avatar, as on Instagram
+            cover.setVisibility(GONE);
+            addView(cover, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0));
 
             final LinearLayout top = new LinearLayout(context);
             top.setOrientation(HORIZONTAL);
@@ -793,8 +809,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             following.setOnClickListener(v -> presentFragment(new TigiFollowingActivity()));
             following.setVisibility(self ? VISIBLE : GONE);
             top.addView(following, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-            // the avatar overlaps the band
-            addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, -40, 0, 0));
+            addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
 
             nameView = new TextView(context);
             nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
@@ -1280,6 +1295,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         private final BackupImageView imageView;
         private final TextView badge;
         private final ImageView albumIcon;
+        private final TextView textView;
 
         Tile(Context context) {
             super(context);
@@ -1297,6 +1313,45 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             albumIcon.setImageResource(R.drawable.msg_gallery);
             albumIcon.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
             addView(albumIcon, LayoutHelper.createFrame(20, 20, Gravity.TOP | Gravity.RIGHT, 0, 6, 6, 0));
+            textView = new TextView(context);
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+            textView.setLineSpacing(dp(1), 1f);
+            textView.setPadding(dp(8), dp(8), dp(8), dp(8));
+            textView.setEllipsize(TextUtils.TruncateAt.END);
+            textView.setMaxLines(6);
+            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        }
+
+        /** A text post or an article: its words on a soft violet square, articles with their title in bold. */
+        private boolean bindText(MessageObject message) {
+            final boolean visual = message.photoThumbs != null && !message.photoThumbs.isEmpty() && (message.isPhoto() || message.isVideo() || message.isGif());
+            if (visual) {
+                textView.setVisibility(GONE);
+                imageView.setVisibility(VISIBLE);
+                return false;
+            }
+            imageView.setVisibility(GONE);
+            badge.setVisibility(GONE);
+            albumIcon.setVisibility(GONE);
+            textView.setVisibility(VISIBLE);
+            textView.setBackgroundColor(Theme.multAlpha(TigiStyle.accent(), Theme.isCurrentThemeDark() ? 0.22f : 0.10f));
+            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            final String text = message.messageOwner.message != null ? message.messageOwner.message.trim() : "";
+            if (TigiArticle.isArticle(message)) {
+                final String title = TigiArticle.titleOf(message);
+                final android.text.SpannableStringBuilder line = new android.text.SpannableStringBuilder();
+                line.append(LocaleController.getString(R.string.NilakArticleLabel).toUpperCase()).append("\n");
+                line.setSpan(new android.text.style.ForegroundColorSpan(TigiStyle.accent()), 0, line.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                final int start = line.length();
+                line.append(title);
+                line.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, line.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                textView.setText(line);
+                setContentDescription(LocaleController.getString(R.string.NilakArticleLabel) + ", " + title);
+            } else {
+                textView.setText(text);
+                setContentDescription(text);
+            }
+            return true;
         }
 
         @Override
@@ -1306,6 +1361,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
 
         void bind(MessageObject message, boolean album) {
+            if (bindText(message)) {
+                return;
+            }
             final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, 320);
             imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "200_200", (android.graphics.drawable.Drawable) null, message.photoThumbsObject);
             if (message.isVideo()) {

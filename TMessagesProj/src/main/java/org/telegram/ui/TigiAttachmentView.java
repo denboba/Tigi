@@ -44,6 +44,7 @@ public class TigiAttachmentView extends LinearLayout {
     public static final int KIND_AUDIO = 2;
     public static final int KIND_DOCUMENT = 3;
     public static final int KIND_LINK = 4;
+    public static final int KIND_ARTICLE = 5;
 
     private final BaseFragment fragment;
     private MessageObject message;
@@ -85,6 +86,9 @@ public class TigiAttachmentView extends LinearLayout {
             final TLRPC.TL_webPage page = (TLRPC.TL_webPage) ((TLRPC.TL_messageMediaWebPage) media).webpage;
             return !TextUtils.isEmpty(page.title) || !TextUtils.isEmpty(page.description) ? KIND_LINK : KIND_NONE;
         }
+        if (TigiArticle.isArticle(message)) {
+            return KIND_ARTICLE;
+        }
         if (message.getDocument() != null && !message.isVideo() && !message.isGif() && !message.isSticker()
             && !message.isAnimatedSticker() && !message.isRoundVideo()) {
             return KIND_DOCUMENT;
@@ -111,6 +115,9 @@ public class TigiAttachmentView extends LinearLayout {
                 break;
             case KIND_LINK:
                 buildLink();
+                break;
+            case KIND_ARTICLE:
+                buildArticle();
                 break;
             default:
                 setVisibility(GONE);
@@ -399,6 +406,65 @@ public class TigiAttachmentView extends LinearLayout {
     }
 
     /* documents */
+
+    /** A Nilak article: label, title, lead and a Read button; opens the native reader. */
+    private void buildArticle() {
+        setPadding(dp(12), dp(10), dp(12), dp(10));
+        setBackground(null);
+        final LinearLayout box = new LinearLayout(getContext());
+        box.setOrientation(VERTICAL);
+        box.setPadding(dp(16), dp(14), dp(16), dp(14));
+        box.setBackground(Theme.createRoundRectDrawable(dp(16), Theme.multAlpha(TigiStyle.accent(), Theme.isCurrentThemeDark() ? 0.18f : 0.08f)));
+        final TextView label = new TextView(getContext());
+        label.setText(LocaleController.getString(R.string.NilakArticleLabel).toUpperCase(Locale.getDefault()));
+        label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
+        label.setTypeface(TigiStyle.displayExtraBold());
+        label.setTextColor(TigiStyle.accent());
+        box.addView(label);
+        final TextView title = new TextView(getContext());
+        title.setText(TigiArticle.titleOf(message));
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
+        title.setTypeface(TigiStyle.displayExtraBold());
+        title.setTextColor(text());
+        title.setLineSpacing(dp(1), 1f);
+        box.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+        final String lead = TigiArticle.subtitleOf(message);
+        if (!TextUtils.isEmpty(lead)) {
+            final TextView subtitle = new TextView(getContext());
+            subtitle.setText(lead);
+            subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            subtitle.setTextColor(gray());
+            subtitle.setMaxLines(3);
+            subtitle.setEllipsize(TextUtils.TruncateAt.END);
+            subtitle.setLineSpacing(dp(1), 1f);
+            box.addView(subtitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+        }
+        final LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView read = new TextView(getContext());
+        read.setText(LocaleController.getString(R.string.NilakReadArticle));
+        read.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        read.setTypeface(TigiStyle.displayBold());
+        read.setTextColor(0xFFFFFFFF);
+        read.setGravity(Gravity.CENTER);
+        read.setPadding(dp(18), 0, dp(18), 0);
+        read.setBackground(TigiStyle.primaryPill(17));
+        row.addView(read, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 34));
+        final TextView size = new TextView(getContext());
+        size.setText(AndroidUtilities.formatFileSize(message.getDocument().size));
+        size.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+        size.setTextColor(gray());
+        row.addView(size, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 12, 0, 0, 0));
+        box.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
+        box.setContentDescription(LocaleController.getString(R.string.NilakArticleLabel) + ", " + title.getText());
+        box.setOnClickListener(v -> TigiArticleReaderActivity.open(fragment, message));
+        addView(box, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        // small articles download ahead on Wi-Fi, so they open at once
+        if (TigiDataSaverActivity.prefetchAllowed() && message.getDocument().size < 20 * 1024 * 1024) {
+            FileLoader.getInstance(fragment.getCurrentAccount()).loadFile(message.getDocument(), message, FileLoader.PRIORITY_LOW, 0);
+        }
+    }
 
     private void buildDocument() {
         setPadding(dp(12), dp(10), dp(12), dp(10));

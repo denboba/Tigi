@@ -3,7 +3,11 @@ package org.telegram.ui;
 import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
@@ -12,15 +16,17 @@ import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.webkit.MimeTypeMap;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
@@ -36,32 +42,43 @@ import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 
-import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
+import java.util.Locale;
 
 /**
- * Nilak article composer: a title and paragraphs, published as a Telegraph page (telegra.ph, Telegram's own free
- * publishing service, opened in the Instant View reader) and posted to the user's Nilak channel as a link post, so
- * it shows in followers' feeds and in their Read feed. The Telegraph account is created on first use and its
- * token kept on the phone; the draft is kept until it is published.
+ * Nilak article composer. Cover photo, title, subtitle and a body in Nilak Markdown with a toolbar for headings,
+ * bold, italic, highlight, quotes, callouts, lists, links, dividers, photos and videos. Photos and videos are
+ * copied into the draft folder and referenced from the text, so the draft survives closing the app. Preview opens
+ * the real reader on the draft; Publish packs a .nilak file (see {@link TigiArticle}) and posts it to the channel
+ * as one document, its caption the title and subtitle.
  */
 public class TigiArticleActivity extends BaseFragment {
 
-    private static final String KEY_TOKEN = "nilak_telegraph_token";
-    private static final String KEY_DRAFT_TITLE = "nilak_article_draft_title";
-    private static final String KEY_DRAFT_BODY = "nilak_article_draft_body";
-    private static final int MAX_TITLE = 256;
+    private static final String KEY_TITLE = "nilak_article_draft_title";
+    private static final String KEY_SUBTITLE = "nilak_article_draft_subtitle";
+    private static final String KEY_BODY = "nilak_article_draft_body";
+    private static final String KEY_COVER = "nilak_article_draft_cover";
+    private static final int REQUEST_IMAGE = 4741;
+    private static final int REQUEST_VIDEO = 4742;
+    private static final int REQUEST_COVER = 4743;
+    private static final int MAX_TITLE = 160;
+    private static final int MAX_SUBTITLE = 280;
+    /** Telegram takes far bigger files; this keeps articles quick to open on mobile data. */
+    private static final long MAX_ARTICLE_BYTES = 150L * 1024 * 1024;
 
     private long chatId;
     private EditTextBoldCursor titleInput;
+    private EditTextBoldCursor subtitleInput;
     private EditTextBoldCursor bodyInput;
+    private ImageView coverView;
+    private TextView coverHint;
     private TextView publishButton;
     private TextView countView;
     private boolean publishing;
+    private String coverPath;
 
     public TigiArticleActivity() {
         super();
@@ -69,6 +86,27 @@ public class TigiArticleActivity extends BaseFragment {
 
     public TigiArticleActivity(Bundle args) {
         super(args);
+    }
+
+    /** From Create: write an article for the given channel (articles are for channels only). */
+    public static void start(BaseFragment fragment, TLRPC.Chat chat) {
+        if (fragment == null || chat == null) {
+            return;
+        }
+        if (!TigiArticle.canWrite(fragment.getCurrentAccount(), chat)) {
+            BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, LocaleController.getString(
+                org.telegram.messenger.BuildVars.TIGI_PAID_FEATURES ? R.string.NilakArticlesPremium : R.string.NilakArticlesChannelsOnly)).show();
+            return;
+        }
+        final Bundle args = new Bundle();
+        args.putLong("chat_id", chat.id);
+        fragment.presentFragment(new TigiArticleActivity(args));
+    }
+
+    static File draftDir() {
+        final File dir = new File(ApplicationLoader.getFilesDirFixed(), "nilak_article_draft");
+        new File(dir, TigiArticle.MEDIA_DIR).mkdirs();
+        return dir;
     }
 
     @Override
@@ -94,6 +132,7 @@ public class TigiArticleActivity extends BaseFragment {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(0, AndroidUtilities.statusBarHeight, 0, 0);
 
+        // bar: close · New article · Preview · Publish
         final LinearLayout bar = new LinearLayout(context);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
@@ -110,7 +149,16 @@ public class TigiArticleActivity extends BaseFragment {
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
         title.setTypeface(TigiStyle.displayExtraBold());
         title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        bar.addView(title, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 4, 0, 8, 0));
+        bar.addView(title, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 4, 0, 4, 0));
+        final TextView preview = new TextView(context);
+        preview.setText(LocaleController.getString(R.string.NilakArticlePreview));
+        preview.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        preview.setTypeface(TigiStyle.displayBold());
+        preview.setTextColor(TigiStyle.accent());
+        preview.setGravity(Gravity.CENTER);
+        preview.setPadding(dp(12), 0, dp(12), 0);
+        preview.setOnClickListener(v -> openPreview());
+        bar.addView(preview, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 40));
         publishButton = new TextView(context);
         publishButton.setText(LocaleController.getString(R.string.NilakPublish));
         publishButton.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -126,40 +174,59 @@ public class TigiArticleActivity extends BaseFragment {
         final ScrollView scroll = new ScrollView(context);
         final LinearLayout fields = new LinearLayout(context);
         fields.setOrientation(LinearLayout.VERTICAL);
-        fields.setPadding(dp(18), dp(8), dp(18), dp(24));
+        fields.setPadding(dp(18), dp(4), dp(18), dp(24));
 
-        titleInput = new EditTextBoldCursor(context);
-        titleInput.setHint(LocaleController.getString(R.string.NilakArticleTitleHint));
-        titleInput.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24);
-        titleInput.setTypeface(TigiStyle.displayExtraBold());
-        titleInput.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        titleInput.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
-        titleInput.setCursorColor(TigiStyle.accent());
-        titleInput.setBackground(null);
-        titleInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        titleInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(MAX_TITLE)});
-        titleInput.setText(prefs().getString(KEY_DRAFT_TITLE, ""));
+        // cover
+        final FrameLayout cover = new FrameLayout(context);
+        cover.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.multAlpha(TigiStyle.accent(), 0.10f)));
+        coverView = new ImageView(context);
+        coverView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        coverView.setClipToOutline(true);
+        coverView.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(14));
+            }
+        });
+        cover.addView(coverView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        coverHint = new TextView(context);
+        coverHint.setText(LocaleController.getString(R.string.NilakAddCover));
+        coverHint.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        coverHint.setTypeface(TigiStyle.displayBold());
+        coverHint.setTextColor(TigiStyle.accent());
+        coverHint.setGravity(Gravity.CENTER);
+        cover.addView(coverHint, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        cover.setContentDescription(LocaleController.getString(R.string.NilakAddCover));
+        cover.setOnClickListener(v -> pick("image/*", REQUEST_COVER));
+        cover.setOnLongClickListener(v -> {
+            if (coverPath != null) {
+                coverPath = null;
+                prefs().edit().remove(KEY_COVER).apply();
+                bindCover();
+            }
+            return true;
+        });
+        fields.addView(cover, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 160, 0, 0, 0, 12));
+
+        titleInput = field(context, R.string.NilakArticleTitleHint, 26, true, MAX_TITLE);
+        titleInput.setText(prefs().getString(KEY_TITLE, ""));
         fields.addView(titleInput, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        subtitleInput = field(context, R.string.NilakArticleSubtitleHint, 17, false, MAX_SUBTITLE);
+        subtitleInput.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        subtitleInput.setText(prefs().getString(KEY_SUBTITLE, ""));
+        fields.addView(subtitleInput, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 6));
 
-        bodyInput = new EditTextBoldCursor(context);
-        bodyInput.setHint(LocaleController.getString(R.string.NilakArticleBodyHint));
-        bodyInput.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        bodyInput = field(context, R.string.NilakArticleBodyHint, 17, false, 0);
         bodyInput.setLineSpacing(dp(4), 1f);
-        bodyInput.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        bodyInput.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
-        bodyInput.setCursorColor(TigiStyle.accent());
-        bodyInput.setBackground(null);
+        bodyInput.setMinLines(10);
         bodyInput.setGravity(Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT));
-        bodyInput.setMinLines(8);
-        bodyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        bodyInput.setText(prefs().getString(KEY_DRAFT_BODY, ""));
-        fields.addView(bodyInput, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
+        bodyInput.setText(prefs().getString(KEY_BODY, ""));
+        fields.addView(bodyInput, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         countView = new TextView(context);
         countView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
         countView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         fields.addView(countView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
-
         final TextView note = new TextView(context);
         final TLRPC.Chat chat = getMessagesController().getChat(chatId);
         note.setText(chat != null ? LocaleController.formatString(R.string.NilakArticleNote, chat.title) : LocaleController.getString(R.string.TigiPostNoRights));
@@ -169,10 +236,10 @@ public class TigiArticleActivity extends BaseFragment {
 
         scroll.addView(fields);
         column.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0, 1f));
-        final View divider = new View(context);
-        divider.setBackgroundColor(Theme.getColor(Theme.key_divider));
-        column.addView(divider, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
-        column.addView(formatBar(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        final View line = new View(context);
+        line.setBackgroundColor(Theme.getColor(Theme.key_divider));
+        column.addView(line, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
+        column.addView(toolbar(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         root.addView(column, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         final TextWatcher watcher = new TextWatcher() {
@@ -191,16 +258,65 @@ public class TigiArticleActivity extends BaseFragment {
         };
         titleInput.addTextChangedListener(watcher);
         bodyInput.addTextChangedListener(watcher);
+        coverPath = prefs().getString(KEY_COVER, null);
+        if (coverPath != null && !new File(draftDir(), coverPath).exists()) {
+            coverPath = null;
+        }
+        bindCover();
         updateState();
         fragmentView = root;
         return root;
     }
 
+    private EditTextBoldCursor field(Context context, int hint, int sizeDp, boolean bold, int maxLength) {
+        final EditTextBoldCursor input = new EditTextBoldCursor(context);
+        input.setHint(LocaleController.getString(hint));
+        input.setTextSize(TypedValue.COMPLEX_UNIT_DIP, sizeDp);
+        if (bold) {
+            input.setTypeface(TigiStyle.displayExtraBold());
+        }
+        input.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        input.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
+        input.setCursorColor(TigiStyle.accent());
+        input.setBackground(null);
+        input.setPadding(0, dp(6), 0, dp(6));
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        if (maxLength > 0) {
+            input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(maxLength)});
+        }
+        return input;
+    }
+
+    private void bindCover() {
+        if (coverPath == null) {
+            coverView.setImageDrawable(null);
+            coverHint.setVisibility(View.VISIBLE);
+            return;
+        }
+        coverHint.setVisibility(View.GONE);
+        final File file = new File(draftDir(), coverPath);
+        Utilities.globalQueue.postRunnable(() -> {
+            Bitmap bitmap = null;
+            try {
+                final BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inSampleSize = 4;
+                bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
+            final Bitmap result = bitmap;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (coverView != null && result != null) {
+                    coverView.setImageBitmap(result);
+                }
+            });
+        });
+    }
+
     private void updateState() {
-        final String body = bodyInput.getText().toString().trim();
-        final int words = body.isEmpty() ? 0 : body.split("\\s+").length;
-        countView.setText(LocaleController.formatString(R.string.NilakArticleCount, words, Math.max(1, Math.round(words / 200f))));
-        final boolean ready = !publishing && titleInput.length() > 0 && body.length() > 0 && chatId != 0;
+        final int words = TigiArticle.countWords(bodyInput.getText().toString());
+        countView.setText(LocaleController.formatString(R.string.NilakArticleCount, words, TigiArticle.minutesFor(words)));
+        final boolean ready = !publishing && titleInput.length() > 0 && bodyInput.getText().toString().trim().length() > 0 && chatId != 0;
         publishButton.setEnabled(ready);
         publishButton.setAlpha(ready ? 1f : 0.5f);
     }
@@ -215,13 +331,240 @@ public class TigiArticleActivity extends BaseFragment {
         if (titleInput == null || publishing) {
             return;
         }
-        prefs().edit().putString(KEY_DRAFT_TITLE, titleInput.getText().toString()).putString(KEY_DRAFT_BODY, bodyInput.getText().toString()).apply();
+        prefs().edit()
+            .putString(KEY_TITLE, titleInput.getText().toString())
+            .putString(KEY_SUBTITLE, subtitleInput.getText().toString())
+            .putString(KEY_BODY, bodyInput.getText().toString())
+            .apply();
+    }
+
+    private void clearDraft() {
+        prefs().edit().remove(KEY_TITLE).remove(KEY_SUBTITLE).remove(KEY_BODY).remove(KEY_COVER).apply();
+        TigiArticle.deleteRecursive(draftDir());
+    }
+
+    /* toolbar */
+
+    private View toolbar(Context context) {
+        final HorizontalScrollView scroll = new HorizontalScrollView(context);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        final LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(10), dp(6), dp(10), dp(6));
+        addTool(row, "H", R.string.NilakFormatHeading, () -> linePrefix("## "));
+        addTool(row, "B", R.string.NilakFormatBold, () -> wrap("**"));
+        addTool(row, "I", R.string.NilakFormatItalic, () -> wrap("_"));
+        addTool(row, "≡", R.string.NilakFormatHighlight, () -> wrap("=="));
+        addTool(row, "❝", R.string.NilakFormatQuote, () -> linePrefix("> "));
+        addTool(row, "ⓘ", R.string.NilakFormatCallout, () -> linePrefix("> [!NOTE] "));
+        addTool(row, "•", R.string.NilakFormatList, () -> linePrefix("- "));
+        addTool(row, "1.", R.string.NilakFormatNumbered, () -> linePrefix("1. "));
+        addTool(row, "🔗", R.string.NilakFormatLink, this::insertLink);
+        addTool(row, "🖼", R.string.NilakFormatImage, () -> pick("image/*", REQUEST_IMAGE));
+        addTool(row, "▶", R.string.NilakFormatVideo, () -> pick("video/*", REQUEST_VIDEO));
+        addTool(row, "—", R.string.NilakFormatDivider, () -> insertBlock("---"));
+        scroll.addView(row);
+        return scroll;
+    }
+
+    private void addTool(LinearLayout row, String label, int description, Runnable action) {
+        final TextView button = new TextView(row.getContext());
+        button.setText(label);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        button.setTypeface(TigiStyle.displayExtraBold());
+        button.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        button.setGravity(Gravity.CENTER);
+        button.setContentDescription(LocaleController.getString(description));
+        button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(10), Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.2f)));
+        button.setOnClickListener(v -> action.run());
+        row.addView(button, LayoutHelper.createLinear(44, 40, 0, 0, 8, 0));
+    }
+
+    private void wrap(String marker) {
+        final Editable text = bodyInput.getText();
+        final int start = Math.max(0, bodyInput.getSelectionStart());
+        final int end = Math.max(start, bodyInput.getSelectionEnd());
+        text.insert(end, marker);
+        text.insert(start, marker);
+        bodyInput.setSelection(start == end ? start + marker.length() : end + marker.length() * 2);
+        bodyInput.requestFocus();
+    }
+
+    private void linePrefix(String prefix) {
+        final Editable text = bodyInput.getText();
+        final int start = Math.max(0, bodyInput.getSelectionStart());
+        int lineStart = start;
+        while (lineStart > 0 && text.charAt(lineStart - 1) != '\n') {
+            lineStart--;
+        }
+        text.insert(lineStart, prefix);
+        bodyInput.setSelection(Math.min(text.length(), start + prefix.length()));
+        bodyInput.requestFocus();
+    }
+
+    /** Puts a block on its own line (empty lines around it) at the cursor. */
+    private void insertBlock(String block) {
+        final Editable text = bodyInput.getText();
+        final int at = Math.max(0, bodyInput.getSelectionStart());
+        final boolean needBefore = at > 0 && text.charAt(at - 1) != '\n';
+        final String insert = (needBefore ? "\n\n" : (at > 0 ? "\n" : "")) + block + "\n\n";
+        text.insert(at, insert);
+        bodyInput.setSelection(Math.min(text.length(), at + insert.length()));
+        bodyInput.requestFocus();
+    }
+
+    private void insertLink() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final Context context = getParentActivity();
+        final EditTextBoldCursor url = new EditTextBoldCursor(context);
+        url.setHint("https://");
+        url.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        url.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        url.setCursorColor(TigiStyle.accent());
+        url.setPadding(dp(24), dp(8), dp(24), dp(8));
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(LocaleController.getString(R.string.NilakFormatLink));
+        builder.setView(url);
+        builder.setPositiveButton(LocaleController.getString(R.string.OK), (d, w) -> {
+            String value = url.getText().toString().trim();
+            if (value.isEmpty()) {
+                return;
+            }
+            if (!value.startsWith("http://") && !value.startsWith("https://")) {
+                value = "https://" + value;
+            }
+            final Editable text = bodyInput.getText();
+            final int start = Math.max(0, bodyInput.getSelectionStart());
+            final int end = Math.max(start, bodyInput.getSelectionEnd());
+            if (start == end) {
+                // no selected words: a link card on its own line
+                insertBlock(value);
+            } else {
+                text.insert(end, "](" + value + ")");
+                text.insert(start, "[");
+                bodyInput.setSelection(Math.min(text.length(), end + value.length() + 4));
+            }
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    /* media */
+
+    private void pick(String type, int request) {
+        final Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(type);
+        try {
+            startActivityForResult(intent, request);
+        } catch (Exception e) {
+            FileLog.e(e);
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiPostErrorGeneric)).show();
+        }
+    }
+
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        super.onActivityResultFragment(requestCode, resultCode, data);
+        if (resultCode != android.app.Activity.RESULT_OK || data == null || data.getData() == null) {
+            return;
+        }
+        if (requestCode != REQUEST_IMAGE && requestCode != REQUEST_VIDEO && requestCode != REQUEST_COVER) {
+            return;
+        }
+        final Uri uri = data.getData();
+        final boolean video = requestCode == REQUEST_VIDEO;
+        Utilities.globalQueue.postRunnable(() -> {
+            final String path = copyIntoDraft(uri, video, requestCode == REQUEST_COVER);
+            AndroidUtilities.runOnUIThread(() -> {
+                if (bodyInput == null) {
+                    return;
+                }
+                if (path == null) {
+                    BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiPostErrorGeneric)).show();
+                    return;
+                }
+                if (requestCode == REQUEST_COVER) {
+                    coverPath = path;
+                    prefs().edit().putString(KEY_COVER, path).apply();
+                    bindCover();
+                } else {
+                    // the caption goes between the brackets; empty means none
+                    insertBlock("![](" + path + ")");
+                    saveDraft();
+                }
+            });
+        });
+    }
+
+    /** Copies the picked file into the draft's media folder; returns its path relative to the draft. */
+    private String copyIntoDraft(Uri uri, boolean video, boolean cover) {
+        try {
+            String extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(ApplicationLoader.applicationContext.getContentResolver().getType(uri));
+            if (TextUtils.isEmpty(extension)) {
+                extension = video ? "mp4" : "jpg";
+            }
+            extension = extension.toLowerCase(Locale.ROOT);
+            final String name = (cover ? "cover_" : video ? "video_" : "photo_") + System.currentTimeMillis() + "." + extension;
+            final File target = new File(new File(draftDir(), TigiArticle.MEDIA_DIR), name);
+            try (InputStream in = ApplicationLoader.applicationContext.getContentResolver().openInputStream(uri);
+                 OutputStream out = new FileOutputStream(target)) {
+                if (in == null) {
+                    return null;
+                }
+                final byte[] chunk = new byte[16384];
+                int read;
+                while ((read = in.read(chunk)) > 0) {
+                    out.write(chunk, 0, read);
+                }
+            }
+            return TigiArticle.MEDIA_DIR + "/" + name;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /* preview and publish */
+
+    /** Writes manifest.json and article.md into the draft folder from the fields. */
+    private TigiArticle.Meta writeDraftFiles() throws Exception {
+        final File dir = draftDir();
+        final String body = bodyInput.getText().toString();
+        final TigiArticle.Meta meta = new TigiArticle.Meta();
+        meta.title = titleInput.getText().toString().trim();
+        meta.subtitle = subtitleInput.getText().toString().trim();
+        final TLRPC.User me = getUserConfig().getCurrentUser();
+        final TLRPC.Chat chat = getMessagesController().getChat(chatId);
+        meta.author = chat != null ? chat.title : me != null ? UserObject.getUserName(me) : "";
+        meta.lang = TigiRegion.language();
+        meta.cover = coverPath;
+        meta.words = TigiArticle.countWords(body);
+        meta.minutes = TigiArticle.minutesFor(meta.words);
+        meta.created = System.currentTimeMillis() / 1000;
+        TigiArticle.writeMeta(dir, meta);
+        TigiArticle.writeText(new File(dir, TigiArticle.BODY), body);
+        return meta;
+    }
+
+    private void openPreview() {
+        saveDraft();
+        try {
+            writeDraftFiles();
+            TigiArticleReaderActivity.preview(this, draftDir());
+        } catch (Exception e) {
+            FileLog.e(e);
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiPostErrorGeneric)).show();
+        }
     }
 
     private void confirmPublish() {
         final TLRPC.Chat chat = getMessagesController().getChat(chatId);
-        if (chat == null || !TigiPosting.canPostTo(chat)) {
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiPostNoRights)).show();
+        if (chat == null || !TigiArticle.canWrite(currentAccount, chat)) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakArticlesChannelsOnly)).show();
             return;
         }
         final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
@@ -236,54 +579,64 @@ public class TigiArticleActivity extends BaseFragment {
         if (publishing) {
             return;
         }
+        saveDraft();
         publishing = true;
         updateState();
         AndroidUtilities.hideKeyboard(bodyInput);
-        final String title = titleInput.getText().toString().trim();
-        final String body = bodyInput.getText().toString().trim();
-        final TLRPC.User me = getUserConfig().getCurrentUser();
-        final String author = me != null ? UserObject.getUserName(me) : "";
-        final String token = prefs().getString(KEY_TOKEN, null);
         final AlertDialog progress = new AlertDialog(getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER);
         progress.setCanCancel(false);
         showDialog(progress);
+        final TigiArticle.Meta meta;
+        try {
+            meta = writeDraftFiles();
+        } catch (Exception e) {
+            FileLog.e(e);
+            progress.dismiss();
+            publishing = false;
+            updateState();
+            return;
+        }
         Utilities.globalQueue.postRunnable(() -> {
-            String url = null;
-            String accessToken = token;
+            File packed = null;
             try {
-                if (TextUtils.isEmpty(accessToken)) {
-                    final JSONObject account = call("createAccount", "short_name=" + enc("nilak") + "&author_name=" + enc(author));
-                    accessToken = account.getString("access_token");
-                }
-                final JSONArray content = toNodes(body);
-                final JSONObject page = call("createPage", "access_token=" + enc(accessToken) + "&title=" + enc(title)
-                    + "&author_name=" + enc(author) + "&content=" + enc(content.toString()) + "&return_content=false");
-                url = page.getString("url");
+                final File outDir = new File(ApplicationLoader.applicationContext.getCacheDir(), "nilak_publish");
+                outDir.mkdirs();
+                packed = new File(outDir, TigiArticle.slug(meta.title) + TigiArticle.EXT);
+                TigiArticle.pack(draftDir(), packed);
             } catch (Exception e) {
                 FileLog.e(e);
+                packed = null;
             }
-            final String finalUrl = url;
-            final String finalToken = accessToken;
+            final File file = packed;
             AndroidUtilities.runOnUIThread(() -> {
                 progress.dismiss();
                 publishing = false;
                 if (isFinishing() || getParentActivity() == null) {
                     return;
                 }
-                if (finalUrl == null) {
+                if (file == null || !file.exists()) {
                     updateState();
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakArticleFailed)).show();
                     return;
                 }
-                prefs().edit().putString(KEY_TOKEN, finalToken).remove(KEY_DRAFT_TITLE).remove(KEY_DRAFT_BODY).apply();
-                // the post: title, a short excerpt and the link, which shows as an Instant View preview
-                // the excerpt without the composer's markup
-                final String plain = body.replace("**", "").replaceAll("(?m)^(#{1,2}|>|-|•) ", "").replaceAll("(?<![\\w])_(.+?)_(?![\\w])", "$1");
-                final String excerpt = plain.length() > 200 ? plain.substring(0, 200).trim() + "…" : plain;
-                final String text = title + "\n\n" + excerpt + "\n\n" + finalUrl;
-                SendMessagesHelper.getInstance(currentAccount).sendMessage(SendMessagesHelper.SendMessageParams.of(text, -chat.id, null, null, null, true, null, null, null, true, 0, 0, null, false));
+                if (file.length() > MAX_ARTICLE_BYTES) {
+                    updateState();
+                    BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.formatString(R.string.NilakArticleTooBig, AndroidUtilities.formatFileSize(MAX_ARTICLE_BYTES))).show();
+                    return;
+                }
+                // the caption: title, then the subtitle (or the start of the text) for feeds and search
+                String lead = meta.subtitle;
+                if (TextUtils.isEmpty(lead)) {
+                    final String plain = TigiArticle.plainText(bodyInput.getText().toString());
+                    lead = plain.length() > 180 ? plain.substring(0, 180).trim() + "…" : plain;
+                }
+                final String caption = meta.title + (TextUtils.isEmpty(lead) ? "" : "\n" + lead);
+                SendMessagesHelper.prepareSendingDocument(AccountInstance.getInstance(currentAccount), file.getAbsolutePath(), file.getAbsolutePath(), null,
+                    caption, TigiArticle.MIME, -chat.id, null, null, null, null, null, true, 0, null, null, false);
                 TigiPosting.setLastChannel(currentAccount, chat.id);
+                clearDraft();
                 titleInput.setText("");
+                subtitleInput.setText("");
                 bodyInput.setText("");
                 final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
                 if (tabs != null) {
@@ -293,179 +646,5 @@ public class TigiArticleActivity extends BaseFragment {
                 finishFragment();
             });
         });
-    }
-
-    /**
-     * The composer's light markup as Telegraph nodes: "# " heading, "## " subheading, "> " quote, "- " list item,
-     * **bold**, _italic_ and links; an empty line separates paragraphs, a single line break stays a line break.
-     */
-    static JSONArray toNodes(String body) throws Exception {
-        final JSONArray out = new JSONArray();
-        JSONArray list = null;
-        for (String block : body.split("\\n\\s*\\n")) {
-            final String[] lines = block.trim().split("\\n");
-            JSONArray paragraph = null;
-            for (String raw : lines) {
-                final String line = raw.trim();
-                if (line.isEmpty()) {
-                    continue;
-                }
-                if (line.startsWith("- ") || line.startsWith("• ")) {
-                    if (list == null) {
-                        list = new JSONArray();
-                        out.put(new JSONObject().put("tag", "ul").put("children", list));
-                    }
-                    list.put(new JSONObject().put("tag", "li").put("children", inline(line.substring(2))));
-                    continue;
-                }
-                list = null;
-                if (line.startsWith("## ")) {
-                    out.put(new JSONObject().put("tag", "h4").put("children", inline(line.substring(3))));
-                    paragraph = null;
-                } else if (line.startsWith("# ")) {
-                    out.put(new JSONObject().put("tag", "h3").put("children", inline(line.substring(2))));
-                    paragraph = null;
-                } else if (line.startsWith("> ")) {
-                    out.put(new JSONObject().put("tag", "blockquote").put("children", inline(line.substring(2))));
-                    paragraph = null;
-                } else {
-                    if (paragraph == null) {
-                        paragraph = new JSONArray();
-                        out.put(new JSONObject().put("tag", "p").put("children", paragraph));
-                    } else {
-                        paragraph.put(new JSONObject().put("tag", "br"));
-                    }
-                    final JSONArray parts = inline(line);
-                    for (int i = 0; i < parts.length(); i++) {
-                        paragraph.put(parts.get(i));
-                    }
-                }
-            }
-            list = null;
-        }
-        return out;
-    }
-
-    private static final java.util.regex.Pattern INLINE = java.util.regex.Pattern.compile(
-        "\\*\\*(.+?)\\*\\*|(?<![\\w])_(.+?)_(?![\\w])|(https?://[^\\s]+)");
-
-    private static JSONArray inline(String text) throws Exception {
-        final JSONArray out = new JSONArray();
-        final java.util.regex.Matcher matcher = INLINE.matcher(text);
-        int last = 0;
-        while (matcher.find()) {
-            if (matcher.start() > last) {
-                out.put(text.substring(last, matcher.start()));
-            }
-            if (matcher.group(1) != null) {
-                out.put(new JSONObject().put("tag", "strong").put("children", new JSONArray().put(matcher.group(1))));
-            } else if (matcher.group(2) != null) {
-                out.put(new JSONObject().put("tag", "em").put("children", new JSONArray().put(matcher.group(2))));
-            } else {
-                final String url = matcher.group(3);
-                out.put(new JSONObject().put("tag", "a").put("attrs", new JSONObject().put("href", url)).put("children", new JSONArray().put(url)));
-            }
-            last = matcher.end();
-        }
-        if (last < text.length()) {
-            out.put(text.substring(last));
-        }
-        return out;
-    }
-
-    /** Wraps the selection in a marker, or puts a line prefix at the start of the current line. */
-    private void format(String wrap, String linePrefix) {
-        final Editable text = bodyInput.getText();
-        int start = Math.max(0, bodyInput.getSelectionStart());
-        int end = Math.max(start, bodyInput.getSelectionEnd());
-        if (linePrefix != null) {
-            int lineStart = start;
-            while (lineStart > 0 && text.charAt(lineStart - 1) != '\n') {
-                lineStart--;
-            }
-            text.insert(lineStart, linePrefix);
-            bodyInput.setSelection(Math.min(text.length(), end + linePrefix.length()));
-        } else {
-            text.insert(end, wrap);
-            text.insert(start, wrap);
-            bodyInput.setSelection(start == end ? start + wrap.length() : end + wrap.length() * 2);
-        }
-        bodyInput.requestFocus();
-    }
-
-    private View formatBar(Context context) {
-        final LinearLayout bar = new LinearLayout(context);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(10), dp(6), dp(10), dp(6));
-        bar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        final String[] labels = {"B", "I", "H", "❝", "•"};
-        final int[] descriptions = {R.string.NilakFormatBold, R.string.NilakFormatItalic, R.string.NilakFormatHeading, R.string.NilakFormatQuote, R.string.NilakFormatList};
-        for (int i = 0; i < labels.length; i++) {
-            final int index = i;
-            final TextView button = new TextView(context);
-            button.setText(labels[i]);
-            button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            button.setTypeface(i == 1 ? android.graphics.Typeface.create(TigiStyle.displayBold(), android.graphics.Typeface.ITALIC) : TigiStyle.displayExtraBold());
-            button.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-            button.setGravity(Gravity.CENTER);
-            button.setContentDescription(LocaleController.getString(descriptions[i]));
-            button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(10), Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.2f)));
-            button.setOnClickListener(v -> {
-                switch (index) {
-                    case 0: format("**", null); break;
-                    case 1: format("_", null); break;
-                    case 2: format(null, "# "); break;
-                    case 3: format(null, "> "); break;
-                    default: format(null, "- "); break;
-                }
-            });
-            bar.addView(button, LayoutHelper.createLinear(44, 40, 0, 0, 8, 0));
-        }
-        return bar;
-    }
-
-    private static String enc(String value) throws Exception {
-        return URLEncoder.encode(value == null ? "" : value, "UTF-8");
-    }
-
-    /** One Telegraph API call (form POST); returns "result" or throws. */
-    private static JSONObject call(String method, String form) throws Exception {
-        final HttpURLConnection connection = (HttpURLConnection) new URL("https://api.telegra.ph/" + method).openConnection();
-        try {
-            connection.setConnectTimeout(15000);
-            connection.setReadTimeout(20000);
-            connection.setRequestMethod("POST");
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-            try (OutputStream out = connection.getOutputStream()) {
-                out.write(form.getBytes("UTF-8"));
-            }
-            final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-            try (InputStream in = connection.getInputStream()) {
-                final byte[] chunk = new byte[4096];
-                int read;
-                while ((read = in.read(chunk)) > 0) {
-                    buffer.write(chunk, 0, read);
-                }
-            }
-            final JSONObject json = new JSONObject(buffer.toString("UTF-8"));
-            if (!json.optBoolean("ok")) {
-                throw new IllegalStateException(json.optString("error"));
-            }
-            return json.getJSONObject("result");
-        } finally {
-            connection.disconnect();
-        }
-    }
-
-    /** From Create: write an article for the given channel. */
-    public static void start(BaseFragment fragment, TLRPC.Chat chat) {
-        if (fragment == null || chat == null) {
-            return;
-        }
-        final Bundle args = new Bundle();
-        args.putLong("chat_id", chat.id);
-        fragment.presentFragment(new TigiArticleActivity(args));
     }
 }

@@ -27,6 +27,7 @@ import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 
 /**
  * Tigi Home: an Instagram-style feed of recent posts from the channels the user is in.
@@ -76,8 +77,6 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         scrollingPart.setOrientation(LinearLayout.VERTICAL);
         storiesRow = new TigiStoriesRow(context, this);
         scrollingPart.addView(storiesRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        briefCard = createBriefCard(context);
-        scrollingPart.addView(briefCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 2, 12, 8));
         suggestedRow = new TigiSuggestedRow(context, this, () -> followedSinceLoad = true);
         scrollingPart.addView(suggestedRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         header.addView(scrollingPart, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
@@ -95,7 +94,19 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 26);
         title.setGravity(Gravity.CENTER_VERTICAL);
         bindWordmark(title);
-        bar.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
+        // the wordmark with "For you ⌄" / "Following ⌄" beside it; tapping either switches, like Instagram's logo menu
+        final LinearLayout titleRow = new LinearLayout(context);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(title, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 56));
+        modeLabel = new TextView(context);
+        modeLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        modeLabel.setTypeface(TigiStyle.displayBold());
+        modeLabel.setPadding(AndroidUtilities.dp(8), AndroidUtilities.dp(6), AndroidUtilities.dp(8), AndroidUtilities.dp(6));
+        bindModeLabel();
+        titleRow.addView(modeLabel, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 4, 2, 0, 0));
+        titleRow.setOnClickListener(v -> pickFeedMode());
+        bar.addView(titleRow, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
         searchButton = new ImageView(context);
         searchButton.setScaleType(ImageView.ScaleType.CENTER);
         searchButton.setImageResource(R.drawable.outline_header_search);
@@ -113,6 +124,17 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             }
         });
         bar.addView(searchButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), 6, 4, 6, 0));
+        // Create lives here, like Instagram's "+", when the bottom bar has Read in its place
+        if (BuildVars.TIGI_READ_TAB && (BuildVars.TIGI_POST || BuildVars.TIGI_LIVE)) {
+            createButton = new ImageView(context);
+            createButton.setScaleType(ImageView.ScaleType.CENTER);
+            createButton.setImageResource(R.drawable.tigi_add_24);
+            createButton.setContentDescription(LocaleController.getString(R.string.TigiCreate));
+            createButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+            createButton.setOnClickListener(v -> TigiCreateSheet.show(this));
+            final int offset = BuildVars.TIGI_ACTIVITY ? 102 : 54;
+            bar.addView(createButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), LocaleController.isRTL ? offset : 6, 4, LocaleController.isRTL ? 6 : offset, 0));
+        }
         // Activity: what happened to the user's posts
         activityButton = new ImageView(context);
         activityButton.setScaleType(ImageView.ScaleType.CENTER);
@@ -153,6 +175,63 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     }
     private ImageView searchButton;
     private ImageView activityButton;
+    private ImageView createButton;
+    private TextView modeLabel;
+
+    private static final String KEY_FOLLOWING = "nilak_home_following";
+
+    /** "For you" (default): the best posts first. "Following": newest first. */
+    private boolean followingMode() {
+        return org.telegram.messenger.MessagesController.getMainSettings(currentAccount).getBoolean(KEY_FOLLOWING, false);
+    }
+
+    private void bindModeLabel() {
+        if (modeLabel != null) {
+            modeLabel.setText(LocaleController.getString(followingMode() ? R.string.NilakFollowing : R.string.TigiReelsForYou) + " ⌄");
+            modeLabel.setContentDescription(LocaleController.getString(R.string.NilakFeedMode) + ": " + LocaleController.getString(followingMode() ? R.string.NilakFollowing : R.string.TigiReelsForYou));
+        }
+    }
+
+    private void pickFeedMode() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final boolean following = followingMode();
+        final CharSequence[] items = {
+            (following ? "" : "✓  ") + LocaleController.getString(R.string.TigiReelsForYou),
+            (following ? "✓  " : "") + LocaleController.getString(R.string.NilakFollowing)
+        };
+        final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.NilakFeedMode));
+        builder.setItems(items, (dialog, which) -> {
+            final boolean wantFollowing = which == 1;
+            if (wantFollowing == followingMode()) {
+                return;
+            }
+            org.telegram.messenger.MessagesController.getMainSettings(currentAccount).edit().putBoolean(KEY_FOLLOWING, wantFollowing).apply();
+            bindModeLabel();
+            lastLoadTime = 0;
+            loadFeed();
+            if (layoutManager != null) {
+                layoutManager.scrollToPositionWithOffset(0, 0);
+            }
+        });
+        showDialog(builder.create());
+    }
+
+    /** For you: views (log scale) lifted by how often the user opens the channel, fading over two days. */
+    private double forYouScore(FeedPost post) {
+        final int now = getConnectionsManager().getCurrentTime();
+        final double hoursOld = Math.max(0, (now - post.date) / 3600.0);
+        final TLRPC.Chat own = TigiPosting.ownChannel(currentAccount);
+        if (own != null && post.chat != null && post.chat.id == own.id && hoursOld < 6) {
+            // the user's own fresh post stays on top for a while
+            return 1000 - hoursOld;
+        }
+        final int views = Math.max(post.primary().messageOwner.views, 1);
+        final int affinity = post.chat != null ? TigiFeedPrefs.affinityOf(currentAccount, post.chat.id) : 0;
+        return Math.log10(views + 10) * (1 + 0.12 * Math.min(affinity, 20)) / (1 + hoursOld / 24.0);
+    }
     private LinearLayout briefCard;
     private TextView briefTitle;
 
@@ -281,6 +360,12 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (searchButton != null) {
             searchButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
         }
+        if (createButton != null) {
+            createButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
+        }
+        if (modeLabel != null) {
+            modeLabel.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        }
     }
 
     @Override
@@ -314,9 +399,16 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         org.telegram.messenger.TigiBriefReminder.schedule(getParentActivity());
         if (org.telegram.messenger.TigiBriefReminder.pendingOpen) {
             org.telegram.messenger.TigiBriefReminder.pendingOpen = false;
+            // from the daily reminder: For you, from the top
             AndroidUtilities.runOnUIThread(() -> {
                 if (!isDead()) {
-                    presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_BRIEF));
+                    final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
+                    if (tabs != null) {
+                        tabs.openHomeTab();
+                    }
+                    if (layoutManager != null) {
+                        layoutManager.scrollToPositionWithOffset(0, 0);
+                    }
                 }
             }, 300);
         }
@@ -372,7 +464,16 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 channels.add(chat);
             }
         }
+        // the user's own channel counts as following nothing (Discover still shows), but its posts join the feed
+        final TLRPC.Chat own = TigiPosting.ownChannel(currentAccount);
+        if (own != null) {
+            channels.remove(own);
+        }
         noChannels = channels.isEmpty() && (!dialogs.isEmpty() || getMessagesController().dialogsLoaded);
+        if (!channels.isEmpty() && own != null && !own.left) {
+            // archived, so its dialog may not be loaded with the chat list: added by hand
+            channels.add(0, own);
+        }
         if (channels.isEmpty()) {
             if (noChannels) {
                 // follows nothing yet: a Discover feed from channels Telegram recommends, instead of an empty page
@@ -403,7 +504,12 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 return;
             }
             setDiscover(true);
-            loadPostsFrom(new ArrayList<>(suggested.subList(0, Math.min(DISCOVER_CHANNELS, suggested.size()))));
+            final ArrayList<TLRPC.Chat> list = new ArrayList<>(suggested.subList(0, Math.min(DISCOVER_CHANNELS, suggested.size())));
+            final TLRPC.Chat own = TigiPosting.ownChannel(currentAccount);
+            if (own != null && !own.left && !list.contains(own)) {
+                list.add(0, own);
+            }
+            loadPostsFrom(list);
         });
     }
 
@@ -468,7 +574,26 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 result.remove(i);
             }
         }
-        Collections.sort(result, (a, b) -> b.date - a.date);
+        if (followingMode()) {
+            Collections.sort(result, (a, b) -> b.date - a.date);
+        } else {
+            // the same post reposted in several channels shows once, then the best first
+            final java.util.HashSet<String> seen = new java.util.HashSet<>();
+            for (int i = result.size() - 1; i >= 0; i--) {
+                final MessageObject first = result.get(i).primary();
+                final String key = first.getDocument() != null ? "d" + first.getDocument().id
+                    : first.messageOwner.media != null && first.messageOwner.media.photo != null ? "p" + first.messageOwner.media.photo.id
+                    : "t" + (result.get(i).text != null ? result.get(i).text.toString().trim() : result.get(i).chat.id + ":" + first.getId());
+                if (!seen.add(key)) {
+                    result.remove(i);
+                }
+            }
+            final HashMap<FeedPost, Double> scores = new HashMap<>();
+            for (FeedPost item : result) {
+                scores.put(item, forYouScore(item));
+            }
+            Collections.sort(result, (a, b) -> Double.compare(scores.get(b), scores.get(a)));
+        }
         final ArrayList<FeedPost> unsent = unsentPosts();
         posts.clear();
         posts.addAll(unsent);

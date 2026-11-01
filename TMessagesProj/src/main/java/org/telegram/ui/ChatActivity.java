@@ -1697,7 +1697,7 @@ public class ChatActivity extends BaseFragment implements
         return tigiCompose == TIGI_COMPOSE_FEED;
     }
 
-    /** Create's channel shown in the feed's look (plain background, card bubbles) instead of the chat wallpaper. */
+    /** Create's channel on the feed's plain background instead of the chat wallpaper. */
     private boolean nilakFeedLook() {
         return isNilakCompose() && BuildVars.TIGI_COMPOSE_FEED_LOOK;
     }
@@ -2788,7 +2788,7 @@ public class ChatActivity extends BaseFragment implements
         needRemovePreviousSameChatActivity = arguments.getBoolean("need_remove_previous_same_chat_activity", true);
         justCreatedChat = arguments.getBoolean("just_created_chat", false);
         tigiCompose = arguments.getInt("tigi_compose", 0);
-        if (tigiCompose == TIGI_COMPOSE_FEED && BuildVars.TIGI_COMPOSE_FEED_LOOK) {
+        if (tigiCompose == TIGI_COMPOSE_FEED) {
             // the first cells are laid out before onResume: card style from the start
             org.telegram.ui.ActionBar.MessageDrawable.nilakCards = true;
         }
@@ -30131,7 +30131,7 @@ public class ChatActivity extends BaseFragment implements
     public void onResume() {
         super.onResume();
         // posts drawn as Nilak cards while this screen is in front
-        org.telegram.ui.ActionBar.MessageDrawable.nilakCards = nilakFeedLook();
+        org.telegram.ui.ActionBar.MessageDrawable.nilakCards = isNilakCompose();
         if (nilakFeedLook() && contentView != null) {
             contentView.setBackgroundImage(new android.graphics.drawable.ColorDrawable(TigiFeedBase.feedBackground()), false);
         }

@@ -102,7 +102,7 @@ public class TigiPosting {
 
     public static void loadSuggestedChannels(int account, Utilities.Callback<ArrayList<TLRPC.Chat>> onDone) {
         if (suggested[account] != null && System.currentTimeMillis() - suggestedTime[account] < 30 * 60 * 1000L) {
-            onDone.run(new ArrayList<>(suggested[account]));
+            onDone.run(shuffled(suggested[account]));
             return;
         }
         final TLRPC.TL_channels_getChannelRecommendations req = new TLRPC.TL_channels_getChannelRecommendations();
@@ -118,12 +118,19 @@ public class TigiPosting {
                     }
                 }
                 // the chosen language's channels first
-                TigiRegion.rank(out);
                 suggested[account] = new ArrayList<>(out);
                 suggestedTime[account] = System.currentTimeMillis();
             }
-            onDone.run(out);
+            onDone.run(shuffled(out));
         }));
+    }
+
+    /** A new random order each time, the chosen language's channels still first (the ranking sort is stable). */
+    private static ArrayList<TLRPC.Chat> shuffled(ArrayList<TLRPC.Chat> chats) {
+        final ArrayList<TLRPC.Chat> out = new ArrayList<>(chats);
+        java.util.Collections.shuffle(out);
+        TigiRegion.rank(out);
+        return out;
     }
 
     /**

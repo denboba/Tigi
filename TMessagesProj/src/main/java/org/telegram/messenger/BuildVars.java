@@ -70,6 +70,8 @@ public class BuildVars {
     public static boolean TIGI_PROFILE_TAB = true; // Profile tab is the Tigi profile (own posts grid); off = Telegram's profile
     // Premium, Stars, Gram wallet, Business and gift rows in Settings. Off while IS_BILLING_UNAVAILABLE: Google Play
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.
+    /** Create's channel screen with the plain feed background and card bubbles; off = the normal chat wallpaper and bubbles. */
+    public static boolean TIGI_COMPOSE_FEED_LOOK = false;
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
 

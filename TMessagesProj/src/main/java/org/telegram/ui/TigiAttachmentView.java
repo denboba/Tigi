@@ -20,8 +20,11 @@ import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
+import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -37,7 +40,7 @@ import java.util.Locale;
  * music and voice (play / pause), documents (download and open) and link previews. Everything else stays with the
  * card's "View in chat" fallback.
  */
-public class TigiAttachmentView extends LinearLayout {
+public class TigiAttachmentView extends LinearLayout implements NotificationCenter.NotificationCenterDelegate {
 
     public static final int KIND_NONE = 0;
     public static final int KIND_POLL = 1;
@@ -106,6 +109,9 @@ public class TigiAttachmentView extends LinearLayout {
         switch (kind) {
             case KIND_POLL:
                 buildPoll();
+                if (isAttachedToWindow()) {
+                    refreshPollResults(); // a recycled card now showing another poll
+                }
                 break;
             case KIND_AUDIO:
                 buildAudio();
@@ -287,7 +293,13 @@ public class TigiAttachmentView extends LinearLayout {
             }
         }
         media.results.total_voters++;
-        SendMessagesHelper.getInstance(fragment.getCurrentAccount()).sendVote(message, answers, null);
+        // no results fetch before the vote lands: stale numbers would wipe the vote just shown
+        message.pollLastCheckTime = android.os.SystemClock.elapsedRealtime();
+        SendMessagesHelper.getInstance(fragment.getCurrentAccount()).sendVote(message, answers, () -> {
+            // the vote's own updates normally carry the new results; ask once more so the numbers never stay local
+            message.pollLastCheckTime = 0;
+            refreshPollResults();
+        });
         bind(message);
     }
 
@@ -397,12 +409,68 @@ public class TigiAttachmentView extends LinearLayout {
         if (kind == KIND_AUDIO) {
             AndroidUtilities.runOnUIThread(playState);
         }
+        if (fragment != null) {
+            NotificationCenter.getInstance(fragment.getCurrentAccount()).addObserver(this, NotificationCenter.didUpdatePollResults);
+        }
+        refreshPollResults();
     }
 
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         AndroidUtilities.cancelRunOnUIThread(playState);
+        if (fragment != null) {
+            NotificationCenter.getInstance(fragment.getCurrentAccount()).removeObserver(this, NotificationCenter.didUpdatePollResults);
+        }
+    }
+
+    /** Server poll results (after a vote, or anyone else's): applied to this card's poll at once. */
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id != NotificationCenter.didUpdatePollResults || kind != KIND_POLL || message == null || args.length < 3) {
+            return;
+        }
+        final TLRPC.MessageMedia m = MessageObject.getMedia(message.messageOwner);
+        if (!(m instanceof TLRPC.TL_messageMediaPoll)) {
+            return;
+        }
+        final TLRPC.TL_messageMediaPoll media = (TLRPC.TL_messageMediaPoll) m;
+        if (media.poll == null || !(args[0] instanceof Long) || media.poll.id != (Long) args[0]) {
+            return;
+        }
+        if (args[1] instanceof TLRPC.Poll) {
+            media.poll = (TLRPC.Poll) args[1];
+        }
+        if (args[2] instanceof TLRPC.PollResults) {
+            MessageObject.updatePollResults(media, (TLRPC.PollResults) args[2]);
+        }
+        pickedOptions.clear();
+        bind(message);
+    }
+
+    /** Fresh results when a poll card comes on screen, at most every 30 seconds per post. */
+    private void refreshPollResults() {
+        if (kind != KIND_POLL || message == null || message.getId() <= 0 || fragment == null) {
+            return;
+        }
+        final long now = android.os.SystemClock.elapsedRealtime();
+        if (message.pollLastCheckTime != 0 && now - message.pollLastCheckTime < 30000) {
+            return;
+        }
+        message.pollLastCheckTime = now;
+        final int account = fragment.getCurrentAccount();
+        final TLRPC.TL_messages_getPollResults req = new TLRPC.TL_messages_getPollResults();
+        req.peer = MessagesController.getInstance(account).getInputPeer(message.getDialogId());
+        req.msg_id = message.getId();
+        req.poll_hash = message.getPollHash();
+        if (req.peer == null) {
+            return;
+        }
+        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> {
+            if (response instanceof TLRPC.Updates) {
+                MessagesController.getInstance(account).processUpdates((TLRPC.Updates) response, false);
+            }
+        });
     }
 
     /* documents */

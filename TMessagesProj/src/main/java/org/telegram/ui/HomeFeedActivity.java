@@ -38,8 +38,10 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     private static final int POSTS_PER_CHANNEL = 12;
     private static final int MAX_POSTS = 60;
     private static final long RELOAD_AFTER_MS = 2 * 60 * 1000L;
-    private static final int PARALLEL_REQUESTS = 3;
-    private static final int DISCOVER_CHANNELS = 12;
+    private static final int PARALLEL_REQUESTS = 4;
+    private static final int DISCOVER_CHANNELS = 8;
+    /** Discover only needs a taste of each suggested channel: fewer posts each, so the first screen comes fast. */
+    private static final int DISCOVER_POSTS_PER_CHANNEL = 6;
 
     private boolean loading;
     private int loadGeneration;
@@ -554,7 +556,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             final TLRPC.Chat chat = channels.get(next[0]++);
             final TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
             req.peer = getMessagesController().getInputPeer(-chat.id);
-            req.limit = POSTS_PER_CHANNEL;
+            req.limit = discover ? DISCOVER_POSTS_PER_CHANNEL : POSTS_PER_CHANNEL;
             getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                 if (generation != loadGeneration) {
                     return;
@@ -573,6 +575,10 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 if (pending[0] <= 0) {
                     finishLoad(result);
                 } else {
+                    // nothing on screen yet: show the first answers now instead of waiting for every channel
+                    if (posts.isEmpty() && !result.isEmpty() && channels.size() - pending[0] == PARALLEL_REQUESTS) {
+                        showPartial(new ArrayList<>(result));
+                    }
                     startNext[0].run();
                 }
             }));
@@ -580,6 +586,14 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         for (int i = 0; i < PARALLEL_REQUESTS; i++) {
             startNext[0].run();
         }
+    }
+
+    /** The first answers of a load, shown while the rest arrive; the full list replaces them in finishLoad. */
+    private void showPartial(ArrayList<FeedPost> result) {
+        final boolean wasLoading = loading;
+        finishLoad(result);
+        loading = wasLoading;
+        updateEmptyView();
     }
 
     private void finishLoad(ArrayList<FeedPost> result) {

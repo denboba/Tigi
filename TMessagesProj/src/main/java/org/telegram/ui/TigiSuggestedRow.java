@@ -52,13 +52,15 @@ public class TigiSuggestedRow extends LinearLayout {
         titleView.setTypeface(AndroidUtilities.bold());
         titleView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         androidx.core.view.ViewCompat.setAccessibilityHeading(titleView, true);
-        addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 16, 0, 16, 0));
+        addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 16, 0, 16, 8));
 
         textView = new TextView(context);
         textView.setText(LocaleController.getString(R.string.TigiSuggestedText));
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         textView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 16, 2, 16, 8));
+        // the title says enough; the explanation line made the row wordy
+        textView.setVisibility(GONE);
 
         final HorizontalScrollView scroll = new HorizontalScrollView(context);
         scroll.setHorizontalScrollBarEnabled(false);

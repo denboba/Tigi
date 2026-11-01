@@ -4316,6 +4316,35 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             return true;
         }
 
+        /**
+         * Nilak: on Telegram's test servers (the Google Play review numbers +99966 X YYYY) the code is the digit X
+         * repeated for the code's length, which the server sets (5 or 6 digits). Filled in and sent automatically.
+         */
+        private void fillReviewCode() {
+            if (!getConnectionsManager().isTestBackend() || codeFieldContainer == null || codeFieldContainer.codeField == null) {
+                return;
+            }
+            final String digits = PhoneFormat.stripExceptNumbers(phone != null ? phone : "");
+            if (digits.length() != 10 || !digits.startsWith("99966")) {
+                return;
+            }
+            final char dc = digits.charAt(5);
+            if (dc < '1' || dc > '3') {
+                return;
+            }
+            final StringBuilder code = new StringBuilder();
+            for (int i = 0; i < codeFieldContainer.codeField.length; i++) {
+                codeFieldContainer.codeField[i].setText(String.valueOf(dc));
+                code.append(dc);
+            }
+            final String value = code.toString();
+            AndroidUtilities.runOnUIThread(() -> {
+                if (currentViewNum >= 0 && views[currentViewNum] == this) {
+                    onNextPressed(value);
+                }
+            }, 600);
+        }
+
         @Override
         public void setParams(Bundle params, boolean restore) {
             if (params == null) {
@@ -4375,6 +4404,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             nextCodeAuth = null;
 
             codeFieldContainer.setNumbersCount(length, currentType);
+            fillReviewCode();
             for (CodeNumberField f : codeFieldContainer.codeField) {
                 f.setShowSoftInputOnFocusCompat(!(hasCustomKeyboard() && !isCustomKeyboardForceDisabled()));
                 f.addTextChangedListener(new TextWatcher() {

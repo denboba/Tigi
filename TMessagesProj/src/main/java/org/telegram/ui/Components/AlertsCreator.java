@@ -7266,6 +7266,22 @@ public class AlertsCreator {
         return builder;
     }
 
+    /** Nilak: background location is not in the manifest (Google Play), so its explainer and request are skipped. */
+    public static boolean backgroundLocationDeclared(android.content.Context context) {
+        try {
+            final String[] requested = context.getPackageManager().getPackageInfo(context.getPackageName(), android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions;
+            if (requested != null) {
+                for (String permission : requested) {
+                    if (Manifest.permission.ACCESS_BACKGROUND_LOCATION.equals(permission)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return false;
+    }
+
     public static AlertDialog.Builder createGigagroupConvertAlert(Activity activity, AlertDialog.OnButtonClickListener onProcess, AlertDialog.OnButtonClickListener onCancel) {
         AlertDialog.Builder builder = new AlertDialog.Builder(activity);
         String svg = AndroidUtilities.readRes(R.raw.gigagroup);

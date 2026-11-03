@@ -2292,6 +2292,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             private final ImageView playView;
             private final ImageView muteButton;
             private final ImageView fullscreenButton;
+            private final TextView durationView;
             private int position;
             MessageObject message;
 
@@ -2312,6 +2313,16 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 muteButton = makeControl(context, R.drawable.media_mute);
                 muteButton.setOnClickListener(v -> toggleMute());
                 addView(muteButton, LayoutHelper.createFrame(36, 36, Gravity.BOTTOM | Gravity.RIGHT, 0, 0, 10, 10));
+
+                durationView = new TextView(context);
+                durationView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+                durationView.setTypeface(AndroidUtilities.bold());
+                durationView.setTextColor(0xFFFFFFFF);
+                durationView.setPadding(dp(8), dp(3), dp(8), dp(3));
+                durationView.setBackground(Theme.createRoundRectDrawable(dp(10), 0x99111827));
+                durationView.setVisibility(GONE);
+                durationView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+                addView(durationView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT, 10, 10, 0, 0));
 
                 fullscreenButton = makeControl(context, R.drawable.msg_expand);
                 fullscreenButton.setContentDescription(LocaleController.getString(R.string.AccDescrOpenInPhotoViewer));
@@ -2410,6 +2421,15 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 final boolean playing = playable && inlinePlayer != null && inlinePlayer.isPlaying(message);
                 playView.setVisibility(playable && !playing ? VISIBLE : GONE);
                 fullscreenButton.setVisibility(playable ? VISIBLE : GONE);
+                // films and clips say how long they are (and how big, past ten minutes) until they play
+                final int seconds = playable && !message.isGif() ? (int) message.getDuration() : 0;
+                if (seconds > 0 && !playing) {
+                    final long bytes = message.getDocument() != null ? message.getDocument().size : 0;
+                    durationView.setText(AndroidUtilities.formatShortDuration(seconds) + (seconds >= 600 && bytes > 0 ? " · " + AndroidUtilities.formatFileSize(bytes) : ""));
+                    durationView.setVisibility(VISIBLE);
+                } else {
+                    durationView.setVisibility(GONE);
+                }
                 // GIFs have no sound
                 final boolean showMute = playing && !message.isGif();
                 muteButton.setVisibility(showMute ? VISIBLE : GONE);

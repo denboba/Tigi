@@ -54,11 +54,20 @@ public class TigiPdfViewerActivity extends BaseFragment {
     private PagesAdapter adapter;
     private int pageWidth;
 
+    private int renderWidth;
+    private ZoomFrame zoomFrame;
+
     private final HashSet<Integer> rendering = new HashSet<>();
-    private final LruCache<Integer, Bitmap> pages = new LruCache<Integer, Bitmap>(32 * 1024 * 1024) {
+    /** Rendered pages; sized to the phone's memory (a fifth of what the app may use, at most 64 MB). */
+    private final LruCache<Integer, Bitmap> pages = new LruCache<Integer, Bitmap>((int) Math.min(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 5)) {
         @Override
         protected int sizeOf(Integer key, Bitmap value) {
             return value.getByteCount();
+        }
+    };
+    private final Runnable hideLabel = () -> {
+        if (pageLabel != null) {
+            pageLabel.animate().alpha(0f).setDuration(250).start();
         }
     };
 
@@ -74,6 +83,8 @@ public class TigiPdfViewerActivity extends BaseFragment {
         root.setBackgroundColor(Theme.isCurrentThemeDark() ? 0xFF111111 : 0xFFE9E9EE);
 
         pageWidth = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) - dp(16);
+        // a little sharper than the screen, so text stays readable when zoomed in
+        renderWidth = Math.min(Math.round(pageWidth * 1.5f), 1600);
         list = new RecyclerView(context);
         list.setLayoutManager(new LinearLayoutManager(context));
         list.setClipToPadding(false);
@@ -86,7 +97,9 @@ public class TigiPdfViewerActivity extends BaseFragment {
                 updatePageLabel();
             }
         });
-        root.addView(list, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        zoomFrame = new ZoomFrame(context);
+        zoomFrame.addView(list, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        root.addView(zoomFrame, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         // top bar: back, file name, open in another app
         final LinearLayout bar = new LinearLayout(context);
@@ -195,7 +208,7 @@ public class TigiPdfViewerActivity extends BaseFragment {
             return;
         }
         rendering.add(index);
-        final int width = pageWidth;
+        final int width = renderWidth;
         TigiPdf.queue.postRunnable(() -> {
             Bitmap bitmap = null;
             try {
@@ -228,6 +241,10 @@ public class TigiPdfViewerActivity extends BaseFragment {
         }
         pageLabel.setText(String.format(Locale.getDefault(), "%d / %d", Math.max(0, position) + 1, pageCount));
         pageLabel.setVisibility(View.VISIBLE);
+        pageLabel.animate().cancel();
+        pageLabel.setAlpha(1f);
+        AndroidUtilities.cancelRunOnUIThread(hideLabel);
+        AndroidUtilities.runOnUIThread(hideLabel, 1500);
     }
 
     private void openExternally() {
@@ -249,6 +266,7 @@ public class TigiPdfViewerActivity extends BaseFragment {
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
         destroyed = true;
+        AndroidUtilities.cancelRunOnUIThread(hideLabel);
         final TigiPdf.Document open = document;
         document = null;
         TigiPdf.queue.postRunnable(() -> {
@@ -259,15 +277,142 @@ public class TigiPdfViewerActivity extends BaseFragment {
         pages.evictAll();
     }
 
+    /** One page: the rendered bitmap scaled to the width, or a white sheet with its number while it renders. */
+    private class PageView extends View {
+        private final android.graphics.Paint bitmapPaint = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG | android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.text.TextPaint numberPaint = new android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Rect destination = new android.graphics.Rect();
+        private Bitmap bitmap;
+        private int number;
+
+        PageView(Context context) {
+            super(context);
+            numberPaint.setColor(0xFFB0B0B8);
+            numberPaint.setTextSize(dp(28));
+            numberPaint.setTypeface(TigiStyle.displayBold());
+            numberPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
+        }
+
+        void set(Bitmap bitmap, int number) {
+            this.bitmap = bitmap;
+            this.number = number;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            canvas.drawColor(Color.WHITE);
+            if (bitmap != null && !bitmap.isRecycled()) {
+                destination.set(0, 0, getWidth(), getHeight());
+                canvas.drawBitmap(bitmap, null, destination, bitmapPaint);
+            } else {
+                canvas.drawText(String.valueOf(number), getWidth() / 2f, getHeight() / 2f, numberPaint);
+            }
+        }
+    }
+
+    /**
+     * Pinch or double-tap to zoom (1x to 3x) around the fingers; when zoomed, dragging sideways pans the page while
+     * up and down still scroll the pages.
+     */
+    private class ZoomFrame extends FrameLayout {
+        private static final float MAX_SCALE = 3f;
+        private float scale = 1f;
+        private float panX;
+        private float lastX;
+        private boolean panning;
+        private final android.view.ScaleGestureDetector scaleDetector;
+        private final android.view.GestureDetector tapDetector;
+
+        ZoomFrame(Context context) {
+            super(context);
+            scaleDetector = new android.view.ScaleGestureDetector(context, new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                @Override
+                public boolean onScale(android.view.ScaleGestureDetector detector) {
+                    zoomTo(scale * detector.getScaleFactor(), detector.getFocusX());
+                    return true;
+                }
+            });
+            tapDetector = new android.view.GestureDetector(context, new android.view.GestureDetector.SimpleOnGestureListener() {
+                @Override
+                public boolean onDoubleTap(android.view.MotionEvent e) {
+                    animateZoom(scale > 1.05f ? 1f : 2.5f, e.getX());
+                    return true;
+                }
+            });
+        }
+
+        private void zoomTo(float target, float focusX) {
+            final float next = Math.max(1f, Math.min(MAX_SCALE, target));
+            // keep the point under the fingers where it is
+            final float center = getWidth() / 2f;
+            final float contentX = (focusX - center - panX) / scale;
+            panX = focusX - center - next * contentX;
+            scale = next;
+            apply();
+        }
+
+        private void animateZoom(float target, float focusX) {
+            final android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(scale, target);
+            animator.setDuration(220);
+            animator.setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.DEFAULT);
+            animator.addUpdateListener(a -> zoomTo((Float) a.getAnimatedValue(), focusX));
+            animator.start();
+        }
+
+        private void apply() {
+            final float limit = (scale - 1f) * getWidth() / 2f;
+            panX = Math.max(-limit, Math.min(limit, panX));
+            list.setPivotX(getWidth() / 2f);
+            list.setPivotY(getHeight() / 2f);
+            list.setScaleX(scale);
+            list.setScaleY(scale);
+            list.setTranslationX(panX);
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(android.view.MotionEvent event) {
+            scaleDetector.onTouchEvent(event);
+            tapDetector.onTouchEvent(event);
+            switch (event.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    lastX = event.getX();
+                    panning = false;
+                    break;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    if (scale > 1.01f && Math.abs(event.getX() - lastX) > dp(8)) {
+                        panning = true;
+                        lastX = event.getX();
+                        return true;
+                    }
+                    break;
+            }
+            return event.getPointerCount() > 1 || scaleDetector.isInProgress();
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            scaleDetector.onTouchEvent(event);
+            tapDetector.onTouchEvent(event);
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_MOVE && event.getPointerCount() == 1 && panning) {
+                panX += event.getX() - lastX;
+                lastX = event.getX();
+                apply();
+            } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                lastX = event.getX();
+            } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP || event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL) {
+                panning = false;
+            }
+            return true;
+        }
+    }
+
     private class PagesAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         @NonNull
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            final ImageView page = new ImageView(parent.getContext());
-            page.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            page.setBackgroundColor(Color.WHITE);
-            page.setAdjustViewBounds(false);
+            final PageView page = new PageView(parent.getContext());
             final RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (int) (pageWidth * pageAspect));
             params.bottomMargin = dp(8);
             page.setLayoutParams(params);
@@ -277,7 +422,7 @@ public class TigiPdfViewerActivity extends BaseFragment {
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            final ImageView page = (ImageView) holder.itemView;
+            final PageView page = (PageView) holder.itemView;
             final Bitmap bitmap = pages.get(position);
             final RecyclerView.LayoutParams params = (RecyclerView.LayoutParams) page.getLayoutParams();
             final int height = bitmap != null ? (int) (pageWidth * (bitmap.getHeight() / (float) bitmap.getWidth())) : (int) (pageWidth * pageAspect);
@@ -285,7 +430,7 @@ public class TigiPdfViewerActivity extends BaseFragment {
                 params.height = height;
                 page.setLayoutParams(params);
             }
-            page.setImageBitmap(bitmap);
+            page.set(bitmap, position + 1);
             page.setContentDescription(String.format(Locale.getDefault(), "%d / %d", position + 1, pageCount));
             if (bitmap == null) {
                 requestPage(position);

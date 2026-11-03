@@ -60,8 +60,12 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     private AudioProgressView audioProgress;
     private TextView audioTime;
     private BackupImageView stickerView;
+    private TextView stickerFallback;
+    private View downloadBar;
+    private TextView documentPages;
     private BackupImageView documentPreview;
     private boolean openWhenDownloaded;
+    private int pageCount;
     private final Runnable playState = new Runnable() {
         @Override
         public void run() {
@@ -128,8 +132,12 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         audioProgress = null;
         audioTime = null;
         stickerView = null;
+        stickerFallback = null;
+        downloadBar = null;
+        documentPages = null;
         documentPreview = null;
         openWhenDownloaded = false;
+        pageCount = 0;
         switch (kind) {
             case KIND_STICKER:
                 buildSticker();
@@ -372,6 +380,14 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         stickerView.setAspectFit(true);
         stickerView.getImageReceiver().setAutoRepeat(1);
         frame.addView(stickerView, LayoutHelper.createFrame(176, 176, Gravity.CENTER));
+        // the emoji itself, big, while its animation is fetched (or if it has none)
+        stickerFallback = new TextView(getContext());
+        stickerFallback.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 72);
+        stickerFallback.setGravity(Gravity.CENTER);
+        stickerFallback.setVisibility(GONE);
+        stickerFallback.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        frame.addView(stickerFallback, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER));
+        frame.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_ROUNDRECT_6DP));
         frame.setOnClickListener(v -> onStickerTap());
         final String alt = stickerAlt();
         frame.setContentDescription(TextUtils.isEmpty(alt) ? LocaleController.getString(R.string.AttachSticker) : alt + " " + LocaleController.getString(R.string.AttachSticker));
@@ -403,7 +419,14 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
             // a custom emoji whose file is still being looked up: the emoji itself until it arrives
             message.loadAnimatedEmojiDocument();
             stickerView.setImageDrawable(null);
+            if (stickerFallback != null && message.messageText != null) {
+                stickerFallback.setText(org.telegram.messenger.Emoji.replaceEmoji(message.messageText.toString(), stickerFallback.getPaint().getFontMetricsInt(), false));
+                stickerFallback.setVisibility(VISIBLE);
+            }
             return;
+        }
+        if (stickerFallback != null) {
+            stickerFallback.setVisibility(GONE);
         }
         final org.telegram.messenger.ImageReceiver receiver = stickerView.getImageReceiver();
         if (MessageObject.isTextColorEmoji(document)) {
@@ -463,15 +486,11 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         final FrameLayout left = new FrameLayout(getContext());
         final TLRPC.Document document = message.getDocument();
         final TLRPC.PhotoSize coverThumb = document != null ? FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 320) : null;
-        final String artwork = message.isMusic() ? message.getArtworkUrl(true) : null;
-        if (message.isMusic() && (coverThumb != null || !TextUtils.isEmpty(artwork))) {
+        // only the cover inside the file: no lookup of the song on an outside service (privacy)
+        if (message.isMusic() && coverThumb != null) {
             final BackupImageView cover = new BackupImageView(getContext());
             cover.setRoundRadius(dp(12));
-            if (coverThumb != null) {
-                cover.setImage(ImageLocation.getForDocument(coverThumb, document), "112_112", (android.graphics.drawable.Drawable) null, message);
-            } else {
-                cover.setImage(ImageLocation.getForPath(artwork), "112_112", (android.graphics.drawable.Drawable) null, message);
-            }
+            cover.setImage(ImageLocation.getForDocument(coverThumb, document), "112_112", (android.graphics.drawable.Drawable) null, message);
             left.addView(cover, LayoutHelper.createFrame(56, 56));
             playButton = new ImageView(getContext());
             playButton.setScaleType(ImageView.ScaleType.CENTER);
@@ -479,11 +498,20 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
             playButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
             left.addView(playButton, LayoutHelper.createFrame(56, 56));
         } else {
+            // no cover: a tile in the accent colour for music (like an album without art), a round button for voice
             playButton = new ImageView(getContext());
             playButton.setScaleType(ImageView.ScaleType.CENTER);
-            playButton.setBackground(Theme.createRoundRectDrawable(dp(26), TigiStyle.accent()));
+            if (message.isMusic()) {
+                playButton.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                    new int[]{TigiStyle.accent(), Theme.multAlpha(TigiStyle.accent(), 0.7f)}) {{
+                    setCornerRadius(dp(12));
+                }});
+                left.addView(playButton, LayoutHelper.createFrame(56, 56));
+            } else {
+                playButton.setBackground(Theme.createRoundRectDrawable(dp(26), TigiStyle.accent()));
+                left.addView(playButton, LayoutHelper.createFrame(52, 52, Gravity.CENTER));
+            }
             playButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
-            left.addView(playButton, LayoutHelper.createFrame(52, 52, Gravity.CENTER));
         }
         playButton.setOnClickListener(v -> togglePlay());
         row.addView(left, LayoutHelper.createLinear(56, 56));
@@ -871,6 +899,20 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         texts.addView(documentStatus);
         row.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 12, 0, 0, 0));
         card.addView(row);
+        // a thin line under the row while the file downloads
+        downloadBar = new View(getContext()) {
+            @Override
+            protected void onDraw(android.graphics.Canvas canvas) {
+                final Object tag = getTag();
+                final float value = tag instanceof Float ? (Float) tag : 0f;
+                canvas.drawColor(Theme.multAlpha(gray(), 0.25f));
+                final android.graphics.Paint paint = new android.graphics.Paint();
+                paint.setColor(TigiStyle.accent());
+                canvas.drawRect(0, 0, getWidth() * value, getHeight(), paint);
+            }
+        };
+        downloadBar.setVisibility(GONE);
+        card.addView(downloadBar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 3, 14, 0, 14, 10));
         card.setOnClickListener(v -> openDocument());
         card.setContentDescription(title.getText());
         addView(card, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -887,14 +929,17 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
             return;
         }
         final MessageObject bound = message;
-        final int width = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
-        TigiPdf.firstPage(file, width, bitmap -> {
-            if (bitmap == null || bound != message || documentPreview == null) {
+        final int width = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) - dp(24);
+        // the top of the first page (title, first lines), cut to the preview's shape instead of its middle
+        final float shape = dp(220) / (float) Math.max(1, width);
+        TigiPdf.firstPage(file, width, shape, preview -> {
+            if (preview == null || bound != message || documentPreview == null) {
                 return;
             }
-            documentPreview.setImageBitmap(bitmap);
-            documentPreview.getImageReceiver().setAspectFit(false);
+            documentPreview.setImageBitmap(preview.bitmap);
             documentPreview.setVisibility(VISIBLE);
+            pageCount = preview.pages;
+            updateDocumentStatus(-1f);
         });
     }
 
@@ -921,13 +966,22 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
             return;
         }
         final long total = message.getDocument().size;
-        final String size = AndroidUtilities.formatFileSize(total);
+        String size = AndroidUtilities.formatFileSize(total);
+        if (pageCount > 0) {
+            size = LocaleController.formatPluralString("NilakPdfPages", pageCount) + " · " + size;
+        }
+        final boolean downloading = documentFile() == null && progress >= 0;
         if (documentFile() != null) {
             documentStatus.setText(size + " · " + LocaleController.getString(R.string.NilakTapToOpen));
-        } else if (progress >= 0) {
-            documentStatus.setText(AndroidUtilities.formatFileSize((long) (total * progress)) + " / " + size + " · " + LocaleController.getString(R.string.NilakDownloading));
+        } else if (downloading) {
+            documentStatus.setText(AndroidUtilities.formatFileSize((long) (total * progress)) + " / " + AndroidUtilities.formatFileSize(total) + " · " + LocaleController.getString(R.string.NilakDownloading));
         } else {
             documentStatus.setText(size);
+        }
+        if (downloadBar != null) {
+            downloadBar.setVisibility(downloading ? VISIBLE : GONE);
+            downloadBar.setTag(Math.max(0.02f, progress));
+            downloadBar.invalidate();
         }
     }
 

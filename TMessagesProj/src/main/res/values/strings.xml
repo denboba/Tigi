@@ -10672,6 +10672,8 @@
     <string name="NilakTapToOpen">Tap to open</string>
     <string name="NilakDownloading">Downloading…</string>
     <string name="NilakPdfCantShow">This PDF can’t be shown here. Open it in another app.</string>
+    <string name="NilakPdfPages_one">%1$d page</string>
+    <string name="NilakPdfPages_other">%1$d pages</string>
     <string name="NilakPdfLocked">This PDF is protected with a password. Open it in another app.</string>
     <string name="NilakInterestEducation">Education</string>
     <string name="NilakInterestHealth">Health</string>

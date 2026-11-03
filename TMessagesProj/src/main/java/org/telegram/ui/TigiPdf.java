@@ -31,13 +31,6 @@ public final class TigiPdf {
 
     static final DispatchQueue queue = new DispatchQueue("NilakPdf");
 
-    private static final LruCache<String, Bitmap> firstPages = new LruCache<String, Bitmap>(8 * 1024 * 1024) {
-        @Override
-        protected int sizeOf(String key, Bitmap value) {
-            return value.getByteCount();
-        }
-    };
-
     private TigiPdf() {
     }
 
@@ -52,11 +45,32 @@ public final class TigiPdf {
         return !TextUtils.isEmpty(name) && name.toLowerCase(Locale.US).endsWith(".pdf");
     }
 
-    /** The first page at the given width, from the cache or rendered now; null (on the main thread) when it can't be. */
-    public static void firstPage(File file, int width, Utilities.Callback<Bitmap> onDone) {
-        final String key = file.getAbsolutePath() + "_" + file.length() + "_" + width;
-        final Bitmap cached = firstPages.get(key);
-        if (cached != null && !cached.isRecycled()) {
+    /** A first-page preview and the document's page count. */
+    public static final class Preview {
+        public final Bitmap bitmap;
+        public final int pages;
+
+        Preview(Bitmap bitmap, int pages) {
+            this.bitmap = bitmap;
+            this.pages = pages;
+        }
+    }
+
+    private static final LruCache<String, Preview> previews = new LruCache<String, Preview>(8 * 1024 * 1024) {
+        @Override
+        protected int sizeOf(String key, Preview value) {
+            return value.bitmap.getByteCount();
+        }
+    };
+
+    /**
+     * The top of the first page at the given width, cut to shape (height / width) so a preview shows the title rather
+     * than the middle of the page; from the cache or rendered now. Null (on the main thread) when it can't be drawn.
+     */
+    public static void firstPage(File file, int width, float shape, Utilities.Callback<Preview> onDone) {
+        final String key = file.getAbsolutePath() + "_" + file.length() + "_" + width + "_" + shape;
+        final Preview cached = previews.get(key);
+        if (cached != null && !cached.bitmap.isRecycled()) {
             onDone.run(cached);
             return;
         }
@@ -65,12 +79,21 @@ public final class TigiPdf {
             return;
         }
         queue.postRunnable(() -> {
-            Bitmap bitmap = null;
+            Preview preview = null;
             Document document = null;
             try {
                 document = Document.open(file);
                 if (document != null && document.pageCount() > 0) {
-                    bitmap = document.render(0, width);
+                    Bitmap page = document.render(0, width);
+                    final int height = Math.max(1, Math.min(page.getHeight(), (int) (page.getWidth() * shape)));
+                    if (height < page.getHeight()) {
+                        final Bitmap top = Bitmap.createBitmap(page, 0, 0, page.getWidth(), height);
+                        if (top != page) {
+                            page.recycle();
+                        }
+                        page = top;
+                    }
+                    preview = new Preview(page, document.pageCount());
                 }
             } catch (Throwable e) {
                 FileLog.e(e);
@@ -79,9 +102,9 @@ public final class TigiPdf {
                     document.close();
                 }
             }
-            final Bitmap result = bitmap;
+            final Preview result = preview;
             if (result != null) {
-                firstPages.put(key, result);
+                previews.put(key, result);
             }
             AndroidUtilities.runOnUIThread(() -> onDone.run(result));
         });

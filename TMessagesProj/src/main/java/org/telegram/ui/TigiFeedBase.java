@@ -96,7 +96,17 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
 
         boolean isValid() {
-            return !messages.isEmpty() && (sponsored || !media.isEmpty() || !TextUtils.isEmpty(text) || !TextUtils.isEmpty(fallback));
+            return !messages.isEmpty() && (sponsored || !media.isEmpty() || !TextUtils.isEmpty(text) || !TextUtils.isEmpty(fallback) || hasAttachment());
+        }
+
+        /** A sticker, big emoji, poll, audio, file or link the card draws itself. */
+        boolean hasAttachment() {
+            for (int i = 0; i < messages.size(); i++) {
+                if (TigiAttachmentView.kindOf(messages.get(i)) != TigiAttachmentView.KIND_NONE) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -347,11 +357,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 added.add(post);
             }
             post.messages.add(message);
-            if (message.photoThumbs != null && !message.photoThumbs.isEmpty() && (message.isPhoto() || message.isVideo() || message.isGif())) {
+            if (isCardMedia(message)) {
                 post.media.add(message);
             }
             if (TextUtils.isEmpty(post.text)) {
-                post.text = !TextUtils.isEmpty(message.caption) ? message.caption : (post.media.isEmpty() && !TextUtils.isEmpty(message.messageText) && describeUnsupported(message) == null ? message.messageText : null);
+                post.text = !TextUtils.isEmpty(message.caption) ? message.caption : (post.media.isEmpty() && !TextUtils.isEmpty(message.messageText) && describeUnsupported(message) == null && !TigiAttachmentView.isBigEmoji(message) ? message.messageText : null);
             }
             if (post.media.isEmpty() && post.fallback == null) {
                 post.fallback = describeUnsupported(message);
@@ -618,7 +628,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             if (post != null && !out.contains(post)) {
                 // the rest of an album from an earlier page: those messages are older, they go first
                 post.messages.add(0, object);
-                if (object.photoThumbs != null && !object.photoThumbs.isEmpty() && (object.isPhoto() || object.isVideo() || object.isGif())) {
+                if (isCardMedia(object)) {
                     post.media.add(0, object);
                 }
                 if (TextUtils.isEmpty(post.text) && !TextUtils.isEmpty(object.caption)) {
@@ -640,13 +650,13 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 }
             }
             post.messages.add(object);
-            if (object.photoThumbs != null && !object.photoThumbs.isEmpty() && (object.isPhoto() || object.isVideo() || object.isGif())) {
+            if (isCardMedia(object)) {
                 post.media.add(object);
             }
             if (TigiArticle.isArticle(object)) {
                 // an article's card shows its title and lead itself; the caption is not repeated above it
             } else if (post.text == null || post.text.length() == 0) {
-                post.text = !TextUtils.isEmpty(object.caption) ? object.caption : (post.media.isEmpty() && !TextUtils.isEmpty(object.messageText) && describeUnsupported(object) == null ? object.messageText : null);
+                post.text = !TextUtils.isEmpty(object.caption) ? object.caption : (post.media.isEmpty() && !TextUtils.isEmpty(object.messageText) && describeUnsupported(object) == null && !TigiAttachmentView.isBigEmoji(object) ? object.messageText : null);
             }
             if (post.media.isEmpty() && post.fallback == null) {
                 post.fallback = describeUnsupported(object);
@@ -1076,6 +1086,38 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             return true;
         }
     };
+
+    /**
+     * Photos and videos the card's pager shows. Videos and GIFs count even without a thumbnail (long films are often
+     * sent without one) and round videos stay out; photos need their sizes to be drawn at all.
+     */
+    protected static boolean isCardMedia(MessageObject message) {
+        if (message == null || message.messageOwner == null) {
+            return false;
+        }
+        if (message.isPhoto()) {
+            return message.photoThumbs != null && !message.photoThumbs.isEmpty();
+        }
+        return (message.isVideo() || message.isGif()) && !message.isRoundVideo() && message.getDocument() != null;
+    }
+
+    /** Width / height of a photo or video, from its thumbnail or the video's own size; 1 when unknown. */
+    protected static float mediaRatio(MessageObject message) {
+        final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, AndroidUtilities.getPhotoSize());
+        if (size != null && size.w > 0 && size.h > 0) {
+            return size.w / (float) size.h;
+        }
+        final TLRPC.Document document = message.getDocument();
+        if (document != null) {
+            for (int i = 0; i < document.attributes.size(); i++) {
+                final TLRPC.DocumentAttribute attribute = document.attributes.get(i);
+                if ((attribute instanceof TLRPC.TL_documentAttributeVideo || attribute instanceof TLRPC.TL_documentAttributeImageSize) && attribute.w > 0 && attribute.h > 0) {
+                    return attribute.w / (float) attribute.h;
+                }
+            }
+        }
+        return message.isVideo() ? 16f / 9f : 1f;
+    }
 
     /** A label for posts the cards can't show; null when the post is shown normally. */
     protected CharSequence describeUnsupported(MessageObject message) {
@@ -1971,8 +2013,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 mediaFrame.setVisibility(VISIBLE);
                 final int width = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) - dp(16);
                 final MessageObject first = post.media.get(0);
-                final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(first.photoThumbs, AndroidUtilities.getPhotoSize());
-                float ratio = size != null && size.h > 0 ? size.w / (float) size.h : 1f;
+                float ratio = mediaRatio(first);
                 ratio = Math.max(0.8f, Math.min(1.91f, ratio));
                 final LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) mediaFrame.getLayoutParams();
                 params.height = (int) (width / ratio);
@@ -2333,7 +2374,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 this.message = message;
                 this.position = position;
                 final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, AndroidUtilities.getPhotoSize());
-                imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "800_800", (Drawable) null, message.photoThumbsObject);
+                if (size != null) {
+                    imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "800_800", (Drawable) null, message.photoThumbsObject);
+                } else {
+                    // a video sent without a thumbnail: a dark frame with the play mark until it plays
+                    imageView.setImageDrawable(new android.graphics.drawable.ColorDrawable(0xFF101010));
+                }
                 setContentDescription(LocaleController.getString(message.isVideo() ? R.string.AttachVideo : message.isGif() ? R.string.AttachGif : R.string.AttachPhoto));
                 updateControls();
             }

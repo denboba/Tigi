@@ -10671,6 +10671,8 @@
     <string name="NilakVote">Vote</string>
     <string name="NilakTapToOpen">Tap to open</string>
     <string name="NilakDownloading">Downloading…</string>
+    <string name="NilakPdfCantShow">This PDF can’t be shown here. Open it in another app.</string>
+    <string name="NilakPdfLocked">This PDF is protected with a password. Open it in another app.</string>
     <string name="NilakInterestEducation">Education</string>
     <string name="NilakInterestHealth">Health</string>
     <string name="NilakInterestFashion">Fashion</string>

@@ -48,6 +48,7 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     public static final int KIND_DOCUMENT = 3;
     public static final int KIND_LINK = 4;
     public static final int KIND_ARTICLE = 5;
+    public static final int KIND_STICKER = 6;
 
     private final BaseFragment fragment;
     private MessageObject message;
@@ -56,12 +57,18 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     private boolean voted;
     private ImageView playButton;
     private TextView documentStatus;
+    private AudioProgressView audioProgress;
+    private TextView audioTime;
+    private BackupImageView stickerView;
+    private BackupImageView documentPreview;
+    private boolean openWhenDownloaded;
     private final Runnable playState = new Runnable() {
         @Override
         public void run() {
             updatePlayButton();
+            updateAudioProgress();
             if (isAttachedToWindow() && kind == KIND_AUDIO && message != null && MediaController.getInstance().isPlayingMessage(message)) {
-                AndroidUtilities.runOnUIThread(this, 500);
+                AndroidUtilities.runOnUIThread(this, 250);
             }
         }
     };
@@ -82,6 +89,9 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         if (media instanceof TLRPC.TL_messageMediaPoll && ((TLRPC.TL_messageMediaPoll) media).poll != null) {
             return KIND_POLL;
         }
+        if (isBigEmoji(message) || message.isSticker() || message.isAnimatedSticker()) {
+            return KIND_STICKER;
+        }
         if (message.isMusic() || message.isVoice()) {
             return KIND_AUDIO;
         }
@@ -99,6 +109,15 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         return KIND_NONE;
     }
 
+    /** A text post of one emoji that Telegram animates (an animated emoji or one custom emoji), shown big. */
+    public static boolean isBigEmoji(MessageObject message) {
+        if (message == null || message.messageOwner == null) {
+            return false;
+        }
+        final TLRPC.MessageMedia media = MessageObject.getMedia(message.messageOwner);
+        return (media == null || media instanceof TLRPC.TL_messageMediaEmpty) && (message.emojiAnimatedSticker != null || message.emojiAnimatedStickerId != null);
+    }
+
     /** Shows the message's attachment; returns false (and hides) when the card cannot show it. */
     public boolean bind(MessageObject message) {
         this.message = message;
@@ -106,7 +125,15 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         removeAllViews();
         playButton = null;
         documentStatus = null;
+        audioProgress = null;
+        audioTime = null;
+        stickerView = null;
+        documentPreview = null;
+        openWhenDownloaded = false;
         switch (kind) {
+            case KIND_STICKER:
+                buildSticker();
+                break;
             case KIND_POLL:
                 buildPoll();
                 if (isAttachedToWindow()) {
@@ -334,32 +361,142 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         return row;
     }
 
+    /* stickers and big emoji */
+
+    /** A sticker (static, animated or video) or a single animated emoji, drawn big and animated as in chats. */
+    private void buildSticker() {
+        setPadding(dp(12), dp(4), dp(12), dp(8));
+        setBackground(null);
+        final FrameLayout frame = new FrameLayout(getContext());
+        stickerView = new BackupImageView(getContext());
+        stickerView.setAspectFit(true);
+        stickerView.getImageReceiver().setAutoRepeat(1);
+        frame.addView(stickerView, LayoutHelper.createFrame(176, 176, Gravity.CENTER));
+        frame.setOnClickListener(v -> onStickerTap());
+        final String alt = stickerAlt();
+        frame.setContentDescription(TextUtils.isEmpty(alt) ? LocaleController.getString(R.string.AttachSticker) : alt + " " + LocaleController.getString(R.string.AttachSticker));
+        addView(frame, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 184));
+        bindStickerImage();
+    }
+
+    private String stickerAlt() {
+        if (isBigEmoji(message)) {
+            return message.messageText != null ? message.messageText.toString() : null;
+        }
+        final TLRPC.Document document = message.getDocument();
+        if (document != null) {
+            for (int i = 0; i < document.attributes.size(); i++) {
+                if (document.attributes.get(i) instanceof TLRPC.TL_documentAttributeSticker) {
+                    return document.attributes.get(i).alt;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void bindStickerImage() {
+        if (stickerView == null || message == null) {
+            return;
+        }
+        final TLRPC.Document document = message.getDocument();
+        if (document == null) {
+            // a custom emoji whose file is still being looked up: the emoji itself until it arrives
+            message.loadAnimatedEmojiDocument();
+            stickerView.setImageDrawable(null);
+            return;
+        }
+        final org.telegram.messenger.ImageReceiver receiver = stickerView.getImageReceiver();
+        if (MessageObject.isTextColorEmoji(document)) {
+            stickerView.setColorFilter(Theme.getAnimatedEmojiColorFilter(fragment != null ? fragment.getResourceProvider() : null));
+        } else {
+            stickerView.setColorFilter(null);
+        }
+        final TLRPC.PhotoSize thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 90);
+        final org.telegram.messenger.SvgHelper.SvgDrawable svgThumb = org.telegram.messenger.DocumentObject.getSvgThumb(document, Theme.key_windowBackgroundGray, 1.0f);
+        final String color = isBigEmoji(message) && message.emojiAnimatedStickerColor != null ? message.emojiAnimatedStickerColor : "";
+        final String filter = "176_176" + color;
+        if (MessageObject.canAutoplayAnimatedSticker(document)) {
+            if (svgThumb != null) {
+                receiver.setImage(ImageLocation.getForDocument(document), filter, ImageLocation.getForDocument(thumb, document), null, null, null, svgThumb, 0, null, message, 1);
+            } else if (thumb != null) {
+                receiver.setImage(ImageLocation.getForDocument(document), filter, ImageLocation.getForDocument(thumb, document), null, (String) null, message, 1);
+            } else {
+                receiver.setImage(ImageLocation.getForDocument(document), filter, null, null, message, 1);
+            }
+        } else if (svgThumb != null) {
+            receiver.setImage(ImageLocation.getForDocument(document), filter, svgThumb, "webp", message, 1);
+        } else {
+            receiver.setImage(ImageLocation.getForDocument(document), filter, null, "webp", message, 1);
+        }
+    }
+
+    /** A sticker opens its pack (add it, or send one); a big emoji plays again. */
+    private void onStickerTap() {
+        if (message == null || fragment == null || fragment.getParentActivity() == null) {
+            return;
+        }
+        if (isBigEmoji(message)) {
+            final org.telegram.ui.Components.RLottieDrawable lottie = stickerView != null ? stickerView.getImageReceiver().getLottieAnimation() : null;
+            if (lottie != null) {
+                lottie.setCurrentFrame(0, false);
+                lottie.start();
+            }
+            return;
+        }
+        final TLRPC.InputStickerSet set = MessageObject.getInputStickerSet(message.messageOwner);
+        if (set != null) {
+            fragment.showDialog(new org.telegram.ui.Components.StickersAlert(fragment.getParentActivity(), fragment, set, null, null, fragment.getResourceProvider(), false));
+        }
+    }
+
     /* music and voice */
 
+    /** Music: cover, title, artist, a progress bar to seek and the time; voice: the same without the cover. */
     private void buildAudio() {
         setPadding(dp(12), dp(10), dp(12), dp(10));
         setBackground(null);
         final LinearLayout row = new LinearLayout(getContext());
         row.setOrientation(HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10), dp(8), dp(14), dp(8));
+        row.setPadding(dp(10), dp(10), dp(14), dp(10));
         row.setBackground(box());
-        playButton = new ImageView(getContext());
-        playButton.setScaleType(ImageView.ScaleType.CENTER);
-        playButton.setBackground(Theme.createRoundRectDrawable(dp(22), TigiStyle.accent()));
-        playButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
+        final FrameLayout left = new FrameLayout(getContext());
+        final TLRPC.Document document = message.getDocument();
+        final TLRPC.PhotoSize coverThumb = document != null ? FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 320) : null;
+        final String artwork = message.isMusic() ? message.getArtworkUrl(true) : null;
+        if (message.isMusic() && (coverThumb != null || !TextUtils.isEmpty(artwork))) {
+            final BackupImageView cover = new BackupImageView(getContext());
+            cover.setRoundRadius(dp(12));
+            if (coverThumb != null) {
+                cover.setImage(ImageLocation.getForDocument(coverThumb, document), "112_112", (android.graphics.drawable.Drawable) null, message);
+            } else {
+                cover.setImage(ImageLocation.getForPath(artwork), "112_112", (android.graphics.drawable.Drawable) null, message);
+            }
+            left.addView(cover, LayoutHelper.createFrame(56, 56));
+            playButton = new ImageView(getContext());
+            playButton.setScaleType(ImageView.ScaleType.CENTER);
+            playButton.setBackground(Theme.createRoundRectDrawable(dp(12), 0x66000000));
+            playButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
+            left.addView(playButton, LayoutHelper.createFrame(56, 56));
+        } else {
+            playButton = new ImageView(getContext());
+            playButton.setScaleType(ImageView.ScaleType.CENTER);
+            playButton.setBackground(Theme.createRoundRectDrawable(dp(26), TigiStyle.accent()));
+            playButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
+            left.addView(playButton, LayoutHelper.createFrame(52, 52, Gravity.CENTER));
+        }
         playButton.setOnClickListener(v -> togglePlay());
-        row.addView(playButton, LayoutHelper.createLinear(44, 44));
+        row.addView(left, LayoutHelper.createLinear(56, 56));
         final LinearLayout texts = new LinearLayout(getContext());
         texts.setOrientation(VERTICAL);
         final TextView title = new TextView(getContext());
         final TextView subtitle = new TextView(getContext());
         if (message.isMusic()) {
             title.setText(message.getMusicTitle());
-            subtitle.setText(message.getMusicAuthor() + " · " + AndroidUtilities.formatShortDuration((int) message.getDuration()));
+            subtitle.setText(message.getMusicAuthor());
         } else {
             title.setText(LocaleController.getString(R.string.AttachAudio));
-            subtitle.setText(AndroidUtilities.formatShortDuration((int) message.getDuration()));
+            subtitle.setVisibility(GONE);
         }
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         title.setTypeface(TigiStyle.displayBold());
@@ -372,10 +509,18 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         subtitle.setEllipsize(TextUtils.TruncateAt.END);
         texts.addView(title);
         texts.addView(subtitle);
+        audioProgress = new AudioProgressView(getContext());
+        texts.addView(audioProgress, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 24, 0, 2, 0, 0));
+        audioTime = new TextView(getContext());
+        audioTime.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+        audioTime.setTextColor(gray());
+        audioTime.setSingleLine(true);
+        texts.addView(audioTime);
         row.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 12, 0, 0, 0));
-        row.setOnClickListener(v -> togglePlay());
+        row.setContentDescription(title.getText() + (message.isMusic() ? ", " + subtitle.getText() : ""));
         addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         updatePlayButton();
+        updateAudioProgress();
     }
 
     private void togglePlay() {
@@ -385,8 +530,6 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         final MediaController controller = MediaController.getInstance();
         if (controller.isPlayingMessage(message) && !controller.isMessagePaused()) {
             controller.pauseMessage(message);
-        } else if (controller.isPlayingMessage(message)) {
-            controller.playMessage(message);
         } else {
             controller.playMessage(message);
         }
@@ -403,6 +546,91 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         playButton.setContentDescription(LocaleController.getString(playing ? R.string.AccActionPause : R.string.AccActionPlay));
     }
 
+    /** The playing copy of this message (MediaController may hold another object for the same post). */
+    private MessageObject playingCopy() {
+        final MediaController controller = MediaController.getInstance();
+        return message != null && controller.isPlayingMessage(message) ? controller.getPlayingMessageObject() : null;
+    }
+
+    private void updateAudioProgress() {
+        if (audioProgress == null || message == null) {
+            return;
+        }
+        final int duration = (int) message.getDuration();
+        final MessageObject playing = playingCopy();
+        if (playing != null) {
+            audioProgress.setProgress(playing.audioProgress);
+            audioTime.setText(AndroidUtilities.formatShortDuration(playing.audioProgressSec) + " / " + AndroidUtilities.formatShortDuration(duration));
+        } else {
+            audioProgress.setProgress(0);
+            audioTime.setText(AndroidUtilities.formatShortDuration(duration));
+        }
+    }
+
+    /** A thin rounded progress line; tapping or dragging on it seeks while the track plays (or starts it there). */
+    private class AudioProgressView extends View {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.RectF rect = new android.graphics.RectF();
+        private float progress;
+
+        AudioProgressView(Context context) {
+            super(context);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        void setProgress(float value) {
+            progress = Math.max(0f, Math.min(1f, value));
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            final float h = dp(4);
+            final float top = (getHeight() - h) / 2f;
+            paint.setColor(Theme.multAlpha(gray(), 0.35f));
+            rect.set(0, top, getWidth(), top + h);
+            canvas.drawRoundRect(rect, h / 2f, h / 2f, paint);
+            paint.setColor(TigiStyle.accent());
+            rect.set(0, top, getWidth() * progress, top + h);
+            canvas.drawRoundRect(rect, h / 2f, h / 2f, paint);
+            if (playingCopy() != null) {
+                canvas.drawCircle(Math.max(dp(5), Math.min(getWidth() - dp(5), getWidth() * progress)), getHeight() / 2f, dp(5), paint);
+            }
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            if (message == null || getWidth() <= 0) {
+                return false;
+            }
+            final float value = Math.max(0f, Math.min(1f, event.getX() / getWidth()));
+            switch (event.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                    setProgress(value);
+                    return true;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    setProgress(value);
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                    final MediaController controller = MediaController.getInstance();
+                    if (!controller.isPlayingMessage(message)) {
+                        controller.playMessage(message);
+                    }
+                    final MessageObject playing = playingCopy();
+                    if (playing != null) {
+                        controller.seekToProgress(playing, value);
+                    }
+                    AndroidUtilities.runOnUIThread(playState, 150);
+                    return true;
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    updateAudioProgress();
+                    return true;
+            }
+            return super.onTouchEvent(event);
+        }
+    }
+
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -410,9 +638,17 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
             AndroidUtilities.runOnUIThread(playState);
         }
         if (fragment != null) {
-            NotificationCenter.getInstance(fragment.getCurrentAccount()).addObserver(this, NotificationCenter.didUpdatePollResults);
+            final NotificationCenter center = NotificationCenter.getInstance(fragment.getCurrentAccount());
+            center.addObserver(this, NotificationCenter.didUpdatePollResults);
+            center.addObserver(this, NotificationCenter.animatedEmojiDocumentLoaded);
+            center.addObserver(this, NotificationCenter.fileLoaded);
+            center.addObserver(this, NotificationCenter.fileLoadProgressChanged);
+            center.addObserver(this, NotificationCenter.fileLoadFailed);
         }
         refreshPollResults();
+        if (kind == KIND_STICKER && message != null && message.emojiAnimatedSticker == null && message.emojiAnimatedStickerId != null) {
+            message.loadAnimatedEmojiDocument();
+        }
     }
 
     @Override
@@ -420,13 +656,28 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         super.onDetachedFromWindow();
         AndroidUtilities.cancelRunOnUIThread(playState);
         if (fragment != null) {
-            NotificationCenter.getInstance(fragment.getCurrentAccount()).removeObserver(this, NotificationCenter.didUpdatePollResults);
+            final NotificationCenter center = NotificationCenter.getInstance(fragment.getCurrentAccount());
+            center.removeObserver(this, NotificationCenter.didUpdatePollResults);
+            center.removeObserver(this, NotificationCenter.animatedEmojiDocumentLoaded);
+            center.removeObserver(this, NotificationCenter.fileLoaded);
+            center.removeObserver(this, NotificationCenter.fileLoadProgressChanged);
+            center.removeObserver(this, NotificationCenter.fileLoadFailed);
         }
     }
 
     /** Server poll results (after a vote, or anyone else's): applied to this card's poll at once. */
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.animatedEmojiDocumentLoaded) {
+            if (kind == KIND_STICKER && args.length > 0 && args[0] == message) {
+                bindStickerImage();
+            }
+            return;
+        }
+        if (id == NotificationCenter.fileLoaded || id == NotificationCenter.fileLoadProgressChanged || id == NotificationCenter.fileLoadFailed) {
+            onFileEvent(id, args);
+            return;
+        }
         if (id != NotificationCenter.didUpdatePollResults || kind != KIND_POLL || message == null || args.length < 3) {
             return;
         }
@@ -534,16 +785,58 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         }
     }
 
+    /** Telegram's file colours by type: PDF red, documents blue, sheets green, archives orange, media violet. */
+    private static int documentColor(String extension) {
+        switch (extension) {
+            case "PDF":
+                return 0xFFE5484D;
+            case "DOC": case "DOCX": case "TXT": case "RTF": case "ODT": case "PAGE":
+                return 0xFF3B82F6;
+            case "XLS": case "XLSX": case "CSV": case "ODS": case "NUMB":
+                return 0xFF22A55B;
+            case "PPT": case "PPTX": case "KEY": case "ODP":
+                return 0xFFF97316;
+            case "ZIP": case "RAR": case "7Z": case "TAR": case "GZ":
+                return 0xFFE8A33D;
+            case "APK": case "XAPK":
+                return 0xFF3DDC84;
+            case "MP4": case "MKV": case "AVI": case "MOV": case "WEBM": case "MP3": case "M4A": case "FLAC": case "OGG": case "WAV":
+                return 0xFF8B5CF6;
+            default:
+                return TigiStyle.accent();
+        }
+    }
+
+    /** A file: a preview on top when there is one (the sender's thumbnail, or a PDF's first page once downloaded). */
     private void buildDocument() {
         setPadding(dp(12), dp(10), dp(12), dp(10));
         setBackground(null);
         final TLRPC.Document document = message.getDocument();
         final String name = FileLoader.getDocumentFileName(document);
+        final boolean pdf = TigiPdf.isPdf(document);
+        final LinearLayout card = new LinearLayout(getContext());
+        card.setOrientation(VERTICAL);
+        card.setBackground(box());
+        final TLRPC.PhotoSize thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 320);
+        final boolean showPreview = pdf || thumb != null && !(thumb instanceof TLRPC.TL_photoStrippedSize) && !(thumb instanceof TLRPC.TL_photoPathSize);
+        if (showPreview) {
+            documentPreview = new BackupImageView(getContext());
+            documentPreview.setRoundRadius(dp(14), dp(14), 0, 0);
+            documentPreview.getImageReceiver().setAspectFit(false);
+            documentPreview.setBackgroundColor(pdf ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundGray));
+            if (thumb != null) {
+                documentPreview.setImage(ImageLocation.getForDocument(thumb, document), "640_360", (android.graphics.drawable.Drawable) null, message);
+            }
+            card.addView(documentPreview, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, pdf ? 220 : 160));
+            if (thumb == null) {
+                documentPreview.setVisibility(GONE); // a PDF without a thumbnail: its own first page once it is here
+            }
+            loadPdfPreview();
+        }
         final LinearLayout row = new LinearLayout(getContext());
         row.setOrientation(HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(10), dp(8), dp(14), dp(8));
-        row.setBackground(box());
         final TextView icon = new TextView(getContext());
         String extension = "";
         if (name != null && name.lastIndexOf('.') > 0) {
@@ -552,12 +845,15 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
                 extension = extension.substring(0, 4);
             }
         }
+        if (pdf) {
+            extension = "PDF";
+        }
         icon.setText(extension.isEmpty() ? "FILE" : extension);
         icon.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
         icon.setTypeface(TigiStyle.displayExtraBold());
         icon.setTextColor(0xFFFFFFFF);
         icon.setGravity(Gravity.CENTER);
-        icon.setBackground(Theme.createRoundRectDrawable(dp(10), TigiStyle.accent()));
+        icon.setBackground(Theme.createRoundRectDrawable(dp(10), documentColor(extension)));
         row.addView(icon, LayoutHelper.createLinear(44, 44));
         final LinearLayout texts = new LinearLayout(getContext());
         texts.setOrientation(VERTICAL);
@@ -574,52 +870,117 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         texts.addView(title);
         texts.addView(documentStatus);
         row.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 12, 0, 0, 0));
-        row.setOnClickListener(v -> openDocument());
-        addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        updateDocumentStatus(false);
+        card.addView(row);
+        card.setOnClickListener(v -> openDocument());
+        card.setContentDescription(title.getText());
+        addView(card, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        updateDocumentStatus(FileLoader.getInstance(fragment.getCurrentAccount()).isLoadingFile(FileLoader.getAttachFileName(document)) ? 0f : -1f);
+    }
+
+    /** A downloaded PDF's first page as the preview (rendered once, off the main thread, and cached). */
+    private void loadPdfPreview() {
+        if (documentPreview == null || message == null || !TigiPdf.isPdf(message.getDocument())) {
+            return;
+        }
+        final File file = documentFile();
+        if (file == null) {
+            return;
+        }
+        final MessageObject bound = message;
+        final int width = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
+        TigiPdf.firstPage(file, width, bitmap -> {
+            if (bitmap == null || bound != message || documentPreview == null) {
+                return;
+            }
+            documentPreview.setImageBitmap(bitmap);
+            documentPreview.getImageReceiver().setAspectFit(false);
+            documentPreview.setVisibility(VISIBLE);
+        });
     }
 
     private File documentFile() {
-        final File file = FileLoader.getInstance(fragment.getCurrentAccount()).getPathToMessage(message.messageOwner);
-        return file != null && file.exists() ? file : null;
+        if (message == null || fragment == null) {
+            return null;
+        }
+        File file = FileLoader.getInstance(fragment.getCurrentAccount()).getPathToMessage(message.messageOwner);
+        if (file != null && file.exists()) {
+            return file;
+        }
+        if (!TextUtils.isEmpty(message.messageOwner.attachPath)) {
+            file = new File(message.messageOwner.attachPath);
+            if (file.exists()) {
+                return file;
+            }
+        }
+        return null;
     }
 
-    private void updateDocumentStatus(boolean downloading) {
+    /** progress: -1 idle, 0..1 downloading. */
+    private void updateDocumentStatus(float progress) {
         if (documentStatus == null || message == null) {
             return;
         }
-        final String size = AndroidUtilities.formatFileSize(message.getDocument().size);
+        final long total = message.getDocument().size;
+        final String size = AndroidUtilities.formatFileSize(total);
         if (documentFile() != null) {
             documentStatus.setText(size + " · " + LocaleController.getString(R.string.NilakTapToOpen));
+        } else if (progress >= 0) {
+            documentStatus.setText(AndroidUtilities.formatFileSize((long) (total * progress)) + " / " + size + " · " + LocaleController.getString(R.string.NilakDownloading));
         } else {
-            documentStatus.setText(size + (downloading ? " · " + LocaleController.getString(R.string.NilakDownloading) : ""));
+            documentStatus.setText(size);
         }
     }
 
+    /** Downloads of this card's file: progress in the status line; when it lands, the preview and (if asked) open. */
+    private void onFileEvent(int id, Object... args) {
+        if (kind != KIND_DOCUMENT || message == null || args.length == 0 || !(args[0] instanceof String)) {
+            return;
+        }
+        if (!args[0].equals(FileLoader.getAttachFileName(message.getDocument()))) {
+            return;
+        }
+        if (id == NotificationCenter.fileLoadProgressChanged) {
+            final long loaded = args.length > 1 && args[1] instanceof Long ? (Long) args[1] : 0;
+            final long total = args.length > 2 && args[2] instanceof Long ? (Long) args[2] : 0;
+            updateDocumentStatus(total > 0 ? Math.min(1f, loaded / (float) total) : 0f);
+        } else if (id == NotificationCenter.fileLoaded) {
+            updateDocumentStatus(-1f);
+            loadPdfPreview();
+            if (openWhenDownloaded) {
+                openWhenDownloaded = false;
+                openDocument();
+            }
+        } else {
+            openWhenDownloaded = false;
+            updateDocumentStatus(-1f);
+        }
+    }
+
+    /** PDFs open in Nilak's reader; other files in the app the phone uses for them. Not here yet: download, then open. */
     private void openDocument() {
-        if (message == null || fragment.getParentActivity() == null) {
+        if (message == null || fragment == null || fragment.getParentActivity() == null) {
             return;
         }
-        if (documentFile() != null) {
-            AndroidUtilities.openForView(message, fragment.getParentActivity(), fragment.getResourceProvider(), false);
+        final File file = documentFile();
+        if (file != null) {
+            if (TigiPdf.isPdf(message.getDocument())) {
+                fragment.presentFragment(new TigiPdfViewerActivity(message, file));
+            } else {
+                AndroidUtilities.openForView(message, fragment.getParentActivity(), fragment.getResourceProvider(), false);
+            }
             return;
         }
-        FileLoader.getInstance(fragment.getCurrentAccount()).loadFile(message.getDocument(), message, FileLoader.PRIORITY_NORMAL, 0);
-        updateDocumentStatus(true);
-        // check until the file is there, then it opens with the next tap
-        final MessageObject watched = message;
-        final Runnable[] check = new Runnable[1];
-        final int[] tries = {0};
-        check[0] = () -> {
-            if (watched != message || !isAttachedToWindow()) {
-                return;
-            }
-            updateDocumentStatus(documentFile() == null);
-            if (documentFile() == null && ++tries[0] < 120) {
-                AndroidUtilities.runOnUIThread(check[0], 1000);
-            }
-        };
-        AndroidUtilities.runOnUIThread(check[0], 1000);
+        final FileLoader loader = FileLoader.getInstance(fragment.getCurrentAccount());
+        if (loader.isLoadingFile(FileLoader.getAttachFileName(message.getDocument()))) {
+            // a second tap while it downloads stops it
+            loader.cancelLoadFile(message.getDocument());
+            openWhenDownloaded = false;
+            updateDocumentStatus(-1f);
+            return;
+        }
+        openWhenDownloaded = true;
+        loader.loadFile(message.getDocument(), message, FileLoader.PRIORITY_HIGH, 0);
+        updateDocumentStatus(0f);
     }
 
     /* link previews */

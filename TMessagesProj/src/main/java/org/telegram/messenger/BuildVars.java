@@ -72,6 +72,8 @@ public class BuildVars {
     // does not allow buying digital goods outside Play billing, and those screens would offer exactly that.
     /** Create's channel screen on the plain feed background; off = the normal chat wallpaper (posts stay cards either way). */
     public static boolean TIGI_COMPOSE_FEED_LOOK = false;
+    /** Feed cards play every channel video (no thumbnail, not marked for streaming, .mkv files) instead of sending people to the chat. */
+    public static boolean TIGI_STREAM_MOVIES = true;
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
 

@@ -2475,7 +2475,8 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 });
             }
 
-            final boolean allowTestBackend = (BuildVars.DEBUG_VERSION || TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE) || getConnectionsManager().isTestBackend();
+            // Nilak: review numbers switch servers by themselves; the debug checkbox stays out of store builds
+            final boolean allowTestBackend = BuildVars.DEBUG_VERSION || TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE;
             if (allowTestBackend && activityMode == MODE_LOGIN) {
                 testBackendCheckBox = new CheckBoxCell(context, 2);
                 testBackendCheckBox.setText(getString(R.string.DebugTestBackend), "", testBackend = getConnectionsManager().isTestBackend(), false);
@@ -3046,6 +3047,10 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 && reviewPhone.charAt(5) >= '1' && reviewPhone.charAt(5) <= '3';
             if (reviewLogin && !getConnectionsManager().isTestBackend()) {
                 testBackend = true;
+                getConnectionsManager().switchBackend(false);
+            } else if (!reviewLogin && getConnectionsManager().isTestBackend() && !BuildVars.DEBUG_VERSION && !(TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE)) {
+                // a real number after a review number: back to the real servers
+                testBackend = false;
                 getConnectionsManager().switchBackend(false);
             }
             if (countryState == COUNTRY_STATE_EMPTY && !reviewLogin) {
@@ -4320,29 +4325,67 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
          * Nilak: on Telegram's test servers (the Google Play review numbers +99966 X YYYY) the code is the digit X
          * repeated for the code's length, which the server sets (5 or 6 digits). Filled in and sent automatically.
          */
-        private void fillReviewCode() {
-            if (!getConnectionsManager().isTestBackend() || codeFieldContainer == null || codeFieldContainer.codeField == null) {
-                return;
+        /** The DC digit of a Google Play review number (+99966 X YYYY) on the test servers, or 0. */
+        private char reviewDigit() {
+            if (!getConnectionsManager().isTestBackend()) {
+                return 0;
             }
             final String digits = PhoneFormat.stripExceptNumbers(phone != null ? phone : "");
-            if (digits.length() != 10 || !digits.startsWith("99966")) {
+            if (digits.length() != 10 || !digits.startsWith("99966") || digits.charAt(5) < '1' || digits.charAt(5) > '3') {
+                return 0;
+            }
+            return digits.charAt(5);
+        }
+
+        private boolean reviewRetried;
+
+        private void fillReviewCode() {
+            reviewRetried = false;
+            if (reviewDigit() == 0 || codeFieldContainer == null || codeFieldContainer.codeField == null) {
                 return;
             }
-            final char dc = digits.charAt(5);
-            if (dc < '1' || dc > '3') {
-                return;
+            fillReviewCodeWhenShown(0);
+        }
+
+        /** Waits until this page is on screen and accepts input (not during the slide-in), then fills and sends once. */
+        private void fillReviewCodeWhenShown(int attempt) {
+            AndroidUtilities.runOnUIThread(() -> {
+                final char dc = reviewDigit();
+                if (dc == 0 || codeFieldContainer == null || codeFieldContainer.codeField == null || nextPressed) {
+                    return;
+                }
+                if (currentViewNum < 0 || views[currentViewNum] != this || codeFieldContainer.isFocusSuppressed) {
+                    if (attempt < 10) {
+                        fillReviewCodeWhenShown(attempt + 1);
+                    }
+                    return;
+                }
+                final StringBuilder code = new StringBuilder();
+                for (int i = 0; i < codeFieldContainer.codeField.length; i++) {
+                    code.append(dc);
+                }
+                // filling the last box sends the code by itself; the explicit call is a no-op then
+                for (int i = 0; i < codeFieldContainer.codeField.length; i++) {
+                    codeFieldContainer.codeField[i].setText(String.valueOf(dc));
+                }
+                onNextPressed(code.toString());
+            }, attempt == 0 ? 500 : 300);
+        }
+
+        /** Test servers use the DC digit 5 or 6 times; when one length is refused, the other is tried once. */
+        private boolean retryReviewCode() {
+            final char dc = reviewDigit();
+            if (dc == 0 || reviewRetried || codeFieldContainer == null || codeFieldContainer.codeField == null) {
+                return false;
             }
+            reviewRetried = true;
+            final int other = codeFieldContainer.codeField.length == 6 ? 5 : 6;
             final StringBuilder code = new StringBuilder();
-            for (int i = 0; i < codeFieldContainer.codeField.length; i++) {
-                codeFieldContainer.codeField[i].setText(String.valueOf(dc));
+            for (int i = 0; i < other; i++) {
                 code.append(dc);
             }
-            final String value = code.toString();
-            AndroidUtilities.runOnUIThread(() -> {
-                if (currentViewNum >= 0 && views[currentViewNum] == this) {
-                    onNextPressed(value);
-                }
-            }, 600);
+            AndroidUtilities.runOnUIThread(() -> onNextPressed(code.toString()), 300);
+            return true;
         }
 
         @Override
@@ -5010,6 +5053,9 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                                     boolean isWrongCode = false;
                                     if (error.text.contains("PHONE_NUMBER_INVALID")) {
                                         needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString("InvalidPhoneNumber", R.string.InvalidPhoneNumber));
+                                    } else if ((error.text.contains("PHONE_CODE_EMPTY") || error.text.contains("PHONE_CODE_INVALID")) && retryReviewCode()) {
+                                        // Nilak: review number, the other code length is being tried
+                                        isWrongCode = true;
                                     } else if (error.text.contains("PHONE_CODE_EMPTY") || error.text.contains("PHONE_CODE_INVALID")) {
                                         shakeWrongCode();
                                         isWrongCode = true;

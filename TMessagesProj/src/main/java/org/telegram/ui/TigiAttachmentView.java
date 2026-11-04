@@ -814,7 +814,7 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     }
 
     /** Telegram's file colours by type: PDF red, documents blue, sheets green, archives orange, media violet. */
-    private static int documentColor(String extension) {
+    static int documentColor(String extension) {
         switch (extension) {
             case "PDF":
                 return 0xFFE5484D;

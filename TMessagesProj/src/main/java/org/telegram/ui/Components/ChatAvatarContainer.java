@@ -39,6 +39,7 @@ import androidx.core.content.ContextCompat;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.Emoji;
@@ -585,6 +586,19 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
             if (chat == null) return;
             parentFragment.presentFragment(ProfileActivity.of(-chat.id), removeLast);
             return;
+        }
+
+        // Nilak: a person with a personal channel, or a channel, is shown as a Nilak profile (Telegram's info is in its ⋯)
+        if (BuildVars.TIGI_PROFILE_ROUTING && BuildVars.TIGI_HOME && !monoforum && !parentFragment.isTopic && parentFragment.getChatMode() == 0) {
+            if (user != null && !UserObject.isUserSelf(user) && !user.bot) {
+                final TLRPC.UserFull full = parentFragment.getCurrentUserInfo();
+                if (full != null && full.personal_channel_id != 0 && org.telegram.ui.TigiNavigation.openProfile(parentFragment, user.id)) {
+                    return;
+                }
+            } else if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.forum
+                && org.telegram.ui.TigiNavigation.openProfile(parentFragment, -chat.id)) {
+                return;
+            }
         }
 
         if (user != null) {

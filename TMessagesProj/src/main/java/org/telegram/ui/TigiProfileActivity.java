@@ -175,22 +175,16 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         gridManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
             @Override
             public int getSpanSize(int position) {
-                return adapter.getItemViewType(position) == Adapter.TYPE_TILE ? 1 : 3;
+                return 3; // rows lay out their own tiles (TileRow)
             }
         });
         listView.setLayoutManager(gridManager);
         adapter = new Adapter();
         listView.setAdapter(adapter);
-        listView.setOnItemClickListener((view, position) -> {
-            final int index = position - Adapter.FIRST_TILE;
-            if (index >= 0 && index < tiles[tab].size()) {
-                openPost(tiles[tab].get(index));
-            }
-        });
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
-                if (gridManager.findLastVisibleItemPosition() >= adapter.getItemCount() - 9) {
+                if (gridManager.findLastVisibleItemPosition() >= adapter.getItemCount() - 4) {
                     load(tab);
                 }
             }
@@ -493,13 +487,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         if (message.messageOwner instanceof TLRPC.TL_messageService || message.needDrawBluredPreview()) {
             return;
         }
-        final boolean visual = message.photoThumbs != null && !message.photoThumbs.isEmpty() && (message.isPhoto() || message.isVideo() || message.isGif());
+        // every kind of post gets a tile (TigiGridTile draws it); only photos and videos of an album are merged
+        final boolean visual = TigiFeedBase.isCardMedia(message);
         if (!visual) {
-            // text posts and articles get a text tile in Posts; anything else (stickers, voice, files) stays out
-            if (which != TAB_POSTS || !(TigiArticle.isArticle(message) || !TextUtils.isEmpty(message.messageOwner.message) && message.messageOwner.media == null
-                || message.messageOwner.media instanceof TLRPC.TL_messageMediaEmpty || message.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage)) {
-                return;
-            }
             tiles[which].add(message);
             return;
         }
@@ -875,6 +865,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             savedTab = tabView(context, R.string.NilakSavedTab, TAB_SAVED);
             tabs.addView(postsTab, LayoutHelper.createLinear(0, 44, 1f));
             tabs.addView(reelsTab, LayoutHelper.createLinear(0, 44, 1f));
+            // one grid for every kind of post: reels stand tall inside Posts instead of a tab of their own
+            reelsTab.setVisibility(GONE);
             if (self) {
                 // bookmarks are private: only on the own profile
                 tabs.addView(savedTab, LayoutHelper.createLinear(0, 44, 1f));
@@ -1207,8 +1199,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
         @Override
         public int getItemCount() {
-            final int count = tiles[tab].size();
-            return 1 + (count == 0 ? 1 : count);
+            buildRows();
+            return 1 + (rows.isEmpty() ? 1 : rows.size());
         }
 
         @Override
@@ -1224,7 +1216,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return holder.getItemViewType() == TYPE_TILE;
+            return false; // the tiles inside a row take the taps
         }
 
         @Override
@@ -1254,7 +1246,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 view = state;
                 view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else {
-                view = new Tile(parent.getContext());
+                view = new TileRow(parent.getContext());
+                view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
             return new RecyclerListView.Holder(view);
         }
@@ -1262,8 +1255,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             if (holder.getItemViewType() == TYPE_TILE) {
-                final MessageObject message = tiles[tab].get(position - FIRST_TILE);
-                ((Tile) holder.itemView).bind(message, albumSizes.containsKey(message));
+                final int[] row = rows.get(position - FIRST_TILE);
+                ((TileRow) holder.itemView).bind(row[0], row[1]);
             } else if (holder.getItemViewType() == TYPE_STATE) {
                 final TextView state = (TextView) holder.itemView;
                 state.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
@@ -1291,89 +1284,119 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
     }
 
-    private class Tile extends FrameLayout {
-        private final BackupImageView imageView;
-        private final TextView badge;
-        private final ImageView albumIcon;
-        private final TextView textView;
+    /* the grid: rows of three, and every few rows a video standing two rows tall, alternating sides */
 
-        Tile(Context context) {
+    private static final int ROW_THREE = 0;
+    private static final int ROW_TALL_LEFT = 1;
+    private static final int ROW_TALL_RIGHT = 2;
+    /** Each row: {type, index of its first post}. Rebuilt from tiles[tab] whenever the list is counted. */
+    private final ArrayList<int[]> rows = new ArrayList<>();
+
+    private static boolean standsTall(MessageObject message) {
+        return message.isVideo() && !message.isRoundVideo() && !message.isGif() && TigiFeedBase.isCardMedia(message);
+    }
+
+    private void buildRows() {
+        rows.clear();
+        final ArrayList<MessageObject> list = tiles[tab];
+        final boolean mosaic = tab != TAB_SAVED;
+        boolean left = true;
+        int sinceTall = 1;
+        int i = 0;
+        while (i < list.size()) {
+            if (mosaic && sinceTall >= 1 && list.size() - i >= 5 && standsTall(list.get(i))) {
+                rows.add(new int[]{left ? ROW_TALL_LEFT : ROW_TALL_RIGHT, i});
+                left = !left;
+                sinceTall = 0;
+                i += 5;
+            } else {
+                rows.add(new int[]{ROW_THREE, i});
+                sinceTall++;
+                i += 3;
+            }
+        }
+    }
+
+    private class TileRow extends ViewGroup {
+        private final TigiGridTile[] cells = new TigiGridTile[5];
+        private int type;
+        private int count;
+
+        TileRow(Context context) {
             super(context);
-            setPadding(dp(1), dp(1), dp(1), dp(1));
-            imageView = new BackupImageView(context);
-            imageView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
-            addView(imageView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-            badge = new TextView(context);
-            badge.setTextColor(0xFFFFFFFF);
-            badge.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-            badge.setTypeface(AndroidUtilities.bold());
-            badge.setShadowLayer(dp(2), 0, 0, 0x99000000);
-            addView(badge, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.LEFT, 6, 0, 0, 4));
-            albumIcon = new ImageView(context);
-            albumIcon.setImageResource(R.drawable.msg_gallery);
-            albumIcon.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
-            addView(albumIcon, LayoutHelper.createFrame(20, 20, Gravity.TOP | Gravity.RIGHT, 0, 6, 6, 0));
-            textView = new TextView(context);
-            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-            textView.setLineSpacing(dp(1), 1f);
-            textView.setPadding(dp(8), dp(8), dp(8), dp(8));
-            textView.setEllipsize(TextUtils.TruncateAt.END);
-            textView.setMaxLines(6);
-            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            for (int i = 0; i < cells.length; i++) {
+                cells[i] = new TigiGridTile(context);
+                cells[i].setOnClickListener(v -> {
+                    final MessageObject message = ((TigiGridTile) v).getMessage();
+                    if (message != null) {
+                        openPost(message);
+                    }
+                });
+                cells[i].setBackground(null);
+                addView(cells[i]);
+            }
         }
 
-        /** A text post or an article: its words on a soft violet square, articles with their title in bold. */
-        private boolean bindText(MessageObject message) {
-            final boolean visual = message.photoThumbs != null && !message.photoThumbs.isEmpty() && (message.isPhoto() || message.isVideo() || message.isGif());
-            if (visual) {
-                textView.setVisibility(GONE);
-                imageView.setVisibility(VISIBLE);
-                return false;
+        void bind(int type, int start) {
+            this.type = type;
+            final ArrayList<MessageObject> list = tiles[tab];
+            count = Math.min(type == ROW_THREE ? 3 : 5, list.size() - start);
+            for (int i = 0; i < cells.length; i++) {
+                if (i < count) {
+                    final MessageObject message = list.get(start + i);
+                    final Integer album = albumSizes.get(message);
+                    cells[i].setVisibility(VISIBLE);
+                    cells[i].bind(message, album != null ? album : 1, type != ROW_THREE && i == 0);
+                } else {
+                    cells[i].setVisibility(GONE);
+                }
             }
-            imageView.setVisibility(GONE);
-            badge.setVisibility(GONE);
-            albumIcon.setVisibility(GONE);
-            textView.setVisibility(VISIBLE);
-            textView.setBackgroundColor(Theme.multAlpha(TigiStyle.accent(), Theme.isCurrentThemeDark() ? 0.22f : 0.10f));
-            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-            final String text = message.messageOwner.message != null ? message.messageOwner.message.trim() : "";
-            if (TigiArticle.isArticle(message)) {
-                final String title = TigiArticle.titleOf(message);
-                final android.text.SpannableStringBuilder line = new android.text.SpannableStringBuilder();
-                line.append(LocaleController.getString(R.string.NilakArticleLabel).toUpperCase()).append("\n");
-                line.setSpan(new android.text.style.ForegroundColorSpan(TigiStyle.accent()), 0, line.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                final int start = line.length();
-                line.append(title);
-                line.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, line.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                textView.setText(line);
-                setContentDescription(LocaleController.getString(R.string.NilakArticleLabel) + ", " + title);
-            } else {
-                textView.setText(text);
-                setContentDescription(text);
-            }
-            return true;
+            requestLayout();
+        }
+
+        private int gap() {
+            return dp(2);
+        }
+
+        private int side(int width) {
+            return (width - 2 * gap()) / 3;
         }
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            // square tiles
-            super.onMeasure(widthMeasureSpec, widthMeasureSpec);
+            final int width = MeasureSpec.getSize(widthMeasureSpec);
+            final int s = side(width);
+            final int height = type == ROW_THREE ? s : 2 * s + gap();
+            for (int i = 0; i < count; i++) {
+                final int h = type != ROW_THREE && i == 0 ? height : s;
+                cells[i].measure(MeasureSpec.makeMeasureSpec(s, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY));
+            }
+            setMeasuredDimension(width, height + gap());
         }
 
-        void bind(MessageObject message, boolean album) {
-            if (bindText(message)) {
+        @Override
+        protected void onLayout(boolean changed, int l, int t, int r, int b) {
+            final int s = side(r - l);
+            final int g = gap();
+            if (type == ROW_THREE) {
+                for (int i = 0; i < count; i++) {
+                    final int x = i * (s + g);
+                    cells[i].layout(x, 0, x + s, s);
+                }
                 return;
             }
-            final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, 320);
-            imageView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "200_200", (android.graphics.drawable.Drawable) null, message.photoThumbsObject);
-            if (message.isVideo()) {
-                badge.setVisibility(VISIBLE);
-                badge.setText(AndroidUtilities.formatShortDuration((int) message.getDuration()));
-            } else {
-                badge.setVisibility(GONE);
+            // tall video in its column, the four others in a 2x2 square beside it
+            final int tallColumn = type == ROW_TALL_LEFT ? 0 : 2;
+            final int tallX = tallColumn * (s + g);
+            cells[0].layout(tallX, 0, tallX + s, 2 * s + g);
+            final int firstColumn = type == ROW_TALL_LEFT ? 1 : 0;
+            for (int i = 1; i < count; i++) {
+                final int column = firstColumn + (i - 1) % 2;
+                final int row = (i - 1) / 2;
+                final int x = column * (s + g);
+                final int y = row * (s + g);
+                cells[i].layout(x, y, x + s, y + s);
             }
-            albumIcon.setVisibility(album ? VISIBLE : GONE);
-            setContentDescription(LocaleController.getString(message.isVideo() ? R.string.AttachVideo : R.string.AttachPhoto) + (album ? ", " + LocaleController.getString(R.string.TigiProfileAlbum) : ""));
         }
     }
 }

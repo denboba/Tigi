@@ -4680,6 +4680,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 openLocation(false);
             } else if (position == channelRow) {
                 if (userInfo == null) return;
+                // Nilak: the personal channel is the person's posts, shown as their Nilak profile
+                if (BuildVars.TIGI_PROFILE_ROUTING && BuildVars.TIGI_HOME && userId != 0 && TigiNavigation.openProfile(this, userId)) {
+                    return;
+                }
                 Bundle args = new Bundle();
                 args.putLong("chat_id", userInfo.personal_channel_id);
                 presentFragment(new ChatActivity(args));

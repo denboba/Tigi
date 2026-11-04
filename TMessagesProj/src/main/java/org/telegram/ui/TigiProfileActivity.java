@@ -63,6 +63,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     private static final int TAB_POSTS = 0;
     private static final int TAB_REELS = 1;
     private static final int TAB_SAVED = 2;
+    /** "With you": what you and this person shared in your chat (the old Reels slot; reels are in Posts now). */
+    private static final int TAB_SHARED = TAB_REELS;
     private static final int TABS = 3;
     private static final int PAGE = 60;
 
@@ -426,6 +428,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
     }
 
     private void load(int which) {
+        if (which == TAB_SHARED || which == TAB_SAVED && chip != CHIP_BOOKMARKS) {
+            loadShared();
+            return;
+        }
         if (which == TAB_SAVED) {
             loadSaved();
             return;
@@ -865,8 +871,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             savedTab = tabView(context, R.string.NilakSavedTab, TAB_SAVED);
             tabs.addView(postsTab, LayoutHelper.createLinear(0, 44, 1f));
             tabs.addView(reelsTab, LayoutHelper.createLinear(0, 44, 1f));
-            // one grid for every kind of post: reels stand tall inside Posts instead of a tab of their own
-            reelsTab.setVisibility(GONE);
+            // one grid for every kind of post (reels stand tall inside Posts); this slot is "With you" on people's profiles
+            reelsTab.setText(LocaleController.getString(R.string.NilakWithYou));
+            reelsTab.setVisibility(!self && userId != 0 ? VISIBLE : GONE);
             if (self) {
                 // bookmarks are private: only on the own profile
                 tabs.addView(savedTab, LayoutHelper.createLinear(0, 44, 1f));
@@ -916,6 +923,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                     if (which == TAB_SAVED) {
                         // bookmarks change in the feeds: read them again
                         reachedEnd[TAB_SAVED] = false;
+                    }
+                    if (which == TAB_SHARED || which == TAB_SAVED) {
+                        selectChip(which == TAB_SAVED ? CHIP_BOOKMARKS : CHIP_MEDIA);
+                        loadCounters();
                     }
                     updateColors();
                     adapter.notifyDataSetChanged();
@@ -1197,10 +1208,34 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         static final int TYPE_LOADING = 3;
         static final int FIRST_TILE = 1;
 
+        static final int TYPE_CHIPS = 4;
+        static final int TYPE_ITEM = 5;
+        static final int TYPE_GROUP = 6;
+
+        boolean shared() {
+            return tab == TAB_SHARED || tab == TAB_SAVED;
+        }
+
+        /** Index of the first content row: after the header, and the chips on With you / Saved. */
+        int first() {
+            return shared() ? 2 : 1;
+        }
+
+        int contentCount() {
+            if (shared() && chip == CHIP_GROUPS) {
+                return commonChats.size();
+            }
+            if (shared() && chip != CHIP_MEDIA && chip != CHIP_BOOKMARKS) {
+                return sharedItems.size();
+            }
+            buildRows();
+            return rows.size();
+        }
+
         @Override
         public int getItemCount() {
-            buildRows();
-            return 1 + (rows.isEmpty() ? 1 : rows.size());
+            final int count = contentCount();
+            return first() + (count == 0 ? 1 : count);
         }
 
         @Override
@@ -1208,8 +1243,20 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             if (position == 0) {
                 return TYPE_HEADER;
             }
-            if (tiles[tab].isEmpty()) {
+            if (shared() && position == 1) {
+                return TYPE_CHIPS;
+            }
+            if (contentCount() == 0) {
+                if (shared() && (chip != CHIP_BOOKMARKS)) {
+                    return sharedLoading || !sharedEnd ? TYPE_LOADING : TYPE_STATE;
+                }
                 return loading[tab] || (!reachedEnd[tab] && errorText == null) ? TYPE_LOADING : TYPE_STATE;
+            }
+            if (shared() && chip == CHIP_GROUPS) {
+                return TYPE_GROUP;
+            }
+            if (shared() && chip != CHIP_MEDIA && chip != CHIP_BOOKMARKS) {
+                return TYPE_ITEM;
             }
             return TYPE_TILE;
         }
@@ -1245,6 +1292,15 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 state.setPadding(dp(32), dp(48), dp(32), dp(48));
                 view = state;
                 view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else if (viewType == TYPE_CHIPS) {
+                view = new ChipsRow(parent.getContext());
+                view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else if (viewType == TYPE_ITEM) {
+                view = new SharedItem(parent.getContext());
+                view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else if (viewType == TYPE_GROUP) {
+                view = new GroupRow(parent.getContext());
+                view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else {
                 view = new TileRow(parent.getContext());
                 view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1255,8 +1311,19 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             if (holder.getItemViewType() == TYPE_TILE) {
-                final int[] row = rows.get(position - FIRST_TILE);
+                final int[] row = rows.get(position - first());
                 ((TileRow) holder.itemView).bind(row[0], row[1]);
+            } else if (holder.getItemViewType() == TYPE_CHIPS) {
+                ((ChipsRow) holder.itemView).bind();
+            } else if (holder.getItemViewType() == TYPE_ITEM) {
+                ((SharedItem) holder.itemView).bind(sharedItems.get(position - first()));
+            } else if (holder.getItemViewType() == TYPE_GROUP) {
+                ((GroupRow) holder.itemView).bind(commonChats.get(position - first()));
+            } else if (holder.getItemViewType() == TYPE_STATE && shared() && chip != CHIP_BOOKMARKS) {
+                final TextView state = (TextView) holder.itemView;
+                state.setOnClickListener(null);
+                state.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                state.setText(LocaleController.getString(R.string.NilakSharedEmpty));
             } else if (holder.getItemViewType() == TYPE_STATE) {
                 final TextView state = (TextView) holder.itemView;
                 state.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
@@ -1296,10 +1363,18 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         return message.isVideo() && !message.isRoundVideo() && !message.isGif() && TigiFeedBase.isCardMedia(message);
     }
 
+    /** The posts the grid shows now: the profile's posts, bookmarks, or the media of With you / Saved. */
+    private ArrayList<MessageObject> gridList() {
+        if (tab == TAB_SHARED || tab == TAB_SAVED && chip == CHIP_MEDIA) {
+            return sharedMedia;
+        }
+        return tiles[tab];
+    }
+
     private void buildRows() {
         rows.clear();
-        final ArrayList<MessageObject> list = tiles[tab];
-        final boolean mosaic = tab != TAB_SAVED;
+        final ArrayList<MessageObject> list = gridList();
+        final boolean mosaic = tab == TAB_POSTS;
         boolean left = true;
         int sinceTall = 1;
         int i = 0;
@@ -1328,7 +1403,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 cells[i] = new TigiGridTile(context);
                 cells[i].setOnClickListener(v -> {
                     final MessageObject message = ((TigiGridTile) v).getMessage();
-                    if (message != null) {
+                    if (message == null) {
+                        return;
+                    }
+                    if (gridList() == sharedMedia) {
+                        openSharedMedia(message);
+                    } else {
                         openPost(message);
                     }
                 });
@@ -1339,7 +1419,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
         void bind(int type, int start) {
             this.type = type;
-            final ArrayList<MessageObject> list = tiles[tab];
+            final ArrayList<MessageObject> list = gridList();
             count = Math.min(type == ROW_THREE ? 3 : 5, list.size() - start);
             for (int i = 0; i < cells.length; i++) {
                 if (i < count) {
@@ -1397,6 +1477,310 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 final int y = row * (s + g);
                 cells[i].layout(x, y, x + s, y + s);
             }
+        }
+    }
+
+    /* With you (someone's profile) and Saved (your own): Telegram's shared media, as chips */
+
+    private static final int CHIP_BOOKMARKS = 0;
+    private static final int CHIP_MEDIA = 1;
+    private static final int CHIP_FILES = 2;
+    private static final int CHIP_LINKS = 3;
+    private static final int CHIP_VOICE = 4;
+    private static final int CHIP_MUSIC = 5;
+    private static final int CHIP_GROUPS = 6;
+    private static final int[] CHIP_NAMES = {R.string.NilakBookmarks, R.string.SharedMediaTab2, R.string.SharedFilesTab2, R.string.SharedLinksTab2,
+        R.string.SharedVoiceTab2, R.string.SharedMusicTab2, R.string.SharedGroupsTab2};
+
+    private int chip = CHIP_MEDIA;
+    private final int[] chipCounts = {-1, -1, -1, -1, -1, -1, -1};
+    private final ArrayList<MessageObject> sharedMedia = new ArrayList<>();
+    private final ArrayList<MessageObject> sharedItems = new ArrayList<>();
+    private final ArrayList<TLRPC.Chat> commonChats = new ArrayList<>();
+    private int sharedOffset;
+    private boolean sharedEnd;
+    private boolean sharedLoading;
+    private int sharedRequest;
+
+    /** The chat whose shared media is shown: yours with this person, or your Saved Messages. */
+    private long sharedDialog() {
+        return self ? getUserConfig().getClientUserId() : userId;
+    }
+
+    private int[] chipsOnScreen() {
+        return self ? new int[]{CHIP_BOOKMARKS, CHIP_MEDIA, CHIP_FILES, CHIP_LINKS, CHIP_VOICE, CHIP_MUSIC}
+            : new int[]{CHIP_MEDIA, CHIP_FILES, CHIP_LINKS, CHIP_VOICE, CHIP_MUSIC, CHIP_GROUPS};
+    }
+
+    private static TLRPC.MessagesFilter filterOf(int chip) {
+        switch (chip) {
+            case CHIP_MEDIA:
+                return new TLRPC.TL_inputMessagesFilterPhotoVideo();
+            case CHIP_FILES:
+                return new TLRPC.TL_inputMessagesFilterDocument();
+            case CHIP_LINKS:
+                return new TLRPC.TL_inputMessagesFilterUrl();
+            case CHIP_VOICE:
+                return new TLRPC.TL_inputMessagesFilterRoundVoice();
+            case CHIP_MUSIC:
+                return new TLRPC.TL_inputMessagesFilterMusic();
+            default:
+                return null;
+        }
+    }
+
+    private void selectChip(int value) {
+        if (sharedRequest != 0) {
+            getConnectionsManager().cancelRequest(sharedRequest, true);
+            sharedRequest = 0;
+        }
+        chip = value;
+        sharedMedia.clear();
+        sharedItems.clear();
+        commonChats.clear();
+        sharedOffset = 0;
+        sharedEnd = false;
+        sharedLoading = false;
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
+        load(tab);
+    }
+
+    /** How many of each kind there are (one request), so empty chips can hide. */
+    private void loadCounters() {
+        final long dialog = sharedDialog();
+        if (dialog == 0) {
+            return;
+        }
+        final TLRPC.TL_messages_getSearchCounters req = new TLRPC.TL_messages_getSearchCounters();
+        req.peer = getMessagesController().getInputPeer(dialog);
+        if (req.peer == null) {
+            return;
+        }
+        final int[] order = {CHIP_MEDIA, CHIP_FILES, CHIP_LINKS, CHIP_VOICE, CHIP_MUSIC};
+        for (int c : order) {
+            req.filters.add(filterOf(c));
+        }
+        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (!(response instanceof org.telegram.tgnet.Vector) || isDead()) {
+                return;
+            }
+            final org.telegram.tgnet.Vector res = (org.telegram.tgnet.Vector) response;
+            for (int i = 0; i < res.objects.size() && i < order.length; i++) {
+                if (res.objects.get(i) instanceof TLRPC.TL_messages_searchCounter) {
+                    chipCounts[order[i]] = ((TLRPC.TL_messages_searchCounter) res.objects.get(i)).count;
+                }
+            }
+            if (!self && userId != 0) {
+                final TLRPC.UserFull full = getMessagesController().getUserFull(userId);
+                if (full != null) {
+                    chipCounts[CHIP_GROUPS] = full.common_chats_count;
+                }
+            }
+            if (adapter != null && (tab == TAB_SHARED || tab == TAB_SAVED)) {
+                adapter.notifyItemChanged(1);
+            }
+        }));
+    }
+
+    private void loadShared() {
+        if (sharedLoading || sharedEnd || isDead()) {
+            return;
+        }
+        final long dialog = sharedDialog();
+        if (dialog == 0) {
+            sharedEnd = true;
+            return;
+        }
+        sharedLoading = true;
+        if (chip == CHIP_GROUPS) {
+            final TLRPC.TL_messages_getCommonChats req = new TLRPC.TL_messages_getCommonChats();
+            req.user_id = getMessagesController().getInputUser(userId);
+            req.max_id = 0;
+            req.limit = 100;
+            sharedRequest = getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                sharedRequest = 0;
+                sharedLoading = false;
+                sharedEnd = true;
+                if (response instanceof TLRPC.messages_Chats && !isDead()) {
+                    final ArrayList<TLRPC.Chat> chats = ((TLRPC.messages_Chats) response).chats;
+                    getMessagesController().putChats(chats, false);
+                    commonChats.addAll(chats);
+                }
+                if (adapter != null) {
+                    adapter.notifyDataSetChanged();
+                }
+            }));
+            return;
+        }
+        final TLRPC.TL_messages_search req = new TLRPC.TL_messages_search();
+        req.peer = getMessagesController().getInputPeer(dialog);
+        req.q = "";
+        req.filter = filterOf(chip);
+        req.limit = 40;
+        req.offset_id = sharedOffset;
+        if (req.peer == null || req.filter == null) {
+            sharedLoading = false;
+            sharedEnd = true;
+            return;
+        }
+        final int requestedChip = chip;
+        sharedRequest = getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            sharedRequest = 0;
+            sharedLoading = false;
+            if (isDead() || requestedChip != chip) {
+                return;
+            }
+            if (response instanceof TLRPC.messages_Messages) {
+                final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                getMessagesController().putUsers(res.users, false);
+                getMessagesController().putChats(res.chats, false);
+                for (int i = 0; i < res.messages.size(); i++) {
+                    final TLRPC.Message message = res.messages.get(i);
+                    if (message.id > 0 && (sharedOffset == 0 || message.id < sharedOffset)) {
+                        sharedOffset = message.id;
+                    }
+                    final MessageObject object = new MessageObject(currentAccount, message, false, true);
+                    (chip == CHIP_MEDIA ? sharedMedia : sharedItems).add(object);
+                }
+                sharedEnd = res.messages.size() < req.limit;
+            } else {
+                sharedEnd = true;
+            }
+            if (adapter != null) {
+                adapter.notifyDataSetChanged();
+            }
+        }));
+    }
+
+    /** Photos and videos of With you / Saved open in Telegram's viewer, swiping through the rest. */
+    private void openSharedMedia(MessageObject message) {
+        if (getParentActivity() == null) {
+            return;
+        }
+        final int index = sharedMedia.indexOf(message);
+        PhotoViewer.getInstance().setParentActivity(this);
+        PhotoViewer.getInstance().openPhoto(new ArrayList<>(sharedMedia), Math.max(0, index), sharedDialog(), 0, 0, new PhotoViewer.EmptyPhotoViewerProvider());
+    }
+
+    private class ChipsRow extends android.widget.HorizontalScrollView {
+        private final LinearLayout items;
+
+        ChipsRow(Context context) {
+            super(context);
+            setHorizontalScrollBarEnabled(false);
+            items = new LinearLayout(context);
+            items.setOrientation(LinearLayout.HORIZONTAL);
+            items.setPadding(dp(12), dp(8), dp(12), dp(8));
+            addView(items);
+        }
+
+        void bind() {
+            items.removeAllViews();
+            for (int c : chipsOnScreen()) {
+                final int count = chipCounts[c];
+                if (count == 0 && c != chip && c != CHIP_BOOKMARKS) {
+                    continue; // nothing of this kind: no chip
+                }
+                final TextView view = new TextView(getContext());
+                view.setText(LocaleController.getString(CHIP_NAMES[c]) + (count > 0 ? " " + LocaleController.formatShortNumber(count, null) : ""));
+                view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                view.setTypeface(AndroidUtilities.bold());
+                view.setGravity(Gravity.CENTER);
+                view.setPadding(dp(14), 0, dp(14), 0);
+                final boolean on = c == chip;
+                view.setTextColor(on ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                view.setBackground(on ? TigiStyle.primaryPill(16) : Theme.createRoundRectDrawable(dp(16), Theme.getColor(Theme.key_windowBackgroundGray)));
+                view.setOnClickListener(v -> {
+                    if (chip != c) {
+                        selectChip(c);
+                    }
+                });
+                items.addView(view, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 34, 0, 0, 8, 0));
+            }
+        }
+    }
+
+    /** A file, link, voice message or song: the same card the feeds use (download, PDF reader, player). */
+    private class SharedItem extends FrameLayout {
+        private final TigiAttachmentView attachment;
+        private final TextView fallback;
+
+        SharedItem(Context context) {
+            super(context);
+            attachment = new TigiAttachmentView(context, TigiProfileActivity.this);
+            addView(attachment, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            fallback = new TextView(context);
+            fallback.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            fallback.setPadding(dp(16), dp(10), dp(16), dp(10));
+            fallback.setAutoLinkMask(android.text.util.Linkify.WEB_URLS);
+            fallback.setLinkTextColor(TigiStyle.accent());
+            fallback.setMaxLines(3);
+            fallback.setEllipsize(TextUtils.TruncateAt.END);
+            addView(fallback, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        }
+
+        void bind(MessageObject message) {
+            if (attachment.bind(message)) {
+                fallback.setVisibility(GONE);
+            } else {
+                // a link written in text, without a preview
+                fallback.setVisibility(VISIBLE);
+                fallback.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                fallback.setText(message.messageOwner.message);
+            }
+        }
+    }
+
+    /** A group or channel you are both in; opens it. */
+    private class GroupRow extends LinearLayout {
+        private final BackupImageView avatar;
+        private final org.telegram.ui.Components.AvatarDrawable avatarDrawable = new org.telegram.ui.Components.AvatarDrawable();
+        private final TextView title;
+        private final TextView subtitle;
+        private TLRPC.Chat chat;
+
+        GroupRow(Context context) {
+            super(context);
+            setOrientation(HORIZONTAL);
+            setGravity(Gravity.CENTER_VERTICAL);
+            setPadding(dp(16), dp(8), dp(16), dp(8));
+            setBackground(Theme.getSelectorDrawable(false));
+            avatar = new BackupImageView(context);
+            avatar.setRoundRadius(dp(22));
+            addView(avatar, LayoutHelper.createLinear(44, 44));
+            final LinearLayout texts = new LinearLayout(context);
+            texts.setOrientation(VERTICAL);
+            title = new TextView(context);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            title.setTypeface(AndroidUtilities.bold());
+            title.setSingleLine(true);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            subtitle = new TextView(context);
+            subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            subtitle.setSingleLine(true);
+            texts.addView(title);
+            texts.addView(subtitle);
+            addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 12, 0, 0, 0));
+            setOnClickListener(v -> {
+                if (chat != null) {
+                    final Bundle args = new Bundle();
+                    args.putLong("chat_id", chat.id);
+                    presentFragment(new ChatActivity(args));
+                }
+            });
+        }
+
+        void bind(TLRPC.Chat chat) {
+            this.chat = chat;
+            avatarDrawable.setInfo(currentAccount, chat);
+            avatar.setForUserOrChat(chat, avatarDrawable);
+            title.setText(chat.title);
+            title.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            subtitle.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            subtitle.setText(chat.participants_count > 0 ? LocaleController.formatPluralString(ChatObject.isChannelAndNotMegaGroup(chat) ? "Subscribers" : "Members", chat.participants_count) : "");
+            setContentDescription(chat.title);
         }
     }
 }

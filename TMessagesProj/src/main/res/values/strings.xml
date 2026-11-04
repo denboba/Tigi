@@ -10700,6 +10700,9 @@
     <string name="NilakActivityNoChannel">Share your first post to see likes, comments and new followers here.</string>
     <string name="NilakActivityEmpty">Nothing new yet. Reactions, comments and new followers on your posts show up here.</string>
     <string name="NilakSavedTab">Saved</string>
+    <string name="NilakWithYou">With you</string>
+    <string name="NilakBookmarks">Bookmarks</string>
+    <string name="NilakSharedEmpty">Nothing here yet.</string>
     <string name="NilakSavedEmpty">Posts you save appear here. Only you can see them.</string>
     <string name="NilakHighlight">Highlight</string>
     <string name="NilakNewHighlight">New</string>

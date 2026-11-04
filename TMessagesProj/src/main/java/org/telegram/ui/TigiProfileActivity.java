@@ -803,7 +803,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             followingLabel = (TextView) following.getChildAt(1);
             followingLabel.setText(LocaleController.getString(R.string.TigiProfileFollowingCount));
             following.setOnClickListener(v -> presentFragment(new TigiFollowingActivity()));
-            following.setVisibility(self ? VISIBLE : GONE);
+            following.setVisibility(self || userId != 0 ? VISIBLE : GONE);
+            if (!self) {
+                // who someone follows stays private: their count only, no list
+                following.setOnClickListener(null);
+                following.setClickable(false);
+            }
             top.addView(following, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
             addView(top, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
 
@@ -828,7 +833,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             primaryButton = button(context);
             primaryButton.setOnClickListener(v -> {
                 if (self) {
-                    presentFragment(new UserInfoActivity());
+                    presentFragment(new TigiEditProfileActivity());
                 } else if (ChatObject.canChangeChatInfo(chat)) {
                     final Bundle args = new Bundle();
                     args.putLong("chat_id", chatId);
@@ -988,6 +993,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
 
         private void bindSelf() {
+            TigiIdentity.sync(currentAccount, false);
             final TLRPC.UserFull userFull = getMessagesController().getUserFull(user.id);
             final String about = userFull != null ? userFull.about : null;
             aboutView.setText(about);
@@ -1022,9 +1028,14 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 return;
             }
             final String about = user != null ? (getMessagesController().getUserFull(user.id) != null ? getMessagesController().getUserFull(user.id).about : null) : (full != null ? full.about : null);
-            aboutView.setText(about);
-            aboutView.setVisibility(TextUtils.isEmpty(about) ? GONE : VISIBLE);
+            aboutView.setText(TigiIdentity.strip(about));
+            aboutView.setVisibility(TextUtils.isEmpty(TigiIdentity.strip(about)) ? GONE : VISIBLE);
             postsValue.setText(postsCount >= 0 ? LocaleController.formatShortNumber(postsCount, null) : "–");
+            if (userId != 0) {
+                // Following: the count their Nilak shares (only the number, if they chose to); "–" otherwise
+                final int shared = TigiIdentity.decode(full != null ? full.about : null);
+                followingValue.setText(shared >= 0 ? LocaleController.formatShortNumber(shared, null) : "–");
+            }
             final int followers = full != null && full.participants_count > 0 ? full.participants_count : chat.participants_count;
             followersValue.setText(followers > 0 ? LocaleController.formatShortNumber(followers, null) : "–");
             final boolean member = !ChatObject.isNotInChat(chat);
@@ -1088,6 +1099,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 }
                 items.addView(item(story), LayoutHelper.createLinear(70, LayoutHelper.WRAP_CONTENT));
             }
+            if (self) {
+                // your past stories, only you see them
+                items.addView(archiveItem(), LayoutHelper.createLinear(70, LayoutHelper.WRAP_CONTENT));
+            }
             if (self && TigiPosting.storiesOffered(currentAccount)) {
                 items.addView(newItem(), LayoutHelper.createLinear(70, LayoutHelper.WRAP_CONTENT));
             }
@@ -1120,6 +1135,36 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 if (getParentActivity() != null && pinnedStories != null) {
                     getOrCreateStoryViewer().open(getParentActivity(), story.storyItem.id, pinnedStories, (did, messageId, storyId, type, holder) -> false);
                 }
+            });
+            return item;
+        }
+
+        private View archiveItem() {
+            final Context context = getContext();
+            final LinearLayout item = new LinearLayout(context);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setGravity(Gravity.CENTER_HORIZONTAL);
+            final ImageView icon = new ImageView(context);
+            icon.setScaleType(ImageView.ScaleType.CENTER);
+            icon.setImageResource(R.drawable.msg_archive);
+            icon.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
+            final android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
+            ring.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            ring.setStroke(dp(1.5f), Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            icon.setBackground(ring);
+            item.addView(icon, LayoutHelper.createLinear(56, 56));
+            final TextView caption = new TextView(context);
+            caption.setText(LocaleController.getString(R.string.NilakArchive));
+            caption.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
+            caption.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            caption.setGravity(Gravity.CENTER);
+            item.addView(caption, LayoutHelper.createLinear(64, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
+            item.setContentDescription(caption.getText());
+            item.setOnClickListener(v -> {
+                final Bundle args = new Bundle();
+                args.putInt("type", org.telegram.ui.Components.MediaActivity.TYPE_ARCHIVED_CHANNEL_STORIES);
+                args.putLong("dialog_id", getUserConfig().getClientUserId());
+                presentFragment(new org.telegram.ui.Components.MediaActivity(args, null));
             });
             return item;
         }

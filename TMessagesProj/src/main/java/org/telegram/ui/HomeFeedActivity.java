@@ -214,13 +214,23 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             return;
         }
         final boolean following = followingMode();
-        final CharSequence[] items = {
+        // Read (articles) sits here too while it has no tab of its own
+        final boolean readHere = !BuildVars.TIGI_READ_TAB;
+        final CharSequence[] items = readHere ? new CharSequence[]{
+            (following ? "" : "✓  ") + LocaleController.getString(R.string.TigiReelsForYou),
+            (following ? "✓  " : "") + LocaleController.getString(R.string.NilakFollowing),
+            "     " + LocaleController.getString(R.string.NilakRead)
+        } : new CharSequence[]{
             (following ? "" : "✓  ") + LocaleController.getString(R.string.TigiReelsForYou),
             (following ? "✓  " : "") + LocaleController.getString(R.string.NilakFollowing)
         };
         final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
         builder.setTitle(LocaleController.getString(R.string.NilakFeedMode));
         builder.setItems(items, (dialog, which) -> {
+            if (which == 2) {
+                presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_READ));
+                return;
+            }
             final boolean wantFollowing = which == 1;
             if (wantFollowing == followingMode()) {
                 return;

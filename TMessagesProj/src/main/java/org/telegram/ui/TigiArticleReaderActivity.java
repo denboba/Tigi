@@ -115,6 +115,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
     @Override
     public void onPause() {
         super.onPause();
+        if (message != null && meta != null && restored) {
+            TigiReadingProgress.save(currentAccount, message, meta.title, readFraction());
+        }
         if (playing != null && playing.isPlaying()) {
             playing.pause();
         }
@@ -413,6 +416,32 @@ public class TigiArticleReaderActivity extends BaseFragment {
             column.addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }
         scroll.post(this::updateProgress);
+        if (!restored && message != null) {
+            // back where the reader stopped last time ("Continue reading")
+            restored = true;
+            final float at = TigiReadingProgress.fraction(currentAccount, message);
+            if (at > 0.03f && at < 0.97f) {
+                scroll.post(() -> scroll.post(() -> {
+                    if (scroll == null || column == null) {
+                        return;
+                    }
+                    final int range = column.getHeight() - scroll.getHeight();
+                    if (range > 0) {
+                        scroll.scrollTo(0, (int) (range * at));
+                    }
+                }));
+            }
+        }
+    }
+
+    private boolean restored;
+
+    private float readFraction() {
+        if (scroll == null || column == null) {
+            return 0;
+        }
+        final int range = column.getHeight() - scroll.getHeight();
+        return range <= 0 ? 1f : Math.max(0f, Math.min(1f, scroll.getScrollY() / (float) range));
     }
 
     private View blockView(Context context, TigiArticle.Block block, float s, int ink, int gray) {

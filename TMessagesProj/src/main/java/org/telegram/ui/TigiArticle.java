@@ -125,7 +125,8 @@ public final class TigiArticle {
             return "";
         }
         final String[] parts = caption.trim().split("\n", 2);
-        return parts.length > 1 ? parts[1].trim() : "";
+        // the Read tag is for search, not part of the subtitle
+        return parts.length > 1 ? parts[1].replace("#" + TigiTopicFeedActivity.READ_TAG, "").trim() : "";
     }
 
     /** Channels only; premium once paid features are on. */

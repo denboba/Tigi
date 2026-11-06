@@ -224,6 +224,11 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             row.addView(write, LayoutHelper.createLinear(48, 48, 0, 0, 4, 0));
         }
         header.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56));
+        if (mode == MODE_READ) {
+            continueCard = createContinueCard(context);
+            header.addView(continueCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 8));
+            bindContinueCard();
+        }
 
         if (mode == MODE_TEXT) {
             final HorizontalScrollView scroll = new HorizontalScrollView(context);
@@ -399,7 +404,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
         final int gen = ++generation;
         final ArrayList<FeedPost> result = new ArrayList<>();
         if (channels.isEmpty()) {
-            finish(result);
+            done(result, gen);
             return;
         }
         final int[] next = {0};
@@ -428,7 +433,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
                 }
                 pending[0]--;
                 if (pending[0] <= 0) {
-                    finish(result);
+                    done(result, gen);
                 } else {
                     startNext[0].run();
                 }
@@ -437,6 +442,131 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
         for (int i = 0; i < PARALLEL; i++) {
             startNext[0].run();
         }
+    }
+
+    private LinearLayout continueCard;
+    private TextView continueTitle;
+    private View continueFill;
+
+    /** "Continue reading": the last article left half-read, with how far the person got. */
+    private LinearLayout createContinueCard(Context context) {
+        final LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(10), dp(14), dp(12));
+        card.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(16),
+            TigiLilac.on() ? TigiLilac.card() : Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
+        final TextView kicker = new TextView(context);
+        kicker.setText(LocaleController.getString(R.string.NilakContinueReading));
+        kicker.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+        kicker.setTypeface(TigiStyle.displayBold());
+        kicker.setTextColor(TigiStyle.accent());
+        card.addView(kicker);
+        continueTitle = new TextView(context);
+        continueTitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        continueTitle.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD));
+        continueTitle.setTextColor(TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        continueTitle.setMaxLines(2);
+        continueTitle.setEllipsize(TextUtils.TruncateAt.END);
+        card.addView(continueTitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 8));
+        final FrameLayout track = new FrameLayout(context);
+        track.setBackground(Theme.createRoundRectDrawable(dp(2), Theme.multAlpha(TigiStyle.accent(), 0.15f)));
+        continueFill = new View(context);
+        continueFill.setBackground(Theme.createRoundRectDrawable(dp(2), TigiStyle.accent()));
+        continueFill.setPivotX(LocaleController.isRTL ? 0 : 0);
+        track.addView(continueFill, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        card.addView(track, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 4));
+        card.setOnClickListener(v -> openContinue());
+        card.setVisibility(View.GONE);
+        return card;
+    }
+
+    private void bindContinueCard() {
+        if (continueCard == null) {
+            return;
+        }
+        final TigiReadingProgress.Entry entry = TigiReadingProgress.last(currentAccount);
+        if (entry == null || TextUtils.isEmpty(entry.title)) {
+            continueCard.setVisibility(View.GONE);
+            return;
+        }
+        continueTitle.setText(entry.title);
+        continueFill.setScaleX(Math.max(0.04f, entry.fraction));
+        continueCard.setContentDescription(LocaleController.getString(R.string.NilakContinueReading) + ": " + entry.title);
+        continueCard.setVisibility(View.VISIBLE);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // the reader may have just saved a new place
+        bindContinueCard();
+    }
+
+    private void openContinue() {
+        final TigiReadingProgress.Entry entry = TigiReadingProgress.last(currentAccount);
+        final TLRPC.Chat chat = entry != null ? getMessagesController().getChat(-entry.dialogId) : null;
+        if (chat == null) {
+            return;
+        }
+        final TLRPC.TL_channels_getMessages req = new TLRPC.TL_channels_getMessages();
+        req.channel = org.telegram.messenger.MessagesController.getInputChannel(chat);
+        req.id.add(entry.messageId);
+        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (isDead() || !(response instanceof TLRPC.messages_Messages)) {
+                return;
+            }
+            final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+            getMessagesController().putUsers(res.users, false);
+            getMessagesController().putChats(res.chats, false);
+            if (!res.messages.isEmpty() && !(res.messages.get(0) instanceof TLRPC.TL_messageEmpty)) {
+                TigiArticleReaderActivity.open(this, new MessageObject(currentAccount, res.messages.get(0), false, false));
+            }
+        }));
+    }
+
+    /** Hashtag that puts a public article into everyone's Read, added by the article composer. */
+    static final String READ_TAG = "NilakRead";
+
+    /** Read also shows public articles tagged #NilakRead from channels the person does not follow yet. */
+    private void done(ArrayList<FeedPost> result, int gen) {
+        if (mode != MODE_READ) {
+            finish(result);
+            return;
+        }
+        final TLRPC.TL_channels_searchPosts req = new TLRPC.TL_channels_searchPosts();
+        req.flags |= 1;
+        req.hashtag = READ_TAG;
+        req.offset_peer = new TLRPC.TL_inputPeerEmpty();
+        req.limit = 40;
+        getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (gen != generation || isDead()) {
+                return;
+            }
+            if (response instanceof TLRPC.messages_Messages) {
+                final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                getMessagesController().putUsers(res.users, false);
+                getMessagesController().putChats(res.chats, false);
+                final java.util.LinkedHashMap<Long, ArrayList<TLRPC.Message>> byChannel = new java.util.LinkedHashMap<>();
+                for (TLRPC.Message message : res.messages) {
+                    final long channelId = message.peer_id != null ? message.peer_id.channel_id : 0;
+                    if (channelId == 0) {
+                        continue;
+                    }
+                    ArrayList<TLRPC.Message> list = byChannel.get(channelId);
+                    if (list == null) {
+                        byChannel.put(channelId, list = new ArrayList<>());
+                    }
+                    list.add(message);
+                }
+                for (java.util.Map.Entry<Long, ArrayList<TLRPC.Message>> entry : byChannel.entrySet()) {
+                    final TLRPC.Chat chat = getMessagesController().getChat(entry.getKey());
+                    if (chat != null && !chat.restricted) {
+                        result.addAll(buildPosts(chat, entry.getValue()));
+                    }
+                }
+            }
+            finish(result);
+        }));
     }
 
     private void finish(ArrayList<FeedPost> result) {
@@ -509,7 +639,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
                 }
             }
             final String text = message.messageOwner.message;
-            if (text != null && (text.contains("telegra.ph/") || text.length() >= 900)) {
+            if (text != null && (text.contains("telegra.ph/") || text.length() >= 900 || text.contains("#" + READ_TAG))) {
                 return true;
             }
         }

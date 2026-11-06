@@ -436,7 +436,11 @@ public final class TigiRichArticle {
                     final String plain = TigiArticle.plainText(converted.body.toString());
                     lead = plain.length() > 180 ? plain.substring(0, 180).trim() + "…" : plain;
                 }
-                final String caption = converted.title + (TextUtils.isEmpty(lead) ? "" : "\n" + lead);
+                String caption = converted.title + (TextUtils.isEmpty(lead) ? "" : "\n" + lead);
+                if (!TextUtils.isEmpty(org.telegram.messenger.ChatObject.getPublicUsername(chat))) {
+                    // public articles carry the Read tag: hashtag search finds them for everyone's Read
+                    caption += "\n\n#" + TigiTopicFeedActivity.READ_TAG;
+                }
                 SendMessagesHelper.prepareSendingDocument(AccountInstance.getInstance(account), file.getAbsolutePath(), file.getAbsolutePath(), null,
                     caption, TigiArticle.MIME, -chat.id, null, null, null, null, null, notify, scheduleDate, null, null, false);
                 TigiPosting.setLastChannel(account, chat.id);

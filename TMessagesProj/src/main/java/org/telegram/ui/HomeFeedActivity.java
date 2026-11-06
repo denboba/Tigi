@@ -577,6 +577,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         loading = true;
         final int generation = ++loadGeneration;
         updateEmptyView();
+        if (posts.isEmpty()) {
+            showInstant(channels);
+        }
         final ArrayList<FeedPost> result = new ArrayList<>();
         final int[] next = {0};
         final int[] pending = {channels.size()};
@@ -622,6 +625,34 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         for (int i = 0; i < PARALLEL_REQUESTS; i++) {
             startNext[0].run();
         }
+    }
+
+    /**
+     * Instant start: the newest post of each channel is already in memory with the chat list, so the feed shows
+     * those at once (newest first) while the full feed loads; finishLoad replaces them.
+     */
+    private void showInstant(ArrayList<TLRPC.Chat> channels) {
+        final ArrayList<FeedPost> instant = new ArrayList<>();
+        for (int i = 0; i < channels.size(); i++) {
+            final TLRPC.Chat chat = channels.get(i);
+            final ArrayList<MessageObject> last = getMessagesController().dialogMessage.get(-chat.id);
+            if (last == null || last.isEmpty()) {
+                continue;
+            }
+            final ArrayList<TLRPC.Message> messages = new ArrayList<>();
+            for (int j = 0; j < last.size(); j++) {
+                final MessageObject message = last.get(j);
+                if (message != null && message.messageOwner != null && message.getId() > 0) {
+                    messages.add(message.messageOwner);
+                }
+            }
+            instant.addAll(buildPosts(chat, messages));
+        }
+        if (instant.size() < 2) {
+            return; // not worth a flash of one card
+        }
+        Collections.sort(instant, (a, b) -> b.date - a.date);
+        showPartial(instant);
     }
 
     /** The first answers of a load, shown while the rest arrive; the full list replaces them in finishLoad. */

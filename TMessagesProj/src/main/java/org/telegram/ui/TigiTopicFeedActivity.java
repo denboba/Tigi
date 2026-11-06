@@ -228,6 +228,10 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             continueCard = createContinueCard(context);
             header.addView(continueCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 8));
             bindContinueCard();
+            // writers of tagged articles the person does not follow yet
+            writersRow = new TigiSuggestedRow(context, this, null);
+            writersRow.setTitle(LocaleController.getString(R.string.NilakWritersToFollow));
+            header.addView(writersRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }
 
         if (mode == MODE_TEXT) {
@@ -445,6 +449,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     }
 
     private LinearLayout continueCard;
+    private TigiSuggestedRow writersRow;
     private TextView continueTitle;
     private View continueFill;
 
@@ -558,11 +563,18 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
                     }
                     list.add(message);
                 }
+                final ArrayList<TLRPC.Chat> writers = new ArrayList<>();
                 for (java.util.Map.Entry<Long, ArrayList<TLRPC.Message>> entry : byChannel.entrySet()) {
                     final TLRPC.Chat chat = getMessagesController().getChat(entry.getKey());
                     if (chat != null && !chat.restricted) {
                         result.addAll(buildPosts(chat, entry.getValue()));
+                        if (org.telegram.messenger.ChatObject.isNotInChat(chat) && writers.size() < 12) {
+                            writers.add(chat);
+                        }
                     }
+                }
+                if (writersRow != null) {
+                    writersRow.setChannels(writers);
                 }
             }
             finish(result);

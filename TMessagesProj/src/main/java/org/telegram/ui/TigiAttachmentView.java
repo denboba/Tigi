@@ -771,7 +771,8 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         final TextView title = new TextView(getContext());
         title.setText(TigiArticle.titleOf(message));
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
-        title.setTypeface(TigiStyle.displayExtraBold());
+        // Lilac: article titles in a serif, like a magazine; the app's display font otherwise
+        title.setTypeface(TigiLilac.on() ? android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD) : TigiStyle.displayExtraBold());
         title.setTextColor(text());
         title.setLineSpacing(dp(1), 1f);
         box.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
@@ -799,7 +800,16 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         read.setBackground(TigiStyle.primaryPill(17));
         row.addView(read, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 34));
         final TextView size = new TextView(getContext());
-        size.setText(AndroidUtilities.formatFileSize(message.getDocument().size));
+        // reading time (and how far the person got) rather than the file size when known
+        final int minutes = TigiArticle.minutesOf(message);
+        final float done = TigiReadingProgress.fraction(fragment.getCurrentAccount(), message);
+        final StringBuilder info = new StringBuilder(minutes > 0
+            ? LocaleController.formatString(R.string.NilakReadMinutes, minutes)
+            : AndroidUtilities.formatFileSize(message.getDocument().size));
+        if (done > 0.03f && done < 0.97f) {
+            info.append(" · ").append(LocaleController.formatString(R.string.NilakReadPercent, Math.round(done * 100)));
+        }
+        size.setText(info);
         size.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
         size.setTextColor(gray());
         row.addView(size, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 12, 0, 0, 0));

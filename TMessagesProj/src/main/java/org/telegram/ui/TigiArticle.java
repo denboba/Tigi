@@ -125,8 +125,41 @@ public final class TigiArticle {
             return "";
         }
         final String[] parts = caption.trim().split("\n", 2);
-        // the Read tag is for search, not part of the subtitle
-        return parts.length > 1 ? parts[1].replace("#" + TigiTopicFeedActivity.READ_TAG, "").trim() : "";
+        if (parts.length < 2) {
+            return "";
+        }
+        // the reading-time line and the Read tag are not part of the subtitle
+        final StringBuilder out = new StringBuilder();
+        for (String line : parts[1].split("\n")) {
+            if (line.trim().startsWith(MINUTES_MARK)) {
+                continue;
+            }
+            out.append(line).append('\n');
+        }
+        return out.toString().replace("#" + TigiTopicFeedActivity.READ_TAG, "").trim();
+    }
+
+    /** Marks the caption line with the reading time ("📖 6 min read"). */
+    public static final String MINUTES_MARK = "📖";
+
+    /** Reading time from the caption line, or 0 for articles published before it was added. */
+    public static int minutesOf(MessageObject message) {
+        final String caption = message.messageOwner.message;
+        if (TextUtils.isEmpty(caption)) {
+            return 0;
+        }
+        final int mark = caption.lastIndexOf(MINUTES_MARK);
+        if (mark < 0) {
+            return 0;
+        }
+        final java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d+)").matcher(caption.substring(mark));
+        if (matcher.find()) {
+            try {
+                return Integer.parseInt(matcher.group(1));
+            } catch (NumberFormatException ignore) {
+            }
+        }
+        return 0;
     }
 
     /** Channels only; premium once paid features are on. */

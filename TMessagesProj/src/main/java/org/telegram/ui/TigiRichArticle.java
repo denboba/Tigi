@@ -437,9 +437,12 @@ public final class TigiRichArticle {
                     lead = plain.length() > 180 ? plain.substring(0, 180).trim() + "…" : plain;
                 }
                 String caption = converted.title + (TextUtils.isEmpty(lead) ? "" : "\n" + lead);
+                // reading time on its own line: Nilak cards show it, and other apps simply see "📖 6 min read"
+                final int minutes = TigiArticle.minutesFor(TigiArticle.countWords(TigiArticle.plainText(converted.body.toString())));
+                caption += "\n\n" + TigiArticle.MINUTES_MARK + " " + LocaleController.formatString(R.string.NilakReadMinutes, minutes);
                 if (!TextUtils.isEmpty(org.telegram.messenger.ChatObject.getPublicUsername(chat))) {
                     // public articles carry the Read tag: hashtag search finds them for everyone's Read
-                    caption += "\n\n#" + TigiTopicFeedActivity.READ_TAG;
+                    caption += " · #" + TigiTopicFeedActivity.READ_TAG;
                 }
                 SendMessagesHelper.prepareSendingDocument(AccountInstance.getInstance(account), file.getAbsolutePath(), file.getAbsolutePath(), null,
                     caption, TigiArticle.MIME, -chat.id, null, null, null, null, null, notify, scheduleDate, null, null, false);

@@ -74,6 +74,11 @@ public class TigiSuggestedRow extends LinearLayout {
         setVisibility(GONE);
     }
 
+    /** Another heading for the row (for example "Writers to follow" in Read). */
+    public void setTitle(CharSequence title) {
+        titleView.setText(title);
+    }
+
     public void setChannels(ArrayList<TLRPC.Chat> channels) {
         cards.removeAllViews();
         if (channels != null) {

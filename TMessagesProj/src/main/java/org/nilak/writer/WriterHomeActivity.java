@@ -46,8 +46,8 @@ public class WriterHomeActivity extends BaseFragment {
     private final ArrayList<MessageObject> published = new ArrayList<>();
     private ArrayList<WriterDoc> drafts = new ArrayList<>();
     private boolean loadingPublished;
-    /** Set by the publish screen: show Published and refresh until the new article is there. */
-    static boolean justPublished;
+    /** Set by the publish screen when an article went out: shown once, then Published is refreshed. */
+    static String publishedMessage;
 
     private int ink() {
         return TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
@@ -126,10 +126,12 @@ public class WriterHomeActivity extends BaseFragment {
     @Override
     public void onResume() {
         super.onResume();
-        if (justPublished) {
-            justPublished = false;
+        if (publishedMessage != null) {
+            final String message = publishedMessage;
+            publishedMessage = null;
             draftsTab = false;
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.forward, LocaleController.getString(R.string.NilakWriterPublishingNow)).show();
+            // a clear result that stays long enough to read
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, message).setDuration(org.telegram.ui.Components.Bulletin.DURATION_PROLONG).show();
             // the article is packed and uploaded in the background: look again a few times
             loadPublished();
             AndroidUtilities.runOnUIThread(this::loadPublished, 3000);

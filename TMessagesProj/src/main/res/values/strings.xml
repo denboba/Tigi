@@ -10733,6 +10733,15 @@
     <string name="NilakWriterListItem">List item</string>
     <string name="NilakWriterRemoveDivider">Remove this divider?</string>
     <string name="NilakWriterPublishingNow">Publishing your article…</string>
+    <string name="NilakWriterCaptionHint">Add a caption (optional)</string>
+    <string name="NilakWriterRemovePhoto">Remove this photo?</string>
+    <string name="NilakWriterPhotoFailed">Could not add this photo</string>
+    <string name="NilakWriterSendFailed">Telegram could not send the article. Check your connection and try again.</string>
+    <string name="NilakWriterNotPublished">Not published</string>
+    <string name="NilakWriterDraftKept">Your article is safe in Drafts.</string>
+    <string name="NilakWriterStillUploading">Your article is still uploading. It appears in your posts when it is done.</string>
+    <string name="NilakWriterUpdated">Article updated</string>
+    <string name="NilakWriterPublishedDone">Article published</string>
     <string name="NilakFlowersOn">Lilac flowers: on</string>
     <string name="NilakFlowersOff">Lilac flowers: off</string>
     <string name="NilakPdfLocked">This PDF is protected with a password. Open it in another app.</string>

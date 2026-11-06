@@ -30,6 +30,15 @@ public final class WriterDrafts {
         return dir;
     }
 
+    /** Where the writer keeps its photos (copied and resized when added). */
+    public static File mediaDir(int account) {
+        final File dir = new File(dir(account), "media");
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        return dir;
+    }
+
     /** Saves on a background thread; empty documents are deleted instead of saved. */
     public static void save(int account, WriterDoc doc) {
         if (doc.isEmpty()) {

@@ -277,6 +277,14 @@ public final class WriterBridge {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.HEADING, block.text));
                 } else if (block.type == TigiArticle.BLOCK_QUOTE || block.type == TigiArticle.BLOCK_CALLOUT) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.QUOTE, block.text));
+                } else if (block.type == TigiArticle.BLOCK_IMAGE && block.path != null) {
+                    // the photo is copied out of the file so the draft keeps it after the folder is cleaned up
+                    final File source = new File(dir, block.path);
+                    if (source.exists()) {
+                        final File copy = new File(WriterDrafts.mediaDir(message.currentAccount), System.currentTimeMillis() + "_" + source.getName());
+                        copyFile(source, copy);
+                        doc.blocks.add(new WriterDoc.Block(WriterDoc.PHOTO, block.caption != null ? block.caption : "", copy.getAbsolutePath()));
+                    }
                 } else if (block.type == TigiArticle.BLOCK_DIVIDER) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.DIVIDER, ""));
                 } else if (block.type == TigiArticle.BLOCK_BULLETS || block.type == TigiArticle.BLOCK_NUMBERS) {
@@ -292,6 +300,16 @@ public final class WriterBridge {
         } catch (Exception e) {
             FileLog.e(e);
             return null;
+        }
+    }
+
+    private static void copyFile(File from, File to) throws Exception {
+        try (java.io.InputStream in = new java.io.FileInputStream(from); java.io.OutputStream out = new java.io.FileOutputStream(to)) {
+            final byte[] buffer = new byte[16384];
+            int n;
+            while ((n = in.read(buffer)) > 0) {
+                out.write(buffer, 0, n);
+            }
         }
     }
 

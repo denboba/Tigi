@@ -228,7 +228,7 @@ public class WriterActivity extends BaseFragment {
 
         binding = true;
         for (WriterDoc.Block block : doc.blocks) {
-            column.addView(newBlockView(context, block.type, block.text));
+            column.addView(newBlockView(context, block.type, block.text, block.path));
         }
         binding = false;
         fragmentView = root;
@@ -297,7 +297,7 @@ public class WriterActivity extends BaseFragment {
         doc.blocks.clear();
         for (int i = 0; i < column.getChildCount(); i++) {
             final BlockEdit edit = (BlockEdit) column.getChildAt(i);
-            doc.blocks.add(new WriterDoc.Block(edit.type, edit.type == WriterDoc.DIVIDER ? "" : new SpannableStringBuilder(edit.getText())));
+            doc.blocks.add(new WriterDoc.Block(edit.type, edit.type == WriterDoc.DIVIDER ? "" : new SpannableStringBuilder(edit.getText()), edit.path));
         }
     }
 
@@ -319,10 +319,149 @@ public class WriterActivity extends BaseFragment {
     /* ---------- blocks ---------- */
 
     private BlockEdit newBlockView(Context context, int type, CharSequence text) {
+        return newBlockView(context, type, text, null);
+    }
+
+    private BlockEdit newBlockView(Context context, int type, CharSequence text, String path) {
         final BlockEdit edit = new BlockEdit(context);
+        edit.path = path;
         edit.setText(text);
         edit.setType(type);
         return edit;
+    }
+
+    /* ---------- photos ---------- */
+
+    private static final int PICK_PHOTO = 7301;
+
+    private void pickPhoto() {
+        final android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
+        intent.setType("image/*");
+        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(android.content.Intent.createChooser(intent, LocaleController.getString(R.string.NilakWriterPhoto)), PICK_PHOTO);
+        } catch (Exception e) {
+            org.telegram.messenger.FileLog.e(e);
+        }
+    }
+
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, android.content.Intent data) {
+        if (requestCode != PICK_PHOTO || resultCode != android.app.Activity.RESULT_OK || data == null || data.getData() == null) {
+            return;
+        }
+        final android.net.Uri uri = data.getData();
+        final int account = currentAccount;
+        // resized off the main thread: at most 1600 px on the long side, JPEG, so articles stay light to download
+        org.telegram.messenger.Utilities.globalQueue.postRunnable(() -> {
+            final java.io.File out = new java.io.File(WriterDrafts.mediaDir(account), "photo_" + System.currentTimeMillis() + ".jpg");
+            boolean ok = false;
+            try {
+                final android.content.ContentResolver resolver = org.telegram.messenger.ApplicationLoader.applicationContext.getContentResolver();
+                final android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                try (java.io.InputStream in = resolver.openInputStream(uri)) {
+                    android.graphics.BitmapFactory.decodeStream(in, null, bounds);
+                }
+                int sample = 1;
+                while (Math.max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1600) {
+                    sample *= 2;
+                }
+                final android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+                options.inSampleSize = sample;
+                android.graphics.Bitmap bitmap;
+                try (java.io.InputStream in = resolver.openInputStream(uri)) {
+                    bitmap = android.graphics.BitmapFactory.decodeStream(in, null, options);
+                }
+                if (bitmap != null) {
+                    final float scale = 1600f / Math.max(bitmap.getWidth(), bitmap.getHeight());
+                    if (scale < 1f) {
+                        final android.graphics.Bitmap scaled = android.graphics.Bitmap.createScaledBitmap(bitmap,
+                            Math.round(bitmap.getWidth() * scale), Math.round(bitmap.getHeight() * scale), true);
+                        if (scaled != bitmap) {
+                            bitmap.recycle();
+                            bitmap = scaled;
+                        }
+                    }
+                    try (java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+                        ok = bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, os);
+                    }
+                    bitmap.recycle();
+                }
+            } catch (Throwable e) {
+                org.telegram.messenger.FileLog.e(e);
+            }
+            final boolean saved = ok;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (!saved || column == null || getParentActivity() == null) {
+                    BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakWriterPhotoFailed)).show();
+                    return;
+                }
+                insertPhoto(out.getAbsolutePath());
+            });
+        });
+    }
+
+    private void insertPhoto(String path) {
+        int index = focused != null ? column.indexOfChild(focused) + 1 : column.getChildCount();
+        if (focused != null && focused.length() == 0 && focused.type == WriterDoc.PARAGRAPH) {
+            // an empty line is replaced by the photo
+            index = column.indexOfChild(focused);
+            column.removeView(focused);
+            focused = null;
+        }
+        final BlockEdit photo = newBlockView(getParentActivity(), WriterDoc.PHOTO, "", path);
+        column.addView(photo, index);
+        // writing goes on under the photo; the caption is a tap away
+        BlockEdit after = index + 1 < column.getChildCount() ? (BlockEdit) column.getChildAt(index + 1) : null;
+        if (after == null || after.type != WriterDoc.PARAGRAPH || after.length() > 0) {
+            after = newBlockView(getParentActivity(), WriterDoc.PARAGRAPH, "");
+            column.addView(after, index + 1);
+        }
+        focusBlock(after, 0);
+        changed();
+    }
+
+    private void confirmRemovePhoto(BlockEdit photo) {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.NilakWriterRemovePhoto));
+        builder.setPositiveButton(LocaleController.getString(R.string.Delete), (d, w) -> {
+            column.removeView(photo);
+            changed();
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    /** The photo drawn above its caption, as wide as the text and at most about half a screen tall. */
+    private android.graphics.drawable.Drawable photoDrawable(String path) {
+        if (path == null) {
+            return null;
+        }
+        try {
+            final int width = AndroidUtilities.displaySize.x - dp(44);
+            final android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(path, bounds);
+            if (bounds.outWidth <= 0) {
+                return null;
+            }
+            final android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+            options.inSampleSize = Math.max(1, bounds.outWidth / Math.max(1, width));
+            final android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(path, options);
+            if (bitmap == null) {
+                return null;
+            }
+            final int height = Math.min(dp(420), Math.round(width * (bitmap.getHeight() / (float) bitmap.getWidth())));
+            final androidx.core.graphics.drawable.RoundedBitmapDrawable drawable =
+                androidx.core.graphics.drawable.RoundedBitmapDrawableFactory.create(getParentActivity().getResources(), bitmap);
+            drawable.setCornerRadius(dp(12));
+            drawable.setBounds(0, 0, width, height);
+            return drawable;
+        } catch (Throwable e) {
+            org.telegram.messenger.FileLog.e(e);
+            return null;
+        }
     }
 
     private void focusBlock(BlockEdit edit, int position) {
@@ -353,6 +492,13 @@ public class WriterActivity extends BaseFragment {
 
     /** Backspace at the start: a heading or quote becomes a paragraph; a paragraph joins the block above. */
     private void joinUp(BlockEdit edit) {
+        if (edit.type == WriterDoc.PHOTO) {
+            // Backspace in an empty caption asks to remove the photo
+            if (edit.length() == 0) {
+                confirmRemovePhoto(edit);
+            }
+            return;
+        }
         if (edit.type != WriterDoc.PARAGRAPH) {
             edit.setType(WriterDoc.PARAGRAPH);
             updateToolbar();
@@ -373,6 +519,15 @@ public class WriterActivity extends BaseFragment {
             changed();
             return;
         }
+        if (above.type == WriterDoc.PHOTO) {
+            // text never joins a photo: an empty line goes away, otherwise the cursor moves to the caption
+            if (edit.length() == 0) {
+                column.removeView(edit);
+            }
+            focusBlock(above, above.length());
+            changed();
+            return;
+        }
         final int join = above.length();
         above.getText().append(edit.getText());
         column.removeView(edit);
@@ -386,6 +541,9 @@ public class WriterActivity extends BaseFragment {
                 return;
             }
             focused = (BlockEdit) column.getChildAt(column.getChildCount() - 1);
+        }
+        if (focused.type == WriterDoc.PHOTO || focused.type == WriterDoc.DIVIDER) {
+            return; // a caption stays a caption
         }
         focused.setType(focused.type == type ? WriterDoc.PARAGRAPH : type);
         updateToolbar();
@@ -671,7 +829,7 @@ public class WriterActivity extends BaseFragment {
         // {label, block type to insert (-1 = coming soon)}
         final int[][] items = {
             {R.string.NilakWriterHeading, WriterDoc.HEADING}, {R.string.NilakWriterQuote, WriterDoc.QUOTE}, {R.string.NilakWriterList, WriterDoc.BULLET}, {R.string.NilakWriterNumbers, WriterDoc.NUMBER},
-            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterPhoto, -1}, {R.string.NilakWriterVideo, -1}, {R.string.NilakWriterStickers, -1},
+            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterPhoto, WriterDoc.PHOTO}, {R.string.NilakWriterVideo, -1}, {R.string.NilakWriterStickers, -1},
             {R.string.NilakWriterGif, -1}, {R.string.NilakWriterCode, -1}, {R.string.NilakWriterTable, -1}, {R.string.NilakWriterEmbed, -1}
         };
         final String[] icons = {"H", "❝", "•", "1.", "✣", "🖼", "▶", "✨", "GIF", "{ }", "▦", "↗"};
@@ -690,6 +848,8 @@ public class WriterActivity extends BaseFragment {
                 }
                 if (!live) {
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.info, LocaleController.getString(R.string.NilakWriterSoonToast)).show();
+                } else if (blockType == WriterDoc.PHOTO) {
+                    pickPhoto();
                 } else {
                     insertBlock(blockType);
                 }
@@ -761,6 +921,7 @@ public class WriterActivity extends BaseFragment {
 
     private class BlockEdit extends EditText {
         int type = WriterDoc.PARAGRAPH;
+        String path;
 
         BlockEdit(Context context) {
             super(context);
@@ -853,6 +1014,18 @@ public class WriterActivity extends BaseFragment {
                     setBackground(null);
                     setHint(LocaleController.getString(R.string.NilakWriterListItem));
                     break;
+                case WriterDoc.PHOTO:
+                    // the photo above, its caption as the text (small, centred, optional)
+                    setTypeface(Typeface.DEFAULT);
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+                    setLineSpacing(0, 1.3f);
+                    setGravity(Gravity.CENTER_HORIZONTAL);
+                    setPadding(dp(22), dp(10), dp(22), dp(12));
+                    setBackground(null);
+                    setHint(LocaleController.getString(R.string.NilakWriterCaptionHint));
+                    setCompoundDrawablePadding(dp(8));
+                    setCompoundDrawables(null, photoDrawable(path), null, null);
+                    break;
                 case WriterDoc.DIVIDER:
                     // a quiet break between parts: not text, removed with a tap or Backspace from below
                     setText("");
@@ -875,7 +1048,7 @@ public class WriterActivity extends BaseFragment {
                     setBackground(null);
                     setHint(column != null && (column.getChildCount() == 0 || index == 0) ? LocaleController.getString(R.string.NilakWriterStart) : null);
             }
-            setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : ink());
+            setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : type == WriterDoc.PHOTO ? muted() | 0xFF000000 : ink());
         }
 
         private final android.graphics.Paint markPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);

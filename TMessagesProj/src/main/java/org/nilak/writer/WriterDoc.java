@@ -25,6 +25,8 @@ public final class WriterDoc {
     public static final int BULLET = 3;
     public static final int NUMBER = 4;
     public static final int DIVIDER = 5;
+    /** A photo (path to the copy in the writer's folder) with its caption as the text. */
+    public static final int PHOTO = 6;
 
     public static boolean isList(int type) {
         return type == BULLET || type == NUMBER;
@@ -33,10 +35,17 @@ public final class WriterDoc {
     public static final class Block {
         public int type;
         public CharSequence text;
+        /** PHOTO: the image file. */
+        public String path;
 
         public Block(int type, CharSequence text) {
             this.type = type;
             this.text = text != null ? text : "";
+        }
+
+        public Block(int type, CharSequence text, String path) {
+            this(type, text);
+            this.path = path;
         }
     }
 
@@ -53,7 +62,7 @@ public final class WriterDoc {
             return false;
         }
         for (Block block : blocks) {
-            if (block.type == DIVIDER || block.text.toString().trim().length() > 0) {
+            if (block.type == DIVIDER || block.type == PHOTO || block.text.toString().trim().length() > 0) {
                 return false;
             }
         }
@@ -89,6 +98,9 @@ public final class WriterDoc {
             item.put("type", block.type);
             item.put("text", block.text.toString());
             item.put("marks", marksToJson(block.text));
+            if (block.path != null) {
+                item.put("path", block.path);
+            }
             list.put(item);
         }
         json.put("blocks", list);
@@ -108,7 +120,7 @@ public final class WriterDoc {
                 final JSONObject item = list.getJSONObject(i);
                 final SpannableStringBuilder text = new SpannableStringBuilder(item.optString("text", ""));
                 applyMarks(text, item.optJSONArray("marks"));
-                doc.blocks.add(new Block(item.optInt("type", PARAGRAPH), text));
+                doc.blocks.add(new Block(item.optInt("type", PARAGRAPH), text, item.optString("path", null)));
             }
         }
         return doc;

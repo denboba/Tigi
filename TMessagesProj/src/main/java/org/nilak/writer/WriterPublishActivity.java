@@ -32,7 +32,7 @@ import org.telegram.ui.TigiLilac;
 import org.telegram.ui.TigiStyle;
 
 /** Publish: how the article will look in the feed, a topic, who can find it, then one Publish button. */
-public class WriterPublishActivity extends BaseFragment {
+public class WriterPublishActivity extends BaseFragment implements org.telegram.messenger.NotificationCenter.NotificationCenterDelegate {
 
     private static final int[] TOPICS = {
         R.string.NilakInterestNews, R.string.NilakInterestTech, R.string.NilakTopicMarkets, R.string.NilakTopicPolitics,
@@ -48,6 +48,47 @@ public class WriterPublishActivity extends BaseFragment {
     private LinearLayout chips;
     private TextView publishButton;
     private boolean publishing;
+
+    /** The channel the article is being sent to while we wait for Telegram's answer (0 = not waiting). */
+    private long waitingDialog;
+    private boolean waitingEdit;
+
+    private final Runnable slowUpload = () -> {
+        if (waitingDialog != 0) {
+            // big articles keep uploading in the background: say so plainly and let the person go on
+            finishPublished(true);
+        }
+    };
+
+    @Override
+    public boolean onFragmentCreate() {
+        getNotificationCenter().addObserver(this, org.telegram.messenger.NotificationCenter.messageReceivedByServer);
+        getNotificationCenter().addObserver(this, org.telegram.messenger.NotificationCenter.messageSendError);
+        return super.onFragmentCreate();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        getNotificationCenter().removeObserver(this, org.telegram.messenger.NotificationCenter.messageReceivedByServer);
+        getNotificationCenter().removeObserver(this, org.telegram.messenger.NotificationCenter.messageSendError);
+        AndroidUtilities.cancelRunOnUIThread(slowUpload);
+        super.onFragmentDestroy();
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (waitingDialog == 0) {
+            return;
+        }
+        if (id == org.telegram.messenger.NotificationCenter.messageReceivedByServer) {
+            final long did = args.length > 3 && args[3] instanceof Long ? (Long) args[3] : 0;
+            if (did == waitingDialog) {
+                finishPublished(false);
+            }
+        } else if (id == org.telegram.messenger.NotificationCenter.messageSendError) {
+            failed(LocaleController.getString(R.string.NilakWriterSendFailed));
+        }
+    }
 
     public WriterPublishActivity(WriterActivity writer, WriterDoc doc, MessageObject editing) {
         super();
@@ -239,18 +280,62 @@ public class WriterPublishActivity extends BaseFragment {
             return;
         }
         publishing = true;
+        setButtonBusy(true);
         final String topicName = topic >= 0 ? LocaleController.getString(TOPICS[topic]) : null;
-        // progress and errors show on the screen the writer was opened from, which stays after these two close
-        BaseFragment target = this;
-        if (getParentLayout() != null && writer != null) {
-            final java.util.List<BaseFragment> stack = getParentLayout().getFragmentStack();
-            final int index = stack.indexOf(writer);
-            if (index > 0) {
-                target = stack.get(index - 1);
+        waitingDialog = -channel.id;
+        waitingEdit = editing != null;
+        // always a .nilak file: packed here, posted as a file, downloaded and read as a file
+        WriterExport.publish(currentAccount, channel, doc, topicName, showInRead, notifyFollowers, editing, handedOver -> {
+            if (isFinishing()) {
+                return;
             }
+            if (!handedOver) {
+                failed(LocaleController.getString(R.string.NilakArticleFailed));
+                return;
+            }
+            if (waitingEdit) {
+                // an edit replaces the file of an existing post: done once it is handed over
+                AndroidUtilities.runOnUIThread(() -> finishPublished(false), 1500);
+            } else {
+                AndroidUtilities.runOnUIThread(slowUpload, 90_000);
+            }
+        });
+    }
+
+    private void setButtonBusy(boolean busy) {
+        if (publishButton == null) {
+            return;
         }
-        WriterHomeActivity.justPublished = target instanceof WriterHomeActivity;
-        WriterBridge.publish(target, channel, doc, topicName, showInRead, notifyFollowers, editing);
+        publishButton.setEnabled(!busy);
+        publishButton.setAlpha(busy ? 0.75f : 1f);
+        publishButton.setText(LocaleController.getString(busy ? R.string.NilakWriterPublishingNow
+            : doc.editMessageId != 0 ? R.string.NilakWriterUpdate : R.string.NilakWriterPublish));
+    }
+
+    /** Something went wrong: a dialog that stays until read, and the article stays as a draft. */
+    private void failed(String message) {
+        waitingDialog = 0;
+        publishing = false;
+        AndroidUtilities.cancelRunOnUIThread(slowUpload);
+        setButtonBusy(false);
+        if (getParentActivity() == null) {
+            return;
+        }
+        final org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.NilakWriterNotPublished));
+        builder.setMessage(message + "\n\n" + LocaleController.getString(R.string.NilakWriterDraftKept));
+        builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
+        showDialog(builder.create());
+    }
+
+    private void finishPublished(boolean stillUploading) {
+        if (waitingDialog == 0 && !stillUploading) {
+            return;
+        }
+        waitingDialog = 0;
+        AndroidUtilities.cancelRunOnUIThread(slowUpload);
+        WriterHomeActivity.publishedMessage = LocaleController.getString(stillUploading ? R.string.NilakWriterStillUploading
+            : waitingEdit ? R.string.NilakWriterUpdated : R.string.NilakWriterPublishedDone);
         if (writer != null) {
             writer.published();
         }

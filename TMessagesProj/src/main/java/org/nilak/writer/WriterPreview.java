@@ -8,7 +8,6 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.TigiArticle;
 import org.telegram.ui.TigiArticleReaderActivity;
-import org.telegram.ui.TigiRichArticle;
 
 import java.io.File;
 
@@ -20,23 +19,45 @@ final class WriterPreview {
 
     static void open(BaseFragment fragment, WriterDoc doc) {
         try {
-            final TigiRichArticle.Converted converted = TigiRichArticle.convert(WriterBridge.toBlocks(doc, false), (id, video) -> null);
             final File dir = new File(ApplicationLoader.applicationContext.getCacheDir(), "nilak_writer_preview");
             TigiArticle.deleteRecursive(dir);
             dir.mkdirs();
+            final File media = new File(dir, "media");
+            String cover = null;
+            for (WriterDoc.Block block : doc.blocks) {
+                if (block.type == WriterDoc.PHOTO && block.path != null && new File(block.path).exists()) {
+                    media.mkdirs();
+                    final File source = new File(block.path);
+                    copy(source, new File(media, source.getName()));
+                    if (cover == null) {
+                        cover = "media/" + source.getName();
+                    }
+                }
+            }
             final TigiArticle.Meta meta = new TigiArticle.Meta();
-            meta.title = converted.title;
-            meta.subtitle = converted.subtitle;
+            meta.title = doc.title.trim();
+            meta.subtitle = "";
             final TLRPC.User me = UserConfig.getInstance(fragment.getCurrentAccount()).getCurrentUser();
             meta.author = me != null ? UserObject.getUserName(me) : "";
+            meta.cover = cover;
             meta.words = doc.wordCount();
             meta.minutes = doc.minutes();
             meta.created = System.currentTimeMillis() / 1000;
             TigiArticle.writeMeta(dir, meta);
-            TigiArticle.writeText(new File(dir, TigiArticle.BODY), converted.body.toString());
+            TigiArticle.writeText(new File(dir, TigiArticle.BODY), WriterExport.markdown(doc));
             TigiArticleReaderActivity.preview(fragment, dir);
         } catch (Exception e) {
             FileLog.e(e);
+        }
+    }
+
+    private static void copy(File from, File to) throws Exception {
+        try (java.io.InputStream in = new java.io.FileInputStream(from); java.io.OutputStream out = new java.io.FileOutputStream(to)) {
+            final byte[] buffer = new byte[16384];
+            int n;
+            while ((n = in.read(buffer)) > 0) {
+                out.write(buffer, 0, n);
+            }
         }
     }
 }

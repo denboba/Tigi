@@ -762,15 +762,17 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         box.setOrientation(VERTICAL);
         box.setPadding(dp(16), dp(14), dp(16), dp(14));
         box.setBackground(Theme.createRoundRectDrawable(dp(16), Theme.multAlpha(TigiStyle.accent(), Theme.isCurrentThemeDark() ? 0.18f : 0.08f)));
+        final boolean featured = fragment instanceof TigiTopicFeedActivity && ((TigiTopicFeedActivity) fragment).isFeatured(message);
         final TextView label = new TextView(getContext());
-        label.setText(LocaleController.getString(R.string.NilakArticleLabel).toUpperCase(Locale.getDefault()));
+        label.setText((featured ? LocaleController.getString(R.string.NilakFeatured) + " · " : "")
+            + LocaleController.getString(R.string.NilakArticleLabel).toUpperCase(Locale.getDefault()));
         label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
         label.setTypeface(TigiStyle.displayExtraBold());
         label.setTextColor(TigiStyle.accent());
         box.addView(label);
         final TextView title = new TextView(getContext());
         title.setText(TigiArticle.titleOf(message));
-        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, featured ? 25 : 20);
         // Lilac: article titles in a serif, like a magazine; the app's display font otherwise
         title.setTypeface(TigiLilac.on() ? android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD) : TigiStyle.displayExtraBold());
         title.setTextColor(text());

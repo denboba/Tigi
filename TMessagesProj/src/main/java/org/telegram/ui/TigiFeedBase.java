@@ -490,6 +490,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         emptyView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         emptyView.setGravity(Gravity.CENTER);
         emptyView.setPadding(dp(32), 0, dp(32), 0);
+        TigiLilac.decorateEmpty(emptyView);
         body.addView(emptyView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER));
 
         shimmerView = new TigiShimmerView(context, TigiShimmerView.STYLE_CARDS);

@@ -94,6 +94,49 @@ public final class TigiLilac {
         return dark() ? 0xFF1A1326 : 0xFFF5EFFD;
     }
 
+    /**
+     * Lilac night for Telegram's own dark themes: deep violet surfaces, violet outgoing bubbles, and the blue or
+     * green accents inside your messages turned lilac. Text colours stay as the theme made them (they are light).
+     */
+    public static void tintNight(android.util.SparseIntArray colors) {
+        final android.util.SparseIntArray fixed = new android.util.SparseIntArray();
+        fixed.put(Theme.key_windowBackgroundWhite, 0xFF1B1428);
+        fixed.put(Theme.key_windowBackgroundGray, 0xFF120D1B);
+        fixed.put(Theme.key_actionBarDefault, 0xFF1B1428);
+        fixed.put(Theme.key_actionBarDefaultSubmenuBackground, 0xFF241B34);
+        fixed.put(Theme.key_dialogBackground, 0xFF221A31);
+        fixed.put(Theme.key_dialogBackgroundGray, 0xFF1B1428);
+        fixed.put(Theme.key_windowBackgroundWhiteGrayText, 0xFFA99BBF);
+        fixed.put(Theme.key_chat_inBubble, 0xFF2A1F3C);
+        fixed.put(Theme.key_chat_inBubbleSelected, 0xFF34274A);
+        fixed.put(Theme.key_chat_outBubble, 0xFF4E3388);
+        fixed.put(Theme.key_chat_outBubbleSelected, 0xFF5A3D99);
+        final float[] hsv = new float[3];
+        for (int i = 0; i < colors.size(); i++) {
+            final int key = colors.keyAt(i);
+            final int fixedColor = fixed.get(key, 0);
+            if (fixedColor != 0) {
+                colors.put(key, fixedColor);
+                continue;
+            }
+            final String name = org.telegram.ui.ActionBar.ThemeColors.getStringName(key);
+            if (name == null || !name.startsWith("chat_out") || name.startsWith("chat_outGreenCall") || name.startsWith("chat_outPollCorrect")) {
+                continue;
+            }
+            final int color = colors.valueAt(i);
+            android.graphics.Color.colorToHSV(color, hsv);
+            if (hsv[1] > 0.15f && hsv[0] >= 80 && hsv[0] <= 250) {
+                hsv[0] = 268;
+                colors.put(key, android.graphics.Color.HSVToColor(android.graphics.Color.alpha(color), hsv));
+            }
+        }
+        for (int i = 0; i < fixed.size(); i++) {
+            if (colors.indexOfKey(fixed.keyAt(i)) < 0) {
+                colors.put(fixed.keyAt(i), fixed.valueAt(i));
+            }
+        }
+    }
+
     /** The lilac page: a gentle vertical gradient with three soft glows. */
     public static Drawable page() {
         return new PageDrawable(false);
@@ -126,6 +169,18 @@ public final class TigiLilac {
         parent.addView(sprig, 0, LayoutHelper.createFrame(sizeDp, sizeDp, Gravity.TOP | side, 0, -sizeDp, -sizeDp * 0.22f, 0));
         sprig.setTranslationY(dp(sizeDp * 0.72f));
         return sprig;
+    }
+
+    /** Empty screens: a small lilac sprig above the message, so an empty page still looks finished. */
+    public static void decorateEmpty(android.widget.TextView view) {
+        if (!on() || view == null) {
+            return;
+        }
+        final Drawable sprig = view.getContext().getResources().getDrawable(R.drawable.nilak_lilac_sprig).mutate();
+        sprig.setBounds(0, 0, dp(96), dp(96));
+        sprig.setAlpha(dark() ? 150 : 255);
+        view.setCompoundDrawables(null, sprig, null, null);
+        view.setCompoundDrawablePadding(dp(14));
     }
 
     /** Small round "glass" circle behind header buttons so they read over the sprig. */

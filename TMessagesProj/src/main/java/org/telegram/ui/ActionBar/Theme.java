@@ -6079,6 +6079,10 @@ public class Theme {
         if (accent != null) {
             shouldDrawGradientIcons = accent.fillAccentColors(currentColorsNoAccent, currentColors);
         }
+        if (org.telegram.messenger.BuildVars.NILAK_LILAC && currentTheme.isDark()) {
+            // Nilak Lilac: Telegram's dark themes become the lilac night (surfaces, your bubbles, accents)
+            org.telegram.ui.TigiLilac.tintNight(currentColors);
+        }
         applyCalculatedTableColors(currentColorsNoAccent, currentColors, currentTheme.isDark());
         applyCalculatedArticleCodeColors(currentColorsNoAccent, currentColors, currentTheme.isDark());
         if (!messages) {

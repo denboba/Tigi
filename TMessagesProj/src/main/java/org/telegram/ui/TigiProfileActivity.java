@@ -1396,7 +1396,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 final TextView state = new TextView(parent.getContext());
                 state.setGravity(Gravity.CENTER);
                 state.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-                state.setPadding(dp(32), dp(48), dp(32), dp(48));
+                state.setPadding(dp(32), dp(36), dp(32), dp(48));
+                TigiLilac.decorateEmpty(state);
                 view = state;
                 view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else if (viewType == TYPE_CHIPS) {

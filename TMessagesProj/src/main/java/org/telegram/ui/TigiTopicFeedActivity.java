@@ -449,6 +449,16 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
         }
     }
 
+    /** The first article in Read is shown larger, as the featured story. */
+    boolean isFeatured(MessageObject message) {
+        if (mode != MODE_READ || posts.isEmpty() || message == null) {
+            return false;
+        }
+        final FeedPost first = posts.get(0);
+        return first != null && !first.messages.isEmpty() && first.primary().getId() == message.getId()
+            && first.primary().getDialogId() == message.getDialogId();
+    }
+
     private LinearLayout continueCard;
     private TigiSuggestedRow writersRow;
     private TextView continueTitle;

@@ -10677,6 +10677,7 @@
     <string name="NilakContinueReading">Continue reading</string>
     <string name="NilakReadPercent">%1$d%% read</string>
     <string name="NilakWritersToFollow">Writers to follow</string>
+    <string name="NilakFeatured">FEATURED</string>
     <string name="NilakFlowersOn">Lilac flowers: on</string>
     <string name="NilakFlowersOff">Lilac flowers: off</string>
     <string name="NilakPdfLocked">This PDF is protected with a password. Open it in another app.</string>

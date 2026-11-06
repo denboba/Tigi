@@ -156,7 +156,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         final FrameLayout root = new FrameLayout(context);
         root.setBackgroundColor(0xFF000000);
 
-        inlinePlayer = new TigiInlinePlayer(currentAccount, "tigi_reels_muted_v1");
+        inlinePlayer = new TigiInlinePlayer(currentAccount); // the same sound choice as the feeds
         inlinePlayer.setFitInside(true);
         inlinePlayer.setCropTall(true);
 
@@ -315,12 +315,19 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         }
     }
 
+    @Override
+    protected void onSoundChanged() {
+        updateMuteButton();
+        flashSoundOnCurrent();
+    }
+
     private void updateMuteButton() {
         if (muteButton == null || inlinePlayer == null) {
             return;
         }
         final boolean muted = inlinePlayer.isMuted();
-        muteButton.setImageResource(muted ? R.drawable.media_mute : R.drawable.media_unmute);
+        // the icon shows the state, like TikTok: crossed speaker while muted
+        muteButton.setImageResource(muted ? R.drawable.media_unmute : R.drawable.media_mute);
         muteButton.setContentDescription(LocaleController.getString(muted ? R.string.TigiUnmute : R.string.TigiMute));
     }
 
@@ -357,7 +364,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
     @Override
     public void onResume() {
         super.onResume();
-        updateMuteButton();
+        updateMuteButton(); // the sound may have changed on Home
         if (posts.isEmpty() && !loading) {
             loadMore();
         }
@@ -1136,7 +1143,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
         }
 
         void flashSound(boolean muted) {
-            soundFlash.setImageResource(muted ? R.drawable.media_mute : R.drawable.media_unmute);
+            soundFlash.setImageResource(muted ? R.drawable.media_unmute : R.drawable.media_mute);
             soundFlash.animate().cancel();
             soundFlash.setAlpha(1f);
             soundFlash.setScaleX(0.9f);

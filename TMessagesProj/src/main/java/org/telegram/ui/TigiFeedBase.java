@@ -231,6 +231,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     public void onResume() {
         super.onResume();
         paused = false;
+        if (inlinePlayer != null) {
+            // the sound is one choice across Home, channel feeds and Reels
+            inlinePlayer.syncMute();
+        }
         if (listView != null) {
             listView.post(this::checkAutoplay);
         }
@@ -1117,6 +1121,34 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
         }
         return message.isVideo() ? 16f / 9f : 1f;
+    }
+
+    /** Volume up while a video plays muted turns the sound on (Instagram, TikTok); the key still changes the volume. */
+    public void onVolumeUp() {
+        if (inlinePlayer == null || !inlinePlayer.isActive() || !inlinePlayer.isMuted()) {
+            return;
+        }
+        inlinePlayer.setMuted(false);
+        onSoundChanged();
+    }
+
+    /** The sound changed outside a tap on the video (volume key, another screen): redraw the visible controls. */
+    protected void onSoundChanged() {
+        refreshSoundControls(listView);
+    }
+
+    private void refreshSoundControls(View view) {
+        if (view instanceof FeedCell.PhotoPage) {
+            ((FeedCell.PhotoPage) view).updateControls();
+            if (inlinePlayer != null && inlinePlayer.isPlaying(((FeedCell.PhotoPage) view).message)) {
+                ((FeedCell.PhotoPage) view).flashSound();
+            }
+        } else if (view instanceof ViewGroup) {
+            final ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                refreshSoundControls(group.getChildAt(i));
+            }
+        }
     }
 
     /** A label for posts the cards can't show; null when the post is shown normally. */
@@ -2293,6 +2325,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             private final ImageView muteButton;
             private final ImageView fullscreenButton;
             private final TextView durationView;
+            private ImageView soundFlash;
             private int position;
             MessageObject message;
 
@@ -2310,7 +2343,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 playView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
                 addView(playView, LayoutHelper.createFrame(60, 60, Gravity.CENTER));
 
-                muteButton = makeControl(context, R.drawable.media_mute);
+                muteButton = makeControl(context, R.drawable.media_unmute);
                 muteButton.setOnClickListener(v -> toggleMute());
                 addView(muteButton, LayoutHelper.createFrame(36, 36, Gravity.BOTTOM | Gravity.RIGHT, 0, 0, 10, 10));
 
@@ -2414,6 +2447,30 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 }
                 inlinePlayer.setMuted(!inlinePlayer.isMuted());
                 updateControls();
+                flashSound();
+            }
+
+            /** A short speaker mark in the middle when the sound changes (Instagram's tap feedback). */
+            void flashSound() {
+                if (inlinePlayer == null) {
+                    return;
+                }
+                if (soundFlash == null) {
+                    soundFlash = new ImageView(getContext());
+                    soundFlash.setScaleType(ImageView.ScaleType.CENTER);
+                    soundFlash.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
+                    soundFlash.setBackground(Theme.createRoundRectDrawable(dp(32), 0x80111827));
+                    soundFlash.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+                    addView(soundFlash, LayoutHelper.createFrame(64, 64, Gravity.CENTER));
+                }
+                soundFlash.setImageResource(inlinePlayer.isMuted() ? R.drawable.media_unmute : R.drawable.media_mute);
+                soundFlash.animate().cancel();
+                soundFlash.setAlpha(0f);
+                soundFlash.setScaleX(0.8f);
+                soundFlash.setScaleY(0.8f);
+                soundFlash.setVisibility(VISIBLE);
+                soundFlash.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(140).withEndAction(() ->
+                    soundFlash.animate().alpha(0f).setStartDelay(500).setDuration(220).withEndAction(() -> soundFlash.setVisibility(GONE)).start()).start();
             }
 
             void updateControls() {
@@ -2435,7 +2492,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 muteButton.setVisibility(showMute ? VISIBLE : GONE);
                 if (showMute) {
                     final boolean muted = inlinePlayer.isMuted();
-                    muteButton.setImageResource(muted ? R.drawable.media_mute : R.drawable.media_unmute);
+                    // the icon shows the state, like Instagram: crossed speaker while muted
+                    muteButton.setImageResource(muted ? R.drawable.media_unmute : R.drawable.media_mute);
                     muteButton.setContentDescription(LocaleController.getString(muted ? R.string.TigiUnmute : R.string.TigiMute));
                 }
             }

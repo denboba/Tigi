@@ -8585,6 +8585,13 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
             } else if (!mainFragmentsStack.isEmpty() && (!PhotoViewer.hasInstance() || !PhotoViewer.getInstance().isVisible()) && event.getRepeatCount() == 0) {
                 BaseFragment fragment = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
+                // Nilak: volume up turns the sound of a muted feed or reel video on; the volume itself still changes
+                if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_UP && !BaseFragment.hasSheets(fragment)) {
+                    final BaseFragment visible = fragment instanceof MainTabsActivity ? ((MainTabsActivity) fragment).getCurrentVisibleFragment() : fragment;
+                    if (visible instanceof TigiFeedBase) {
+                        ((TigiFeedBase) visible).onVolumeUp();
+                    }
+                }
                 if (fragment instanceof ChatActivity && !BaseFragment.hasSheets(fragment)) {
                     if (((ChatActivity) fragment).maybePlayVisibleVideo()) {
                         return true;

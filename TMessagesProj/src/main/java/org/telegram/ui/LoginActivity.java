@@ -3039,25 +3039,16 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 }
             }
 
-            // Nilak: Google Play's review login. Telegram's test servers accept the numbers +99966 X YYYY with the
-            // fixed code XXXXX (X = 1..3), so reviewers get a login that never expires and needs no SMS. Typing
-            // such a number switches this login to the test servers; nothing else changes for real numbers.
-            final String reviewPhone = PhoneFormat.stripExceptNumbers("" + codeField.getText() + phoneField.getText());
-            final boolean reviewLogin = activityMode == MODE_LOGIN && reviewPhone.length() == 10 && reviewPhone.startsWith("99966")
-                && reviewPhone.charAt(5) >= '1' && reviewPhone.charAt(5) <= '3';
-            if (reviewLogin && !getConnectionsManager().isTestBackend()) {
-                testBackend = true;
-                getConnectionsManager().switchBackend(false);
-            } else if (!reviewLogin && getConnectionsManager().isTestBackend() && !BuildVars.DEBUG_VERSION && !(TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE)) {
-                // a real number after a review number: back to the real servers
+            // Nilak: store builds always sign in on the real servers (Telegram retired the free test numbers)
+            if (getConnectionsManager().isTestBackend() && !BuildVars.DEBUG_VERSION && !(TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE)) {
                 testBackend = false;
                 getConnectionsManager().switchBackend(false);
             }
-            if (countryState == COUNTRY_STATE_EMPTY && !reviewLogin) {
+            if (countryState == COUNTRY_STATE_EMPTY) {
                 needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString("ChooseCountry", R.string.ChooseCountry));
                 needHideProgress(false);
                 return;
-            } else if (countryState == COUNTRY_STATE_INVALID && !reviewLogin && !BuildVars.DEBUG_VERSION && !(TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE)) {
+            } else if (countryState == COUNTRY_STATE_INVALID && !BuildVars.DEBUG_VERSION && !(TEST_BACKEND_IN_STORE && !BuildConfig.BUNDLE)) {
                 needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString(R.string.WrongCountry));
                 needHideProgress(false);
                 return;
@@ -4325,69 +4316,6 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
          * Nilak: on Telegram's test servers (the Google Play review numbers +99966 X YYYY) the code is the digit X
          * repeated for the code's length, which the server sets (5 or 6 digits). Filled in and sent automatically.
          */
-        /** The DC digit of a Google Play review number (+99966 X YYYY) on the test servers, or 0. */
-        private char reviewDigit() {
-            if (!getConnectionsManager().isTestBackend()) {
-                return 0;
-            }
-            final String digits = PhoneFormat.stripExceptNumbers(phone != null ? phone : "");
-            if (digits.length() != 10 || !digits.startsWith("99966") || digits.charAt(5) < '1' || digits.charAt(5) > '3') {
-                return 0;
-            }
-            return digits.charAt(5);
-        }
-
-        private boolean reviewRetried;
-
-        private void fillReviewCode() {
-            reviewRetried = false;
-            if (reviewDigit() == 0 || codeFieldContainer == null || codeFieldContainer.codeField == null) {
-                return;
-            }
-            fillReviewCodeWhenShown(0);
-        }
-
-        /** Waits until this page is on screen and accepts input (not during the slide-in), then fills and sends once. */
-        private void fillReviewCodeWhenShown(int attempt) {
-            AndroidUtilities.runOnUIThread(() -> {
-                final char dc = reviewDigit();
-                if (dc == 0 || codeFieldContainer == null || codeFieldContainer.codeField == null || nextPressed) {
-                    return;
-                }
-                if (currentViewNum < 0 || views[currentViewNum] != this || codeFieldContainer.isFocusSuppressed) {
-                    if (attempt < 10) {
-                        fillReviewCodeWhenShown(attempt + 1);
-                    }
-                    return;
-                }
-                final StringBuilder code = new StringBuilder();
-                for (int i = 0; i < codeFieldContainer.codeField.length; i++) {
-                    code.append(dc);
-                }
-                // filling the last box sends the code by itself; the explicit call is a no-op then
-                for (int i = 0; i < codeFieldContainer.codeField.length; i++) {
-                    codeFieldContainer.codeField[i].setText(String.valueOf(dc));
-                }
-                onNextPressed(code.toString());
-            }, attempt == 0 ? 500 : 300);
-        }
-
-        /** Test servers use the DC digit 5 or 6 times; when one length is refused, the other is tried once. */
-        private boolean retryReviewCode() {
-            final char dc = reviewDigit();
-            if (dc == 0 || reviewRetried || codeFieldContainer == null || codeFieldContainer.codeField == null) {
-                return false;
-            }
-            reviewRetried = true;
-            final int other = codeFieldContainer.codeField.length == 6 ? 5 : 6;
-            final StringBuilder code = new StringBuilder();
-            for (int i = 0; i < other; i++) {
-                code.append(dc);
-            }
-            AndroidUtilities.runOnUIThread(() -> onNextPressed(code.toString()), 300);
-            return true;
-        }
-
         @Override
         public void setParams(Bundle params, boolean restore) {
             if (params == null) {
@@ -4447,7 +4375,6 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             nextCodeAuth = null;
 
             codeFieldContainer.setNumbersCount(length, currentType);
-            fillReviewCode();
             for (CodeNumberField f : codeFieldContainer.codeField) {
                 f.setShowSoftInputOnFocusCompat(!(hasCustomKeyboard() && !isCustomKeyboardForceDisabled()));
                 f.addTextChangedListener(new TextWatcher() {
@@ -5053,9 +4980,6 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                                     boolean isWrongCode = false;
                                     if (error.text.contains("PHONE_NUMBER_INVALID")) {
                                         needShowAlert(getString(R.string.RestorePasswordNoEmailTitle), getString("InvalidPhoneNumber", R.string.InvalidPhoneNumber));
-                                    } else if ((error.text.contains("PHONE_CODE_EMPTY") || error.text.contains("PHONE_CODE_INVALID")) && retryReviewCode()) {
-                                        // Nilak: review number, the other code length is being tried
-                                        isWrongCode = true;
                                     } else if (error.text.contains("PHONE_CODE_EMPTY") || error.text.contains("PHONE_CODE_INVALID")) {
                                         shakeWrongCode();
                                         isWrongCode = true;

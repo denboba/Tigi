@@ -97,6 +97,23 @@ public class TigiInlinePlayer {
         return muted;
     }
 
+    /** Another screen may have changed the sound since this one played: take the shared choice again. */
+    public void syncMute() {
+        final boolean value = defaultMuted();
+        if (value != muted) {
+            muted = value;
+            if (player != null) {
+                player.setMute(muted);
+                player.handleAudioFocus(!muted);
+            }
+        }
+    }
+
+    /** A video is loaded or playing right now. */
+    public boolean isActive() {
+        return player != null && message != null;
+    }
+
     public void setMuted(boolean muted) {
         this.muted = muted;
         prefs().edit().putBoolean(muteKey, muted).apply();

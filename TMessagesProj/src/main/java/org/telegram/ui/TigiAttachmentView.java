@@ -177,7 +177,7 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     }
 
     private android.graphics.drawable.Drawable box() {
-        return Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray));
+        return Theme.createRoundRectDrawable(dp(14), TigiLilac.inset());
     }
 
     /* polls */
@@ -256,14 +256,14 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         option.setPadding(dp(14), 0, dp(14), 0);
         option.setSingleLine(true);
         option.setEllipsize(TextUtils.TruncateAt.END);
-        option.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.18f)));
+        option.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(12), TigiLilac.inset(), Theme.multAlpha(TigiStyle.accent(), 0.18f)));
         option.setOnClickListener(v -> {
             if (poll.multiple_choice) {
                 if (!removeOption(answer.option)) {
                     pickedOptions.add(answer.option);
                 }
                 option.setBackground(containsOption(answer.option) ? TigiStyle.tintedPill(12)
-                    : Theme.createSimpleSelectorRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.18f)));
+                    : Theme.createSimpleSelectorRoundRectDrawable(dp(12), TigiLilac.inset(), Theme.multAlpha(TigiStyle.accent(), 0.18f)));
                 option.setTextColor(containsOption(answer.option) ? TigiStyle.accent() : text());
             } else {
                 pickedOptions.clear();
@@ -341,7 +341,7 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     private View resultRow(TLRPC.PollAnswer answer, int votes, int total, boolean chosen) {
         final int percent = total > 0 ? Math.round(votes * 100f / total) : 0;
         final FrameLayout row = new FrameLayout(getContext());
-        row.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray)));
+        row.setBackground(Theme.createRoundRectDrawable(dp(12), TigiLilac.inset()));
         final View fill = new View(getContext());
         fill.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.multAlpha(TigiStyle.accent(), chosen ? 0.28f : 0.14f)));
         row.addView(fill, new FrameLayout.LayoutParams(0, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -851,7 +851,7 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
             documentPreview = new BackupImageView(getContext());
             documentPreview.setRoundRadius(dp(14), dp(14), 0, 0);
             documentPreview.getImageReceiver().setAspectFit(false);
-            documentPreview.setBackgroundColor(pdf ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundGray));
+            documentPreview.setBackgroundColor(pdf ? 0xFFFFFFFF : TigiLilac.inset());
             if (thumb != null) {
                 documentPreview.setImage(ImageLocation.getForDocument(thumb, document), "640_360", (android.graphics.drawable.Drawable) null, message);
             }

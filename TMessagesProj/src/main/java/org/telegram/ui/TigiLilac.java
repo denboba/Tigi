@@ -66,6 +66,14 @@ public final class TigiLilac {
         return dark() ? 0xFF2A1F3C : 0xFFFFFFFF;
     }
 
+    /** Blocks inside a card (poll options, music, files): a shade of the card, never the window colour. */
+    public static int inset() {
+        if (!on()) {
+            return Theme.getColor(Theme.key_windowBackgroundGray);
+        }
+        return dark() ? 0xFF372A4D : 0xFFF2ECFA;
+    }
+
     /** Icons and strong text on cards and the page. */
     public static int ink() {
         return dark() ? 0xFFE9DFF8 : 0xFF2A1D40;

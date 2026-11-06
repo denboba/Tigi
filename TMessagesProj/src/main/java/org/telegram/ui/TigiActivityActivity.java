@@ -47,9 +47,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 
 /**
- * Nilak Activity: what happened to the user's posts in their own channel. Reactions per post (Telegram keeps channel
- * reactions anonymous, so counts, not names), comments from the discussion group, new followers from the member
- * list, and view milestones. Read on open; nothing is stored.
+ * Nilak Activity, the bell: everything that happened around the user, like a social app's notifications. Reactions on
+ * their posts (anonymous in channels, so counts), comments, new followers, view milestones, replies to their comments
+ * anywhere, mentions and reactions to their messages in chats, who viewed or reacted to their stories, and contacts who
+ * joined. Read from Telegram on open; nothing is stored.
  */
 public class TigiActivityActivity extends BaseFragment {
 
@@ -61,6 +62,12 @@ public class TigiActivityActivity extends BaseFragment {
     private static final int KIND_COMMENT = 1;
     private static final int KIND_FOLLOWERS = 2;
     private static final int KIND_VIEWS = 3;
+    private static final int KIND_REPLY = 4;
+    private static final int KIND_MENTION = 5;
+    private static final int KIND_MESSAGE_REACTION = 6;
+    private static final int KIND_STORY = 7;
+    private static final int KIND_JOINED = 8;
+    private static final int DIALOGS_TO_ASK = 6;
 
     private static class Item {
         int kind;
@@ -69,6 +76,8 @@ public class TigiActivityActivity extends BaseFragment {
         TLObject who;
         MessageObject post;
         String detail;
+        long dialogId;
+        int messageId;
     }
 
     private TLRPC.Chat channel;
@@ -121,12 +130,20 @@ public class TigiActivityActivity extends BaseFragment {
     /* loading */
 
     private void load() {
-        if (channel == null) {
-            loading = false;
-            rebuild();
-            return;
+        // the sources that do not need the user's posts, then their posts' ones
+        pending = 1;
+        loadReplies();
+        loadChatActivity();
+        loadStoryViews();
+        addJoinedContacts();
+        if (channel != null) {
+            loadOwnPosts();
         }
-        pending = 2;
+        done();
+    }
+
+    private void loadOwnPosts() {
+        pending += 2;
         final TLRPC.TL_messages_getHistory history = new TLRPC.TL_messages_getHistory();
         history.peer = getMessagesController().getInputPeer(-channel.id);
         history.limit = RECENT_POSTS;
@@ -258,6 +275,241 @@ public class TigiActivityActivity extends BaseFragment {
         }
     }
 
+    private static String reactionText(TLRPC.Reaction reaction) {
+        return reaction instanceof TLRPC.TL_reactionEmoji ? ((TLRPC.TL_reactionEmoji) reaction).emoticon : "❤️";
+    }
+
+    private static String excerpt(String text) {
+        if (TextUtils.isEmpty(text)) {
+            return "";
+        }
+        final String line = text.replace('\n', ' ').trim();
+        return line.length() > 80 ? line.substring(0, 80) + "…" : line;
+    }
+
+    /** Replies to the user's comments anywhere: Telegram collects them in the "Replies" chat. */
+    private void loadReplies() {
+        final TLRPC.InputPeer peer = getMessagesController().getInputPeer(UserObject.REPLY_BOT);
+        if (peer == null || peer instanceof TLRPC.TL_inputPeerEmpty) {
+            return;
+        }
+        pending++;
+        final TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
+        req.peer = peer;
+        req.limit = 30;
+        getConnectionsManager().bindRequestToGuid(getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (response instanceof TLRPC.messages_Messages) {
+                final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                getMessagesController().putUsers(res.users, false);
+                getMessagesController().putChats(res.chats, false);
+                for (int i = 0; i < res.messages.size(); i++) {
+                    final TLRPC.Message message = res.messages.get(i);
+                    if (message instanceof TLRPC.TL_messageService || message.fwd_from == null || message.fwd_from.from_id == null) {
+                        continue;
+                    }
+                    final Item item = new Item();
+                    item.kind = KIND_REPLY;
+                    item.date = message.date;
+                    item.who = getMessagesController().getUserOrChat(DialogObject.getPeerDialogId(message.fwd_from.from_id));
+                    item.dialogId = UserObject.REPLY_BOT;
+                    item.messageId = message.id;
+                    final SpannableStringBuilder text = new SpannableStringBuilder(bold(name(item.who)));
+                    text.append(' ').append(LocaleController.formatString(R.string.NilakActivityReplied, excerpt(message.message)));
+                    item.text = text;
+                    items.add(item);
+                }
+            }
+            done();
+        })), classGuid);
+    }
+
+    /** Mentions and reactions to the user's messages in their chats and groups (the ones Telegram marks unseen). */
+    private void loadChatActivity() {
+        final ArrayList<TLRPC.Dialog> dialogs = getMessagesController().getAllDialogs();
+        int mentions = 0;
+        int reactions = 0;
+        for (int i = 0; i < dialogs.size() && i < 300; i++) {
+            final TLRPC.Dialog dialog = dialogs.get(i);
+            if (dialog.unread_mentions_count > 0 && mentions < DIALOGS_TO_ASK) {
+                mentions++;
+                loadMentions(dialog.id);
+            }
+            if (dialog.unread_reactions_count > 0 && reactions < DIALOGS_TO_ASK) {
+                reactions++;
+                loadMessageReactions(dialog.id);
+            }
+        }
+    }
+
+    private String chatTitle(long dialogId) {
+        final TLObject chat = getMessagesController().getUserOrChat(dialogId);
+        return name(chat);
+    }
+
+    private void loadMentions(long dialogId) {
+        final TLRPC.TL_messages_getUnreadMentions req = new TLRPC.TL_messages_getUnreadMentions();
+        req.peer = getMessagesController().getInputPeer(dialogId);
+        req.limit = 5;
+        if (req.peer == null) {
+            return;
+        }
+        pending++;
+        getConnectionsManager().bindRequestToGuid(getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (response instanceof TLRPC.messages_Messages) {
+                final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                getMessagesController().putUsers(res.users, false);
+                getMessagesController().putChats(res.chats, false);
+                for (int i = 0; i < res.messages.size(); i++) {
+                    final TLRPC.Message message = res.messages.get(i);
+                    final Item item = new Item();
+                    item.kind = KIND_MENTION;
+                    item.date = message.date;
+                    item.who = getMessagesController().getUserOrChat(MessageObject.getFromChatId(message));
+                    item.dialogId = dialogId;
+                    item.messageId = message.id;
+                    final SpannableStringBuilder text = new SpannableStringBuilder(bold(name(item.who)));
+                    text.append(' ').append(LocaleController.formatString(R.string.NilakActivityMentioned, chatTitle(dialogId), excerpt(message.message)));
+                    item.text = text;
+                    items.add(item);
+                }
+            }
+            done();
+        })), classGuid);
+    }
+
+    private void loadMessageReactions(long dialogId) {
+        final TLRPC.TL_messages_getUnreadReactions req = new TLRPC.TL_messages_getUnreadReactions();
+        req.peer = getMessagesController().getInputPeer(dialogId);
+        req.limit = 5;
+        if (req.peer == null) {
+            return;
+        }
+        pending++;
+        getConnectionsManager().bindRequestToGuid(getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (response instanceof TLRPC.messages_Messages) {
+                final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                getMessagesController().putUsers(res.users, false);
+                getMessagesController().putChats(res.chats, false);
+                for (int i = 0; i < res.messages.size(); i++) {
+                    final TLRPC.Message message = res.messages.get(i);
+                    if (message.reactions == null) {
+                        continue;
+                    }
+                    for (int r = 0; r < message.reactions.recent_reactions.size() && r < 3; r++) {
+                        final TLRPC.MessagePeerReaction reaction = message.reactions.recent_reactions.get(r);
+                        final long who = DialogObject.getPeerDialogId(reaction.peer_id);
+                        if (who == getUserConfig().getClientUserId()) {
+                            continue;
+                        }
+                        final Item item = new Item();
+                        item.kind = KIND_MESSAGE_REACTION;
+                        item.date = reaction.date > 0 ? reaction.date : message.date;
+                        item.who = getMessagesController().getUserOrChat(who);
+                        item.dialogId = dialogId;
+                        item.messageId = message.id;
+                        final SpannableStringBuilder text = new SpannableStringBuilder(bold(name(item.who)));
+                        text.append(' ').append(LocaleController.formatString(R.string.NilakActivityReactedMessage, reactionText(reaction.reaction), excerpt(message.message)));
+                        item.text = text;
+                        items.add(item);
+                    }
+                }
+            }
+            done();
+        })), classGuid);
+    }
+
+    /** Who viewed and reacted to the user's current stories. */
+    private void loadStoryViews() {
+        final long self = getUserConfig().getClientUserId();
+        final org.telegram.tgnet.tl.TL_stories.PeerStories stories = getMessagesController().getStoriesController().getStories(self);
+        if (stories == null || stories.stories == null) {
+            return;
+        }
+        for (int i = 0; i < stories.stories.size() && i < 3; i++) {
+            final org.telegram.tgnet.tl.TL_stories.StoryItem story = stories.stories.get(i);
+            final org.telegram.tgnet.tl.TL_stories.TL_stories_getStoryViewsList req = new org.telegram.tgnet.tl.TL_stories.TL_stories_getStoryViewsList();
+            req.peer = getMessagesController().getInputPeer(self);
+            req.id = story.id;
+            req.limit = 30;
+            req.offset = "";
+            req.reactions_first = true;
+            pending++;
+            getConnectionsManager().bindRequestToGuid(getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                if (response instanceof org.telegram.tgnet.tl.TL_stories.StoryViewsList) {
+                    final org.telegram.tgnet.tl.TL_stories.StoryViewsList res = (org.telegram.tgnet.tl.TL_stories.StoryViewsList) response;
+                    getMessagesController().putUsers(res.users, false);
+                    getMessagesController().putChats(res.chats, false);
+                    TLObject firstViewer = null;
+                    int viewers = 0;
+                    int newest = 0;
+                    for (int v = 0; v < res.views.size(); v++) {
+                        final org.telegram.tgnet.tl.TL_stories.StoryView view = res.views.get(v);
+                        if (!(view instanceof org.telegram.tgnet.tl.TL_stories.TL_storyView)) {
+                            continue;
+                        }
+                        final TLObject who = getMessagesController().getUser(view.user_id);
+                        if (view.reaction != null) {
+                            final Item item = new Item();
+                            item.kind = KIND_STORY;
+                            item.date = view.date;
+                            item.who = who;
+                            final SpannableStringBuilder text = new SpannableStringBuilder(bold(name(who)));
+                            text.append(' ').append(LocaleController.formatString(R.string.NilakActivityReactedStory, reactionText(view.reaction)));
+                            item.text = text;
+                            items.add(item);
+                        } else {
+                            if (firstViewer == null) {
+                                firstViewer = who;
+                            }
+                            viewers++;
+                            newest = Math.max(newest, view.date);
+                        }
+                    }
+                    if (viewers > 0) {
+                        // "Hana and 12 others viewed your story"
+                        final Item item = new Item();
+                        item.kind = KIND_STORY;
+                        item.date = newest;
+                        item.who = firstViewer;
+                        final SpannableStringBuilder text = new SpannableStringBuilder(bold(name(firstViewer)));
+                        if (viewers > 1) {
+                            text.append(' ').append(LocaleController.formatPluralString("NilakActivityAndOthers", viewers - 1));
+                        }
+                        text.append(' ').append(LocaleController.getString(R.string.NilakActivityViewedStory));
+                        item.text = text;
+                        items.add(item);
+                    }
+                }
+                done();
+            })), classGuid);
+        }
+    }
+
+    /** Contacts who just joined, from the "joined Telegram" note at the top of their chat. */
+    private void addJoinedContacts() {
+        final ArrayList<TLRPC.Dialog> dialogs = getMessagesController().getAllDialogs();
+        for (int i = 0; i < dialogs.size() && i < 300; i++) {
+            final TLRPC.Dialog dialog = dialogs.get(i);
+            if (!DialogObject.isUserDialog(dialog.id)) {
+                continue;
+            }
+            final ArrayList<MessageObject> top = getMessagesController().dialogMessage.get(dialog.id);
+            final MessageObject message = top != null && !top.isEmpty() ? top.get(0) : null;
+            if (message == null || !(message.messageOwner.action instanceof TLRPC.TL_messageActionContactSignUp)) {
+                continue;
+            }
+            final Item item = new Item();
+            item.kind = KIND_JOINED;
+            item.date = message.messageOwner.date;
+            item.who = getMessagesController().getUser(dialog.id);
+            item.dialogId = dialog.id;
+            final SpannableStringBuilder text = new SpannableStringBuilder(bold(name(item.who)));
+            text.append(' ').append(LocaleController.getString(R.string.NilakActivityJoined));
+            item.text = text;
+            items.add(item);
+        }
+    }
+
     private void addFollowerItems(ArrayList<TLRPC.ChannelParticipant> participants) {
         // new followers per day: "Yonas and 4 others started following you"
         final ArrayList<TLRPC.ChannelParticipant> joined = new ArrayList<>();
@@ -335,6 +587,24 @@ public class TigiActivityActivity extends BaseFragment {
             return;
         }
         final Item item = (Item) rows.get(position);
+        if (item.kind == KIND_STORY) {
+            TigiNavigation.openProfile(this, getUserConfig().getClientUserId());
+            return;
+        }
+        if (item.dialogId != 0) {
+            // the chat, at the message
+            final Bundle args = new Bundle();
+            if (item.dialogId > 0) {
+                args.putLong("user_id", item.dialogId);
+            } else {
+                args.putLong("chat_id", -item.dialogId);
+            }
+            if (item.messageId != 0) {
+                args.putInt("message_id", item.messageId);
+            }
+            presentFragment(new ChatActivity(args));
+            return;
+        }
         if (item.kind == KIND_FOLLOWERS) {
             final Bundle args = new Bundle();
             args.putLong("chat_id", channel.id);
@@ -413,7 +683,7 @@ public class TigiActivityActivity extends BaseFragment {
             } else if (type == TYPE_SECTION) {
                 ((TextView) holder.itemView).setText((String) rows.get(position));
             } else if (type == TYPE_EMPTY) {
-                ((TextView) holder.itemView).setText(LocaleController.getString(channel == null ? R.string.NilakActivityNoChannel : R.string.NilakActivityEmpty));
+                ((TextView) holder.itemView).setText(LocaleController.getString(R.string.NilakActivityEmpty));
             }
         }
     }

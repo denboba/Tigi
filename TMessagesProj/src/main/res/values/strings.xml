@@ -10698,7 +10698,13 @@
     <string name="NilakActivityThisWeek">This week</string>
     <string name="NilakActivityEarlier">Earlier</string>
     <string name="NilakActivityNoChannel">Share your first post to see likes, comments and new followers here.</string>
-    <string name="NilakActivityEmpty">Nothing new yet. Reactions, comments and new followers on your posts show up here.</string>
+    <string name="NilakActivityEmpty">Nothing new yet. Likes, comments, replies, mentions, story views and new followers show up here.</string>
+    <string name="NilakActivityReplied">replied to your comment: %1$s</string>
+    <string name="NilakActivityMentioned">mentioned you in %1$s: %2$s</string>
+    <string name="NilakActivityReactedMessage">reacted %1$s to your message: %2$s</string>
+    <string name="NilakActivityReactedStory">reacted %1$s to your story</string>
+    <string name="NilakActivityViewedStory">viewed your story</string>
+    <string name="NilakActivityJoined">joined. Say hello 👋</string>
     <string name="NilakSavedTab">Saved</string>
     <string name="NilakEditIdentity">Change photo, name and bio</string>
     <string name="NilakFieldName">Name</string>

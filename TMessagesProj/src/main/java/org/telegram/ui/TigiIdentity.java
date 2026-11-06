@@ -96,8 +96,8 @@ public final class TigiIdentity {
         }
         final java.util.ArrayList<Integer> ids = new java.util.ArrayList<>();
         for (TLRPC.Update update : list) {
-            if (update instanceof TLRPC.TL_updateNewChannelMessage) {
-                final TLRPC.Message message = ((TLRPC.TL_updateNewChannelMessage) update).message;
+            if (update instanceof org.telegram.tgnet.tl.TL_update.TL_updateNewChannelMessage) {
+                final TLRPC.Message message = ((org.telegram.tgnet.tl.TL_update.TL_updateNewChannelMessage) update).message;
                 if (message instanceof TLRPC.TL_messageService && message.id > 0) {
                     ids.add(message.id);
                 }

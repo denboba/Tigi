@@ -216,7 +216,8 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             write.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
             write.setOnClickListener(v -> {
                 if (mode == MODE_READ) {
-                    TigiCreateSheet.openCompose(this);
+                    // Read: your articles and drafts, and Nilak Writer
+                    presentFragment(new org.nilak.writer.WriterHomeActivity());
                 } else {
                     TigiCreateSheet.openCompose(this);
                 }

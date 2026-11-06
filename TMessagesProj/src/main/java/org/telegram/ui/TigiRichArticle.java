@@ -88,9 +88,13 @@ public final class TigiRichArticle {
                 separate(body, false);
                 body.append(quotePrefix).append(inline(block.text));
             }
-        } else if (block instanceof TL_iv.pageBlockHeader) {
+        } else if (block instanceof TL_iv.pageBlockHeader || block instanceof TL_iv.pageBlockHeading1 || block instanceof TL_iv.pageBlockHeading2) {
             separate(body, false);
             body.append(quotePrefix).append("## ").append(inline(block.text));
+        } else if (block instanceof TL_iv.pageBlockHeading3 || block instanceof TL_iv.pageBlockHeading4
+            || block instanceof TL_iv.pageBlockHeading5 || block instanceof TL_iv.pageBlockHeading6) {
+            separate(body, false);
+            body.append(quotePrefix).append("### ").append(inline(block.text));
         } else if (block instanceof TL_iv.pageBlockSubheader || block instanceof TL_iv.pageBlockKicker) {
             separate(body, false);
             body.append(quotePrefix).append("### ").append(inline(block.text));
@@ -319,7 +323,21 @@ public final class TigiRichArticle {
      * From Telegram's article editor in a Nilak compose screen: links the editor's photos and videos through the
      * media channel, converts, packs and posts the article to the channel.
      */
+    /** Choices from Nilak Writer's publish screen. */
+    public static final class Options {
+        /** Shown on the reading-time line (for example "Life"); null for none. */
+        public String topic;
+        /** Public articles carry #NilakRead so Read finds them for everyone. */
+        public boolean showInRead = true;
+        /** A published article to replace in the same post; null publishes a new one. */
+        public org.telegram.messenger.MessageObject editing;
+    }
+
     public static void publish(BaseFragment fragment, long dialogId, ArrayList<TL_iv.PageBlock> blocks, ArrayList<TLRPC.Photo> photos, ArrayList<TLRPC.Document> documents, boolean notify, int scheduleDate) {
+        publish(fragment, dialogId, blocks, photos, documents, notify, scheduleDate, new Options());
+    }
+
+    public static void publish(BaseFragment fragment, long dialogId, ArrayList<TL_iv.PageBlock> blocks, ArrayList<TLRPC.Photo> photos, ArrayList<TLRPC.Document> documents, boolean notify, int scheduleDate, Options options) {
         if (fragment == null || blocks == null || blocks.isEmpty()) {
             return;
         }
@@ -349,13 +367,13 @@ public final class TigiRichArticle {
         BulletinFactory.of(fragment).createSimpleBulletin(R.raw.forward, LocaleController.getString(R.string.NilakArticlePublishing)).show();
         final HashMap<String, String> links = new HashMap<>();
         if (photoById.isEmpty() && videoById.isEmpty()) {
-            finish(fragment, account, chat, blocks, links, notify, scheduleDate);
+            finish(fragment, account, chat, blocks, links, notify, scheduleDate, options);
             return;
         }
         TigiArticleMedia.ensureStore(account, store -> {
             if (store == null) {
                 // no media channel: the article goes out with its text; the photos are left out
-                finish(fragment, account, chat, blocks, links, notify, scheduleDate);
+                finish(fragment, account, chat, blocks, links, notify, scheduleDate, options);
                 return;
             }
             final int[] left = {photoById.size() + videoById.size()};
@@ -363,7 +381,7 @@ public final class TigiRichArticle {
             final Runnable complete = () -> {
                 if (!done[0]) {
                     done[0] = true;
-                    finish(fragment, account, chat, blocks, links, notify, scheduleDate);
+                    finish(fragment, account, chat, blocks, links, notify, scheduleDate, options);
                 }
             };
             // never wait forever for the server
@@ -395,7 +413,7 @@ public final class TigiRichArticle {
         });
     }
 
-    private static void finish(BaseFragment fragment, int account, TLRPC.Chat chat, ArrayList<TL_iv.PageBlock> blocks, HashMap<String, String> links, boolean notify, int scheduleDate) {
+    private static void finish(BaseFragment fragment, int account, TLRPC.Chat chat, ArrayList<TL_iv.PageBlock> blocks, HashMap<String, String> links, boolean notify, int scheduleDate, Options options) {
         final Converted converted = convert(blocks, (id, video) -> links.get((video ? "v" : "p") + id));
         Utilities.globalQueue.postRunnable(() -> {
             File packed = null;
@@ -440,12 +458,19 @@ public final class TigiRichArticle {
                 // reading time on its own line: Nilak cards show it, and other apps simply see "📖 6 min read"
                 final int minutes = TigiArticle.minutesFor(TigiArticle.countWords(TigiArticle.plainText(converted.body.toString())));
                 caption += "\n\n" + TigiArticle.MINUTES_MARK + " " + LocaleController.formatString(R.string.NilakReadMinutes, minutes);
-                if (!TextUtils.isEmpty(org.telegram.messenger.ChatObject.getPublicUsername(chat))) {
+                if (!TextUtils.isEmpty(options.topic)) {
+                    caption += " · " + options.topic;
+                }
+                if (options.showInRead && !TextUtils.isEmpty(org.telegram.messenger.ChatObject.getPublicUsername(chat))) {
                     // public articles carry the Read tag: hashtag search finds them for everyone's Read
                     caption += " · #" + TigiTopicFeedActivity.READ_TAG;
                 }
+                if (options.editing != null) {
+                    // editing in place: the post keeps its likes and comments, the file and caption are replaced
+                    options.editing.editingMessage = caption;
+                }
                 SendMessagesHelper.prepareSendingDocument(AccountInstance.getInstance(account), file.getAbsolutePath(), file.getAbsolutePath(), null,
-                    caption, TigiArticle.MIME, -chat.id, null, null, null, null, null, notify, scheduleDate, null, null, false);
+                    caption, TigiArticle.MIME, -chat.id, null, null, null, null, options.editing, notify, scheduleDate, null, null, false);
                 TigiPosting.setLastChannel(account, chat.id);
                 if (fragment.getParentActivity() != null) {
                     BulletinFactory.of(fragment).createSimpleBulletin(R.raw.contact_check, LocaleController.getString(R.string.NilakArticlePublished)).show();

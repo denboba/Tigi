@@ -69,7 +69,7 @@ public class TigiCreateSheet {
      * One channel for everything, without asking: the user's Tigi channel or the last one used. On the very first
      * post a private personal channel is made quietly; only if that fails does the user see a choice or an error.
      */
-    static void pickChannel(BaseFragment fragment, org.telegram.messenger.Utilities.Callback<TLRPC.Chat> onPicked) {
+    public static void pickChannel(BaseFragment fragment, org.telegram.messenger.Utilities.Callback<TLRPC.Chat> onPicked) {
         final int account = fragment.getCurrentAccount();
         final TLRPC.Chat target = TigiPosting.defaultChannel(account);
         if (target != null) {

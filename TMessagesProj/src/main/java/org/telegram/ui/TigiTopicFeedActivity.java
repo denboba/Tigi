@@ -553,7 +553,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     }
 
     /** Hashtag that puts a public article into everyone's Read, added by the article composer. */
-    static final String READ_TAG = "NilakRead";
+    public static final String READ_TAG = "NilakRead";
 
     /** Read also shows public articles tagged #NilakRead from channels the person does not follow yet. */
     private void done(ArrayList<FeedPost> result, int gen) {

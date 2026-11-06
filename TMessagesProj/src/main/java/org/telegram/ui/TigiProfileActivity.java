@@ -891,6 +891,36 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             }
             addView(buttons, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 10));
 
+            if (TigiLilac.on()) {
+                // Lilac: the photo centred and larger, the name under it, the numbers on a white card
+                top.removeView(posts);
+                top.removeView(followers);
+                top.removeView(following);
+                top.setGravity(Gravity.CENTER_HORIZONTAL);
+                avatar.setLayoutParams(LayoutHelper.createLinear(100, 100));
+                ((LinearLayout.LayoutParams) top.getLayoutParams()).topMargin = dp(4);
+                nameView.setGravity(Gravity.CENTER);
+                nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
+                nameView.setTypeface(TigiStyle.displayExtraBold());
+                usernameView.setGravity(Gravity.CENTER);
+                aboutView.setGravity(Gravity.CENTER);
+                aboutView.setPadding(dp(16), dp(4), dp(16), 0);
+                final LinearLayout stats = new LinearLayout(context);
+                stats.setOrientation(HORIZONTAL);
+                stats.setGravity(Gravity.CENTER_VERTICAL);
+                stats.setPadding(0, dp(10), 0, dp(10));
+                stats.setBackground(Theme.createRoundRectDrawable(dp(18), TigiLilac.card()));
+                stats.setElevation(dp(1));
+                stats.addView(posts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+                stats.addView(statDivider(context), LayoutHelper.createLinear(1, 28));
+                stats.addView(followers, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+                final View secondDivider = statDivider(context);
+                secondDivider.setVisibility(following.getVisibility());
+                stats.addView(secondDivider, LayoutHelper.createLinear(1, 28));
+                stats.addView(following, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+                addView(stats, indexOfChild(buttons), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 0));
+            }
+
             // highlights: stories pinned to the profile
             highlights = new HighlightsRow(context);
             addView(highlights, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, -16, 0, -16, 6));
@@ -913,6 +943,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
             updateColors();
             bind();
+        }
+
+        private View statDivider(Context context) {
+            final View line = new View(context);
+            line.setBackgroundColor(Theme.multAlpha(TigiStyle.accent(), 0.15f));
+            return line;
         }
 
         private LinearLayout counter(Context context) {

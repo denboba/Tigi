@@ -234,7 +234,8 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             header.addView(writersRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }
 
-        if (mode == MODE_TEXT) {
+        if (mode == MODE_TEXT || mode == MODE_READ) {
+            // topics: Read uses the same ones, so readers can stay with what they care about
             final HorizontalScrollView scroll = new HorizontalScrollView(context);
             scroll.setHorizontalScrollBarEnabled(false);
             chipsRow = new LinearLayout(context);
@@ -278,8 +279,8 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
             final TextView chip = (TextView) chipsRow.getChildAt(i);
             final boolean on = i == topic;
             chip.setSelected(on);
-            chip.setTextColor(on ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-            chip.setBackground(on ? TigiStyle.primaryPill(17) : Theme.createRoundRectDrawable(dp(17), Theme.getColor(Theme.key_windowBackgroundGray)));
+            chip.setTextColor(on ? 0xFFFFFFFF : (TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText)));
+            chip.setBackground(on ? TigiStyle.primaryPill(17) : Theme.createRoundRectDrawable(dp(17), TigiLilac.on() ? TigiLilac.card() : Theme.getColor(Theme.key_windowBackgroundGray)));
         }
     }
 
@@ -757,7 +758,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     private void applyTopic() {
         bindMarkets();
         posts.clear();
-        if (mode != MODE_TEXT || topic == 0) {
+        if (mode != MODE_TEXT && mode != MODE_READ || topic == 0) {
             posts.addAll(all);
         } else {
             for (FeedPost post : all) {

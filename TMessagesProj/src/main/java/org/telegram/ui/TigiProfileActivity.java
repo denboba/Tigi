@@ -203,7 +203,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             root.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         }
         // Lilac: a sprig in the top corner, behind the profile (tiles and text scroll over it)
-        TigiLilac.addSprig(root, 150);
+        TigiLilac.addSprig(root, 120);
         fragmentView = root;
         load(TAB_POSTS);
         return fragmentView;
@@ -263,7 +263,10 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         view.setScaleType(ImageView.ScaleType.CENTER);
         view.setImageResource(icon);
         view.setContentDescription(LocaleController.getString(description));
-        view.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        // Lilac: solid round buttons, so the icons read clearly in front of the corner flowers
+        view.setBackground(TigiLilac.on()
+            ? new android.graphics.drawable.InsetDrawable(TigiLilac.roundButton(), dp(4))
+            : Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
         return view;
     }
 
@@ -483,6 +486,11 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 }
                 reachedEnd[which] = res.messages.isEmpty() || minId == offsetId[which];
                 offsetId[which] = minId;
+                if (!reachedEnd[which] && tiles[which].size() < PAGE / 2) {
+                    // a page of service messages (photo or name changes) gave too few tiles: fetch on without
+                    // waiting for a scroll, which never comes while the grid shows only the loading shimmer
+                    AndroidUtilities.runOnUIThread(() -> load(which));
+                }
             } else {
                 reachedEnd[which] = true;
                 if (error != null && ("CHANNEL_PRIVATE".equals(error.text) || "CHANNEL_PUBLIC_GROUP_NA".equals(error.text))) {

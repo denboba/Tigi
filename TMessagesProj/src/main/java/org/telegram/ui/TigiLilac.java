@@ -86,7 +86,7 @@ public final class TigiLilac {
 
     /** Behind small round buttons on the page (search, bell). */
     public static int chip() {
-        return dark() ? 0xD9322646 : 0xC7FFFFFF;
+        return dark() ? 0xF2322646 : 0xF5FFFFFF;
     }
 
     /** The page colour at the top, for bars that sit over the scrolling list. */
@@ -121,7 +121,10 @@ public final class TigiLilac {
             sprig.setScaleX(-1f);
         }
         final int side = LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT;
-        parent.addView(sprig, 0, LayoutHelper.createFrame(sizeDp, sizeDp, Gravity.TOP | side, 0, -sizeDp * 0.30f, -sizeDp * 0.12f, 0));
+        // the top margin cancels its height, so the sprig never makes the header taller; it is moved into place
+        // with a translation, hanging from the top edge and peeking in from the side
+        parent.addView(sprig, 0, LayoutHelper.createFrame(sizeDp, sizeDp, Gravity.TOP | side, 0, -sizeDp, -sizeDp * 0.22f, 0));
+        sprig.setTranslationY(dp(sizeDp * 0.72f));
         return sprig;
     }
 

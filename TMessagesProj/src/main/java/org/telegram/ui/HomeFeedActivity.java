@@ -87,7 +87,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         titleBar = bar;
         applyTopInset(bar);
         // Lilac: the corner sprig sits in the bar, under the title and the buttons
-        sprigView = TigiLilac.addSprig(bar, 150);
+        sprigView = TigiLilac.addSprig(bar, 120);
         final TextView title = new TextView(context);
         titleView = title;
         // the floret + "nilak" wordmark, drawn as an image span so TalkBack still reads the app name
@@ -176,7 +176,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             titleBar.removeView(sprigView);
             sprigView = null;
         } else {
-            sprigView = TigiLilac.addSprig(titleBar, 150);
+            sprigView = TigiLilac.addSprig(titleBar, 120);
         }
     }
 

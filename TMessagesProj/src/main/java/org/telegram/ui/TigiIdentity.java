@@ -86,6 +86,31 @@ public final class TigiIdentity {
     }
 
     /**
+     * Keeping the name and photo in step leaves "changed the photo" / "renamed" notes in the posts; followers and
+     * the profile grid should only see posts, so the notes are deleted right away (the owner may delete them).
+     */
+    private static void removeServiceMessages(int account, TLRPC.Chat channel, TLRPC.Updates updates) {
+        final java.util.ArrayList<TLRPC.Update> list = new java.util.ArrayList<>(updates.updates);
+        if (updates.update != null) {
+            list.add(updates.update);
+        }
+        final java.util.ArrayList<Integer> ids = new java.util.ArrayList<>();
+        for (TLRPC.Update update : list) {
+            if (update instanceof TLRPC.TL_updateNewChannelMessage) {
+                final TLRPC.Message message = ((TLRPC.TL_updateNewChannelMessage) update).message;
+                if (message instanceof TLRPC.TL_messageService && message.id > 0) {
+                    ids.add(message.id);
+                }
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account)
+            .deleteMessages(ids, null, null, -channel.id, 0, true, 0), 500);
+    }
+
+    /**
      * Brings the own personal channel in line with the profile: name, bio (plus the Following marker when shared) and
      * photo. Cheap when nothing changed; at most every 10 minutes unless forced.
      */
@@ -112,6 +137,7 @@ public final class TigiIdentity {
             connections.sendRequest(req, (response, error) -> {
                 if (response instanceof TLRPC.Updates) {
                     controller.processUpdates((TLRPC.Updates) response, false);
+                    removeServiceMessages(account, channel, (TLRPC.Updates) response);
                 }
             });
         }
@@ -151,6 +177,7 @@ public final class TigiIdentity {
             connections.sendRequest(req, (response, error) -> {
                 if (response instanceof TLRPC.Updates) {
                     controller.processUpdates((TLRPC.Updates) response, false);
+                    removeServiceMessages(account, channel, (TLRPC.Updates) response);
                 }
             });
         }

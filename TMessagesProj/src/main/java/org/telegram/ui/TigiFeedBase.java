@@ -1667,6 +1667,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final TextView commentCountView;
         private final ImageView commentButton;
         private final ImageView shareButton;
+        private TextView shareCountView;
         private ImageView saveButton;
         private final LinearLayout chipsRow;
         private final TextView captionView;
@@ -1920,6 +1921,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 }
             });
             actions.addView(shareButton, LayoutHelper.createLinear(48, 48));
+            // how many times the post was shared (Telegram counts forwards)
+            shareCountView = makeCountView(context);
+            actions.addView(shareCountView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 0, 0, 12, 0));
             // save on the far side, Instagram-style
             actions.addView(new View(context), LayoutHelper.createLinear(0, 48, 1f));
             saveButton = new ImageView(context);
@@ -1994,6 +1998,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             timeView.setTextColor(gray);
             heartCountView.setTextColor(text);
             commentCountView.setTextColor(text);
+            if (shareCountView != null) {
+                shareCountView.setTextColor(text);
+            }
             captionView.setTextColor(text);
             moreView.setTextColor(TigiStyle.accent());
             commentButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
@@ -2245,6 +2252,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             heartCountView.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
             final int comments = message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
             commentCountView.setText(comments > 0 ? LocaleController.formatShortNumber(comments, null) : "");
+            if (shareCountView != null) {
+                final int shares = message.messageOwner.forwards;
+                shareCountView.setText(shares > 0 ? LocaleController.formatShortNumber(shares, null) : "");
+            }
 
             // other emoji under the caption, at most three
             chipsRow.removeAllViews();

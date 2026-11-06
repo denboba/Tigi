@@ -10729,6 +10729,8 @@
     <string name="NilakWriterDeleteArticle">Delete this article for everyone?</string>
     <string name="NilakWriterDownloading">Getting the article. Tap Edit again in a moment.</string>
     <string name="NilakSeeMore">See more</string>
+    <string name="NilakFoldMore">Show more ▾</string>
+    <string name="NilakFoldMoreMinutes">Show more · %1$d min read ▾</string>
     <string name="NilakWriterNumbers">Numbers</string>
     <string name="NilakWriterListItem">List item</string>
     <string name="NilakWriterRemoveDivider">Remove this divider?</string>

@@ -2570,7 +2570,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 y -= textY;
                 for (int a = 0; a < currentMessageObject.textLayoutBlocks.size(); a++) {
                     MessageObject.TextLayoutBlock block = currentMessageObject.textLayoutBlocks.get(a);
-                    if (block.quoteCollapse && block.collapsedHeight < block.height && y >= block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) && y < block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
+                    if (block.quoteCollapse && block.collapsedHeight < block.height && !(block.nilakFold && !block.collapsed()) && y >= block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) && y < block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
                         pressedBlock = a;
                         if (block.collapsedBounce == null || block.collapsedBounce.getView() != this) {
                             block.collapsedBounce = new ButtonBounce(this);
@@ -17072,6 +17072,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     Theme.chat_quoteTextPaint.linkColor =
                     Theme.chat_msgTextPaint.linkColor = getThemedColor(currentMessageObject.isOutOwner() ? Theme.key_chat_messageLinkOut : Theme.key_chat_messageLinkIn);
 
+                    if (block.nilakFold && block.height > block.collapsedHeight) {
+                        collapsed = block.collapsed(transitionParams);
+                        canvas.saveLayerAlpha(blockRtl, 0, width + blockRtl, block.height(transitionParams) - 1, 0xFF, Canvas.ALL_SAVE_FLAG);
+                    }
+
                     if (block.code) {
                         if (quoteLine == null) {
                             quoteLine = new ReplyMessageLine(this);
@@ -17159,6 +17164,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     AndroidUtilities.rectTmp.set(0, block.height(transitionParams) - dp(24), width, block.height(transitionParams));
                     clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.BOTTOM, collapsed);
                     canvas.restore();
+                    if (block.nilakFold) {
+                        drawNilakFoldPill(canvas, block, width, blockRtl, collapsed, alpha);
+                    }
                 }
                 canvas.restoreToCount(saveCount);
             }
@@ -21619,6 +21627,40 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
             canvas.restoreToCount(saveCount);
         }
+    }
+
+    private TextPaint nilakFoldPaint;
+    private Paint nilakFoldBg;
+
+    // Nilak smart fold: the "Show more" pill over the faded last lines.
+    private void drawNilakFoldPill(Canvas canvas, MessageObject.TextLayoutBlock block, int width, float blockRtl, float collapsed, float alpha) {
+        if (collapsed <= 0.02f || currentMessageObject == null) return;
+        if (nilakFoldPaint == null) {
+            nilakFoldPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+            nilakFoldPaint.setTextSize(dp(13));
+            nilakFoldPaint.setTypeface(AndroidUtilities.bold());
+            nilakFoldBg = new Paint(Paint.ANTI_ALIAS_FLAG);
+        }
+        final int minutes = currentMessageObject.nilakFoldMinutes;
+        final String text = minutes > 1 ? LocaleController.formatString(R.string.NilakFoldMoreMinutes, minutes) : LocaleController.getString(R.string.NilakFoldMore);
+        final int color = getThemedColor(Theme.key_chat_messageLinkIn);
+        final float textW = nilakFoldPaint.measureText(text);
+        final float h = dp(24);
+        final float w = Math.min(textW + dp(20), width);
+        final float bottom = block.height(transitionParams) - dp(1);
+        final float left = block.isRtl() ? blockRtl + width - w : blockRtl;
+        final int a = (int) (0xFF * alpha * collapsed);
+        AndroidUtilities.rectTmp.set(left, bottom - h, left + w, bottom);
+        nilakFoldBg.setColor(getThemedColor(Theme.key_chat_inBubble));
+        nilakFoldBg.setAlpha(a);
+        canvas.drawRoundRect(AndroidUtilities.rectTmp, h / 2f, h / 2f, nilakFoldBg);
+        nilakFoldBg.setColor(Theme.multAlpha(color, .14f));
+        nilakFoldBg.setAlpha((int) (nilakFoldBg.getAlpha() * alpha * collapsed));
+        canvas.drawRoundRect(AndroidUtilities.rectTmp, h / 2f, h / 2f, nilakFoldBg);
+        nilakFoldPaint.setColor(color);
+        nilakFoldPaint.setAlpha(a);
+        final Paint.FontMetrics fm = nilakFoldPaint.getFontMetrics();
+        canvas.drawText(text, left + dp(10), AndroidUtilities.rectTmp.centerY() - (fm.ascent + fm.descent) / 2f, nilakFoldPaint);
     }
 
     public void drawAnimatedEmojiCaption(Canvas canvas, float alpha) {

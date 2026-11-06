@@ -78,6 +78,8 @@ public class BuildVars {
     public static boolean TIGI_PROFILE_ROUTING = true;
     /** Nilak Lilac design: lilac light page with soft glows, a lilac sprig in the corner, social cards. Off = the plain grey feed. */
     public static boolean NILAK_LILAC = true;
+    // Nilak: long incoming messages fold after 8 lines with "Show more".
+    public static boolean NILAK_SMART_FOLD = true;
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
 

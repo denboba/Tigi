@@ -999,6 +999,7 @@ public class MessageObject {
 
         public MessageObject messageObject;
         public int collapsedHeight;
+        public boolean nilakFold;
         public ButtonBounce collapsedBounce;
 
         public boolean code;
@@ -9024,6 +9025,7 @@ public class MessageObject {
                 }
             }
 
+            nilakSmartFold(block);
             textLayoutBlocks.add(block);
 
             final int currentBlockLinesCount = block.textLayout.getLineCount();
@@ -9173,6 +9175,36 @@ public class MessageObject {
     }
 
     private Integer cachedTextHeight;
+    // Nilak smart fold: a long plain block of someone else's message shows its
+    // first 8 lines with a fade and a "Show more" pill. It reuses the
+    // collapsible-quote state (expandedQuotes), so a tap expands and collapses.
+    public static final int NILAK_FOLD_LINES = 8;
+    public int nilakFoldMinutes;
+
+    private void nilakSmartFold(TextLayoutBlock block) {
+        if (!BuildVars.NILAK_SMART_FOLD || block == null || block.quote || block.code || block.textLayout == null) return;
+        if (messageOwner == null || isOutOwner() || preview || isSponsored() || scheduled) return;
+        if (messageOwner.mentioned && messageOwner.media_unread) return;
+        final StaticLayout layout = block.textLayout;
+        final int lines = layout.getLineCount();
+        if (lines <= NILAK_FOLD_LINES + 2) return;
+        final int folded = layout.getLineBottom(NILAK_FOLD_LINES - 1) + dp(26);
+        if (folded >= block.height) return;
+        block.quoteCollapse = true;
+        block.nilakFold = true;
+        block.messageObject = this;
+        block.collapsedHeight = folded;
+        final CharSequence t = layout.getText();
+        int words = 0;
+        boolean inWord = false;
+        for (int k = 0; t != null && k < t.length(); k++) {
+            final boolean ws = Character.isWhitespace(t.charAt(k));
+            if (!ws && !inWord) words++;
+            inWord = !ws;
+        }
+        nilakFoldMinutes = Math.max(nilakFoldMinutes, Math.max(1, Math.round(words / 200f)));
+    }
+
     public int textHeightCached() {
         if (richLayout != null) return richLayout.getHeight();
         if (cachedTextHeight != null) return cachedTextHeight;

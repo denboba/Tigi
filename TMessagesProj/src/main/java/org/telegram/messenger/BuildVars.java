@@ -80,6 +80,8 @@ public class BuildVars {
     public static boolean NILAK_LILAC = true;
     // Nilak: long incoming messages fold after 8 lines with "Show more".
     public static boolean NILAK_SMART_FOLD = true;
+    // Nilak: albums in groups are one compact card instead of a photo per row.
+    public static boolean NILAK_ALBUM_CARD = true;
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
 

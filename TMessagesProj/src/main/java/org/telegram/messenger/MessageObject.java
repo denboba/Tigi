@@ -1442,6 +1442,11 @@ public class MessageObject {
 
             // Tigi: albums in channels and groups are one big photo per row, like an Instagram feed
             tigiStack = !isDocuments && count >= 2 && messages.get(0) != null && messages.get(0).getDialogId() < 0;
+            // Nilak: in groups a photo dump is one compact card (a mosaic, swipe through it in the viewer),
+            // not a wall of full-width photos; channels keep the one-per-row post look.
+            if (tigiStack && BuildVars.NILAK_ALBUM_CARD && !ChatObject.isChannelAndNotMegaGroup(-messages.get(0).getDialogId(), messages.get(0).currentAccount)) {
+                tigiStack = false;
+            }
 
             int minHeight = dp(120);
             int minWidth = (int) (dp(120) / (Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) / (float) maxSizeWidth));

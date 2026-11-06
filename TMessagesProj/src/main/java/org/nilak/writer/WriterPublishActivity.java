@@ -249,6 +249,7 @@ public class WriterPublishActivity extends BaseFragment {
                 target = stack.get(index - 1);
             }
         }
+        WriterHomeActivity.justPublished = target instanceof WriterHomeActivity;
         WriterBridge.publish(target, channel, doc, topicName, showInRead, notifyFollowers, editing);
         if (writer != null) {
             writer.published();

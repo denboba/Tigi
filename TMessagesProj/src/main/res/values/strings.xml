@@ -10703,7 +10703,7 @@
     <string name="NilakWriterVideo">Video</string>
     <string name="NilakWriterStickers">Stickers</string>
     <string name="NilakWriterGif">GIF</string>
-    <string name="NilakWriterList">List</string>
+    <string name="NilakWriterList">Bullets</string>
     <string name="NilakWriterDivider">Divider</string>
     <string name="NilakWriterCode">Code</string>
     <string name="NilakWriterTable">Table</string>
@@ -10729,6 +10729,10 @@
     <string name="NilakWriterDeleteArticle">Delete this article for everyone?</string>
     <string name="NilakWriterDownloading">Getting the article. Tap Edit again in a moment.</string>
     <string name="NilakSeeMore">See more</string>
+    <string name="NilakWriterNumbers">Numbers</string>
+    <string name="NilakWriterListItem">List item</string>
+    <string name="NilakWriterRemoveDivider">Remove this divider?</string>
+    <string name="NilakWriterPublishingNow">Publishing your article…</string>
     <string name="NilakFlowersOn">Lilac flowers: on</string>
     <string name="NilakFlowersOff">Lilac flowers: off</string>
     <string name="NilakPdfLocked">This PDF is protected with a password. Open it in another app.</string>

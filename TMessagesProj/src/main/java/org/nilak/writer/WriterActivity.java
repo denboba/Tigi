@@ -275,6 +275,12 @@ public class WriterActivity extends BaseFragment {
         if (binding || doc == null) {
             return;
         }
+        if (column != null) {
+            // list numbers follow the items above them
+            for (int i = 0; i < column.getChildCount(); i++) {
+                column.getChildAt(i).invalidate();
+            }
+        }
         if (savedView != null) {
             savedView.setText("○  " + LocaleController.getString(R.string.NilakWriterSaving));
         }
@@ -291,7 +297,7 @@ public class WriterActivity extends BaseFragment {
         doc.blocks.clear();
         for (int i = 0; i < column.getChildCount(); i++) {
             final BlockEdit edit = (BlockEdit) column.getChildAt(i);
-            doc.blocks.add(new WriterDoc.Block(edit.type, new SpannableStringBuilder(edit.getText())));
+            doc.blocks.add(new WriterDoc.Block(edit.type, edit.type == WriterDoc.DIVIDER ? "" : new SpannableStringBuilder(edit.getText())));
         }
     }
 
@@ -327,12 +333,19 @@ public class WriterActivity extends BaseFragment {
 
     /** Enter in the middle of a block: the rest goes to a new paragraph below. */
     private void split(BlockEdit edit, int at) {
+        if (WriterDoc.isList(edit.type) && edit.length() == 0) {
+            // Enter on an empty list item ends the list
+            edit.setType(WriterDoc.PARAGRAPH);
+            updateToolbar();
+            changed();
+            return;
+        }
         final Editable text = edit.getText();
         final CharSequence rest = new SpannableStringBuilder(text.subSequence(at, text.length()));
         binding = true;
         text.delete(at, text.length());
         binding = false;
-        final BlockEdit next = newBlockView(edit.getContext(), WriterDoc.PARAGRAPH, rest);
+        final BlockEdit next = newBlockView(edit.getContext(), WriterDoc.isList(edit.type) ? edit.type : WriterDoc.PARAGRAPH, rest);
         column.addView(next, column.indexOfChild(edit) + 1);
         focusBlock(next, 0);
         changed();
@@ -355,6 +368,11 @@ public class WriterActivity extends BaseFragment {
             return;
         }
         final BlockEdit above = (BlockEdit) column.getChildAt(index - 1);
+        if (above.type == WriterDoc.DIVIDER) {
+            column.removeView(above);
+            changed();
+            return;
+        }
         final int join = above.length();
         above.getText().append(edit.getText());
         column.removeView(edit);
@@ -376,11 +394,49 @@ public class WriterActivity extends BaseFragment {
 
     /** Insert sheet: a new heading or quote under the current block. */
     private void insertBlock(int type) {
-        final int index = focused != null ? column.indexOfChild(focused) + 1 : column.getChildCount();
+        int index = focused != null ? column.indexOfChild(focused) + 1 : column.getChildCount();
+        if (focused != null && focused.length() == 0 && type != WriterDoc.DIVIDER && focused.type != WriterDoc.DIVIDER) {
+            // an empty line simply becomes the new kind of block
+            focused.setType(type);
+            focusBlock(focused, 0);
+            updateToolbar();
+            changed();
+            return;
+        }
         final BlockEdit edit = newBlockView(getParentActivity(), type, "");
-        column.addView(edit, index);
-        focusBlock(edit, 0);
+        column.addView(edit, index++);
+        if (type == WriterDoc.DIVIDER) {
+            // writing goes on under the divider
+            final BlockEdit after = newBlockView(getParentActivity(), WriterDoc.PARAGRAPH, "");
+            column.addView(after, index);
+            focusBlock(after, 0);
+        } else {
+            focusBlock(edit, 0);
+        }
         changed();
+    }
+
+    /** The number shown before a numbered item: its place among the numbered items right above it. */
+    private int numberOf(BlockEdit edit) {
+        int number = 1;
+        for (int i = column.indexOfChild(edit) - 1; i >= 0; i--) {
+            if (((BlockEdit) column.getChildAt(i)).type != WriterDoc.NUMBER) {
+                break;
+            }
+            number++;
+        }
+        return number;
+    }
+
+    private void confirmRemoveDivider(BlockEdit divider) {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.NilakWriterRemoveDivider));
+        builder.setPositiveButton(LocaleController.getString(R.string.Delete), (d, w) -> {
+            column.removeView(divider);
+            changed();
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        showDialog(builder.create());
     }
 
     /* ---------- inline marks ---------- */
@@ -612,12 +668,13 @@ public class WriterActivity extends BaseFragment {
         header.setPadding(dp(8), dp(8), dp(8), dp(12));
         column.addView(header);
         final BottomSheet[] sheet = new BottomSheet[1];
+        // {label, block type to insert (-1 = coming soon)}
         final int[][] items = {
-            {R.string.NilakWriterHeading, 1}, {R.string.NilakWriterQuote, 1}, {R.string.NilakWriterPhoto, 0}, {R.string.NilakWriterVideo, 0},
-            {R.string.NilakWriterStickers, 0}, {R.string.NilakWriterGif, 0}, {R.string.NilakWriterList, 0}, {R.string.NilakWriterDivider, 0},
-            {R.string.NilakWriterCode, 0}, {R.string.NilakWriterTable, 0}, {R.string.NilakWriterEmbed, 0}, {R.string.NilakWriterCover, 0}
+            {R.string.NilakWriterHeading, WriterDoc.HEADING}, {R.string.NilakWriterQuote, WriterDoc.QUOTE}, {R.string.NilakWriterList, WriterDoc.BULLET}, {R.string.NilakWriterNumbers, WriterDoc.NUMBER},
+            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterPhoto, -1}, {R.string.NilakWriterVideo, -1}, {R.string.NilakWriterStickers, -1},
+            {R.string.NilakWriterGif, -1}, {R.string.NilakWriterCode, -1}, {R.string.NilakWriterTable, -1}, {R.string.NilakWriterEmbed, -1}
         };
-        final String[] icons = {"H", "❝", "🖼", "▶", "✨", "GIF", "☰", "—", "{ }", "▦", "↗", "⬒"};
+        final String[] icons = {"H", "❝", "•", "1.", "✣", "🖼", "▶", "✨", "GIF", "{ }", "▦", "↗"};
         LinearLayout row = null;
         for (int i = 0; i < items.length; i++) {
             if (i % 4 == 0) {
@@ -625,8 +682,8 @@ public class WriterActivity extends BaseFragment {
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 column.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 12));
             }
-            final boolean live = items[i][1] == 1;
-            final int index = i;
+            final boolean live = items[i][1] >= 0;
+            final int blockType = items[i][1];
             row.addView(insertItem(context, icons[i], items[i][0], live, v -> {
                 if (sheet[0] != null) {
                     sheet[0].dismiss();
@@ -634,7 +691,7 @@ public class WriterActivity extends BaseFragment {
                 if (!live) {
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.info, LocaleController.getString(R.string.NilakWriterSoonToast)).show();
                 } else {
-                    insertBlock(index == 0 ? WriterDoc.HEADING : WriterDoc.QUOTE);
+                    insertBlock(blockType);
                 }
             }), LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
         }
@@ -787,6 +844,29 @@ public class WriterActivity extends BaseFragment {
                     setHint(LocaleController.getString(R.string.NilakWriterQuote));
                     break;
                 }
+                case WriterDoc.BULLET:
+                case WriterDoc.NUMBER:
+                    setTypeface(Typeface.DEFAULT);
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
+                    setLineSpacing(0, 1.45f);
+                    setPadding(LocaleController.isRTL ? dp(22) : dp(48), dp(2), LocaleController.isRTL ? dp(48) : dp(22), dp(4));
+                    setBackground(null);
+                    setHint(LocaleController.getString(R.string.NilakWriterListItem));
+                    break;
+                case WriterDoc.DIVIDER:
+                    // a quiet break between parts: not text, removed with a tap or Backspace from below
+                    setText("");
+                    setHint(null);
+                    setFocusable(false);
+                    setFocusableInTouchMode(false);
+                    setCursorVisible(false);
+                    setLongClickable(false);
+                    setMinHeight(dp(44));
+                    setPadding(dp(22), dp(8), dp(22), dp(8));
+                    setBackground(null);
+                    setContentDescription(LocaleController.getString(R.string.NilakWriterDivider));
+                    setOnClickListener(v -> confirmRemoveDivider(BlockEdit.this));
+                    break;
                 default:
                     setTypeface(Typeface.DEFAULT);
                     setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
@@ -796,6 +876,36 @@ public class WriterActivity extends BaseFragment {
                     setHint(column != null && (column.getChildCount() == 0 || index == 0) ? LocaleController.getString(R.string.NilakWriterStart) : null);
             }
             setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : ink());
+        }
+
+        private final android.graphics.Paint markPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            if (type == WriterDoc.DIVIDER) {
+                markPaint.setColor(Theme.multAlpha(TigiStyle.accent(), 0.55f));
+                markPaint.setTextSize(dp(15));
+                markPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
+                canvas.drawText("✣     ✣     ✣", getWidth() / 2f, getHeight() / 2f + dp(5), markPaint);
+                return;
+            }
+            if (!WriterDoc.isList(type) || getLayout() == null) {
+                return;
+            }
+            // the bullet or number sits on the first line, in the margin
+            final float baseline = getTotalPaddingTop() + getLayout().getLineBaseline(0) - getScrollY();
+            markPaint.setColor(type == WriterDoc.BULLET ? TigiStyle.accent() : getCurrentTextColor());
+            markPaint.setTextSize(getTextSize());
+            markPaint.setTypeface(type == WriterDoc.NUMBER ? TigiStyle.displayBold() : Typeface.DEFAULT);
+            final String mark = type == WriterDoc.BULLET ? "•" : numberOf(this) + ".";
+            if (LocaleController.isRTL) {
+                markPaint.setTextAlign(android.graphics.Paint.Align.LEFT);
+                canvas.drawText(mark, getWidth() - dp(44), baseline, markPaint);
+            } else {
+                markPaint.setTextAlign(android.graphics.Paint.Align.RIGHT);
+                canvas.drawText(mark, dp(40), baseline, markPaint);
+            }
         }
 
         @Override

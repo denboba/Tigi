@@ -69,10 +69,44 @@ public final class WriterBridge {
             title.text = plain(doc.title.trim());
             out.add(title);
         }
+        TL_iv.pageBlockList bullets = null;
+        TL_iv.pageBlockOrderedList numbers = null;
         for (WriterDoc.Block block : doc.blocks) {
+            if (block.type == WriterDoc.DIVIDER) {
+                bullets = null;
+                numbers = null;
+                out.add(new TL_iv.pageBlockDivider());
+                continue;
+            }
             if (block.text.toString().trim().isEmpty()) {
                 continue;
             }
+            // consecutive list items make one list, as in Telegram's own editor
+            if (block.type == WriterDoc.BULLET) {
+                numbers = null;
+                if (bullets == null) {
+                    bullets = new TL_iv.pageBlockList();
+                    out.add(bullets);
+                }
+                final TL_iv.TL_pageListItemText item = new TL_iv.TL_pageListItemText();
+                item.text = toRichText(trim(block.text));
+                bullets.items.add(item);
+                continue;
+            }
+            if (block.type == WriterDoc.NUMBER) {
+                bullets = null;
+                if (numbers == null) {
+                    numbers = new TL_iv.pageBlockOrderedList();
+                    out.add(numbers);
+                }
+                final TL_iv.TL_pageListOrderedItemText item = new TL_iv.TL_pageListOrderedItemText();
+                item.num = (numbers.items.size() + 1) + ".";
+                item.text = toRichText(trim(block.text));
+                numbers.items.add(item);
+                continue;
+            }
+            bullets = null;
+            numbers = null;
             final TL_iv.PageBlock page;
             switch (block.type) {
                 case WriterDoc.HEADING:
@@ -206,6 +240,20 @@ public final class WriterBridge {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.HEADING, text));
                 } else if (block instanceof TL_iv.pageBlockBlockquote || block instanceof TL_iv.pageBlockPullquote) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.QUOTE, text));
+                } else if (block instanceof TL_iv.pageBlockDivider) {
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.DIVIDER, ""));
+                } else if (block instanceof TL_iv.pageBlockList) {
+                    for (TL_iv.PageListItem item : ((TL_iv.pageBlockList) block).items) {
+                        if (item instanceof TL_iv.TL_pageListItemText) {
+                            doc.blocks.add(new WriterDoc.Block(WriterDoc.BULLET, toSpans(((TL_iv.TL_pageListItemText) item).text)));
+                        }
+                    }
+                } else if (block instanceof TL_iv.pageBlockOrderedList) {
+                    for (TL_iv.PageListOrderedItem item : ((TL_iv.pageBlockOrderedList) block).items) {
+                        if (item instanceof TL_iv.TL_pageListOrderedItemText) {
+                            doc.blocks.add(new WriterDoc.Block(WriterDoc.NUMBER, toSpans(((TL_iv.TL_pageListOrderedItemText) item).text)));
+                        }
+                    }
                 } else if (block.text != null) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.PARAGRAPH, text));
                 }
@@ -229,13 +277,14 @@ public final class WriterBridge {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.HEADING, block.text));
                 } else if (block.type == TigiArticle.BLOCK_QUOTE || block.type == TigiArticle.BLOCK_CALLOUT) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.QUOTE, block.text));
+                } else if (block.type == TigiArticle.BLOCK_DIVIDER) {
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.DIVIDER, ""));
+                } else if (block.type == TigiArticle.BLOCK_BULLETS || block.type == TigiArticle.BLOCK_NUMBERS) {
+                    for (CharSequence item : block.items) {
+                        doc.blocks.add(new WriterDoc.Block(block.type == TigiArticle.BLOCK_BULLETS ? WriterDoc.BULLET : WriterDoc.NUMBER, item));
+                    }
                 } else if (block.text != null && block.text.length() > 0) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.PARAGRAPH, block.text));
-                } else if (!block.items.isEmpty()) {
-                    // lists come back as one paragraph per item until lists arrive in the writer
-                    for (CharSequence item : block.items) {
-                        doc.blocks.add(new WriterDoc.Block(WriterDoc.PARAGRAPH, "• " + item));
-                    }
                 }
             }
             TigiArticle.deleteRecursive(dir);

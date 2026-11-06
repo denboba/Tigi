@@ -22,6 +22,13 @@ public final class WriterDoc {
     public static final int PARAGRAPH = 0;
     public static final int HEADING = 1;
     public static final int QUOTE = 2;
+    public static final int BULLET = 3;
+    public static final int NUMBER = 4;
+    public static final int DIVIDER = 5;
+
+    public static boolean isList(int type) {
+        return type == BULLET || type == NUMBER;
+    }
 
     public static final class Block {
         public int type;
@@ -46,7 +53,7 @@ public final class WriterDoc {
             return false;
         }
         for (Block block : blocks) {
-            if (block.text.toString().trim().length() > 0) {
+            if (block.type == DIVIDER || block.text.toString().trim().length() > 0) {
                 return false;
             }
         }

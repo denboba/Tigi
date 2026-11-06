@@ -46,6 +46,8 @@ public class WriterHomeActivity extends BaseFragment {
     private final ArrayList<MessageObject> published = new ArrayList<>();
     private ArrayList<WriterDoc> drafts = new ArrayList<>();
     private boolean loadingPublished;
+    /** Set by the publish screen: show Published and refresh until the new article is there. */
+    static boolean justPublished;
 
     private int ink() {
         return TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
@@ -118,13 +120,24 @@ public class WriterHomeActivity extends BaseFragment {
         page.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0, 1f));
         root.addView(page, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         fragmentView = root;
-        loadPublished();
         return fragmentView;
     }
 
     @Override
     public void onResume() {
         super.onResume();
+        if (justPublished) {
+            justPublished = false;
+            draftsTab = false;
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.forward, LocaleController.getString(R.string.NilakWriterPublishingNow)).show();
+            // the article is packed and uploaded in the background: look again a few times
+            loadPublished();
+            AndroidUtilities.runOnUIThread(this::loadPublished, 3000);
+            AndroidUtilities.runOnUIThread(this::loadPublished, 8000);
+            AndroidUtilities.runOnUIThread(this::loadPublished, 15000);
+        } else {
+            loadPublished();
+        }
         // a draft may have been written, finished or published meanwhile
         Utilities.globalQueue.postRunnable(() -> {
             final ArrayList<WriterDoc> loaded = WriterDrafts.list(currentAccount);
@@ -152,7 +165,7 @@ public class WriterHomeActivity extends BaseFragment {
 
     private void loadPublished() {
         final TLRPC.Chat channel = TigiPosting.defaultChannel(currentAccount);
-        if (channel == null) {
+        if (channel == null || isFinishing() || getParentActivity() == null) {
             return;
         }
         loadingPublished = true;

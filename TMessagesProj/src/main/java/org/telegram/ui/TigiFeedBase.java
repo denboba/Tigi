@@ -2246,11 +2246,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 if (width <= 0) {
                     return;
                 }
-                final android.text.StaticLayout full = android.text.StaticLayout.Builder
+                final android.text.StaticLayout measured = android.text.StaticLayout.Builder
                     .obtain(post.text, 0, post.text.length(), captionView.getPaint(), width)
                     .setLineSpacing(captionView.getLineSpacingExtra(), captionView.getLineSpacingMultiplier())
                     .build();
-                final boolean truncated = full.getLineCount() > maxLines;
+                final boolean truncated = measured.getLineCount() > maxLines;
                 moreView.setText(LocaleController.getString(R.string.NilakSeeMore));
                 moreView.setVisibility(truncated ? VISIBLE : GONE);
             });

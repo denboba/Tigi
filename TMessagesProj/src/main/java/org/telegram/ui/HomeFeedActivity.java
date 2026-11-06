@@ -85,8 +85,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
 
         final FrameLayout bar = new FrameLayout(context);
         titleBar = bar;
-        bar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         applyTopInset(bar);
+        // Lilac: the corner sprig sits in the bar, under the title and the buttons
+        sprigView = TigiLilac.addSprig(bar, 150);
         final TextView title = new TextView(context);
         titleView = title;
         // the floret + "nilak" wordmark, drawn as an image span so TalkBack still reads the app name
@@ -164,6 +165,20 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
 
     private View headerView;
     private FrameLayout titleBar;
+    private ImageView sprigView;
+
+    /** Settings can turn the flowers off (or on again) while Home is open behind. */
+    private void syncSprig() {
+        if (titleBar == null || TigiLilac.flowers() == (sprigView != null)) {
+            return;
+        }
+        if (sprigView != null) {
+            titleBar.removeView(sprigView);
+            sprigView = null;
+        } else {
+            sprigView = TigiLilac.addSprig(titleBar, 150);
+        }
+    }
 
     private void bindWordmark(TextView title) {
         final android.graphics.drawable.Drawable logo = title.getContext().getResources().getDrawable(R.drawable.telegram_logo_2).mutate();
@@ -365,12 +380,31 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
 
     @Override
     protected void updateHeaderColors() {
+        final boolean lilac = TigiLilac.on();
         final int background = Theme.getColor(Theme.key_windowBackgroundWhite);
         if (titleBar != null) {
-            titleBar.setBackgroundColor(background);
+            if (lilac) {
+                // the bar carries the top of the page, so it reads as one surface with the glow behind the sprig
+                titleBar.setBackground(TigiLilac.pageBar());
+            } else {
+                titleBar.setBackgroundColor(background);
+            }
         }
         if (scrollingPart != null) {
-            scrollingPart.setBackgroundColor(background);
+            if (lilac) {
+                scrollingPart.setBackground(null);
+            } else {
+                scrollingPart.setBackgroundColor(background);
+            }
+        }
+        final int icon = lilac ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+        for (ImageView button : new ImageView[]{activityButton, searchButton, createButton}) {
+            if (button != null) {
+                button.setBackground(lilac
+                    ? new android.graphics.drawable.InsetDrawable(TigiLilac.roundButton(), AndroidUtilities.dp(4))
+                    : Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+                button.setColorFilter(new android.graphics.PorterDuffColorFilter(icon, android.graphics.PorterDuff.Mode.SRC_IN));
+            }
         }
         if (suggestedRow != null) {
             suggestedRow.updateColors();
@@ -378,17 +412,8 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (titleView != null) {
             bindWordmark(titleView);
         }
-        if (activityButton != null) {
-            activityButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
-        }
-        if (searchButton != null) {
-            searchButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
-        }
-        if (createButton != null) {
-            createButton.setColorFilter(new android.graphics.PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), android.graphics.PorterDuff.Mode.SRC_IN));
-        }
         if (modeLabel != null) {
-            modeLabel.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            modeLabel.setTextColor(lilac ? TigiLilac.meta() : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         }
     }
 
@@ -415,6 +440,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     @Override
     public void onResume() {
         super.onResume();
+        syncSprig();
         if (storiesRow != null) {
             // read state changes while the story viewer was open
             storiesRow.update();

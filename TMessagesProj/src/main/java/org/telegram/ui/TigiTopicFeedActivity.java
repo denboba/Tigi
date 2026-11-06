@@ -144,7 +144,11 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
     protected View createHeaderView(Context context) {
         final LinearLayout header = new LinearLayout(context);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (TigiLilac.on()) {
+            header.setBackground(TigiLilac.pageBar());
+        } else {
+            header.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
         applyTopInset(header);
 
         final LinearLayout row = new LinearLayout(context);

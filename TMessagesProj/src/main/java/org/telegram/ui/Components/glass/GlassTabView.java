@@ -156,7 +156,8 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         if (selectedFactor > 0 && !skipDrawSelector) {
             final float alpha = AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(selectedFactor);
 
-            paintCounterBackground.setColor(Theme.multAlpha(colorSelected, 0.09f * alpha));
+            // Nilak Lilac: the open tab sits in a clearer lilac pill
+            paintCounterBackground.setColor(Theme.multAlpha(colorSelected, (org.telegram.ui.TigiLilac.on() ? 0.14f : 0.09f) * alpha));
             tmpRectF.set(0, 0, viewWidth, getHeight());
             final float r = Math.min(tmpRectF.width(), tmpRectF.height()) / 2f;
             final float s = lerp(0.6f, 1, selectedFactor) * MathUtils.clamp(attachScale, 0, 1);
@@ -457,8 +458,14 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         tab.imageView.setScaleType(ImageView.ScaleType.CENTER);
         // the create button: a solid pill in the brand violet
         final GradientDrawable pill = new GradientDrawable();
-        pill.setColor(org.telegram.ui.TigiStyle.PRIMARY);
-        pill.setCornerRadius(dp(16));
+        if (org.telegram.ui.TigiLilac.on()) {
+            // Lilac: light lilac into the brand violet
+            pill.setOrientation(GradientDrawable.Orientation.TL_BR);
+            pill.setColors(new int[]{0xFFA374E6, 0xFF7440C8});
+        } else {
+            pill.setColor(org.telegram.ui.TigiStyle.PRIMARY);
+        }
+        pill.setCornerRadius(dp(17));
         tab.imageView.setBackground(pill);
         tab.imageView.setLayoutParams(LayoutHelper.createFrame(52, 34, Gravity.CENTER));
         tab.updateColors();

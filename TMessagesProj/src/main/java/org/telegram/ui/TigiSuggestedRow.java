@@ -95,7 +95,7 @@ public class TigiSuggestedRow extends LinearLayout {
         card.setOrientation(VERTICAL);
         card.setGravity(Gravity.CENTER_HORIZONTAL);
         card.setPadding(dp(8), dp(12), dp(8), dp(10));
-        card.setBackground(Theme.createRoundRectDrawable(dp(16), Theme.getColor(Theme.key_windowBackgroundGray)));
+        card.setBackground(Theme.createRoundRectDrawable(dp(16), TigiLilac.on() ? TigiLilac.card() : Theme.getColor(Theme.key_windowBackgroundGray)));
 
         final BackupImageView avatar = new BackupImageView(context);
         avatar.setRoundRadius(dp(30));

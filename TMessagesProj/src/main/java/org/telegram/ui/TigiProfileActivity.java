@@ -684,11 +684,14 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             LocaleController.getString(R.string.NilakDataSaver),
             LocaleController.getString(R.string.NilakApps),
             LocaleController.getString(R.string.NilakFriends),
-            LocaleController.getString(R.string.NilakBriefReminder)
+            LocaleController.getString(R.string.NilakBriefReminder),
+            LocaleController.getString(TigiLilac.flowers() ? R.string.NilakFlowersOn : R.string.NilakFlowersOff)
         };
-        final int[] icons = {R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved};
+        final int[] icons = {R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved, R.drawable.msg_theme};
+        final CharSequence[] shown = TigiLilac.on() ? items : java.util.Arrays.copyOf(items, items.length - 1);
+        final int[] shownIcons = TigiLilac.on() ? icons : java.util.Arrays.copyOf(icons, icons.length - 1);
         final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
-        builder.setItems(items, icons, (dialog, which) -> {
+        builder.setItems(shown, shownIcons, (dialog, which) -> {
             switch (which) {
                 case 0:
                     TigiRegion.showPicker(this, () -> {
@@ -700,6 +703,11 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 case 2: TigiAppsActivity.open(this); break;
                 case 3: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
                 case 4: TigiTopicFeedActivity.showReminderPicker(this); break;
+                case 5:
+                    TigiLilac.setFlowers(!TigiLilac.flowers());
+                    BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check,
+                        LocaleController.getString(TigiLilac.flowers() ? R.string.NilakFlowersOn : R.string.NilakFlowersOff)).show();
+                    break;
             }
         });
         showDialog(builder.create());

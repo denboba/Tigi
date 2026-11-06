@@ -116,7 +116,11 @@ public class ChannelFeedActivity extends TigiFeedBase {
     protected View createHeaderView(Context context) {
         final FrameLayout header = new FrameLayout(context);
         headerView = header;
-        header.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (TigiLilac.on()) {
+            header.setBackground(TigiLilac.pageBar());
+        } else {
+            header.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
         applyTopInset(header);
 
         final LinearLayout row = new LinearLayout(context);
@@ -209,7 +213,11 @@ public class ChannelFeedActivity extends TigiFeedBase {
             return;
         }
         final int text = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
-        headerView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (TigiLilac.on()) {
+            headerView.setBackground(TigiLilac.pageBar());
+        } else {
+            headerView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
         backButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
         chatButton.setColorFilter(new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN));
         titleView.setTextColor(text);

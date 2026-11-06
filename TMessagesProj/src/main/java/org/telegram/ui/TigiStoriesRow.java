@@ -124,7 +124,7 @@ public class TigiStoriesRow extends HorizontalScrollView {
             plus.setIncludeFontPadding(false);
             final android.graphics.drawable.GradientDrawable badge = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.BL_TR, new int[]{TigiStyle.RING_START, TigiStyle.RING_END});
             badge.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-            badge.setStroke(dp(2), Theme.getColor(Theme.key_windowBackgroundWhite));
+            badge.setStroke(dp(2), TigiLilac.on() ? TigiLilac.pageTop() : Theme.getColor(Theme.key_windowBackgroundWhite));
             plus.setBackground(badge);
             avatarFrame.addView(plus, LayoutHelper.createFrame(22, 22, Gravity.BOTTOM | Gravity.RIGHT, 0, 0, 4, 4));
         }

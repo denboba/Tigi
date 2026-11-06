@@ -445,7 +445,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
         final FrameLayout root = new FrameLayout(context);
         rootView = root;
-        root.setBackgroundColor(feedBackground());
+        applyPageBackground(root);
 
         final boolean floatingHeader = headerScrollsWithList();
         final View header = createHeaderView(context);
@@ -557,11 +557,36 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         return Theme.getColor(Theme.isCurrentThemeDark() ? Theme.key_windowBackgroundWhite : Theme.key_windowBackgroundGray);
     }
 
+    /** The page behind the cards: Nilak Lilac when on, else the plain feed colour. */
+    protected static void applyPageBackground(View view) {
+        if (TigiLilac.on()) {
+            view.setBackground(TigiLilac.page());
+        } else {
+            view.setBackgroundColor(feedBackground());
+        }
+    }
+
+    protected static int cardColor() {
+        return TigiLilac.on() ? TigiLilac.card() : Theme.getColor(Theme.key_windowBackgroundWhite);
+    }
+
+    protected static int cardRadius() {
+        return TigiLilac.on() ? 22 : 18;
+    }
+
+    protected static int inkColor() {
+        return TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+    }
+
+    protected static int metaColor() {
+        return TigiLilac.on() ? TigiLilac.meta() : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
+    }
+
     protected void updateColors() {
         if (rootView == null) {
             return;
         }
-        rootView.setBackgroundColor(feedBackground());
+        applyPageBackground(rootView);
         if (emptyView != null) {
             emptyView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         }
@@ -1609,7 +1634,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
             final FeedCell cell = new FeedCell(parent.getContext());
             final RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.setMargins(dp(8), dp(7), dp(8), dp(7));
+            if (TigiLilac.on()) {
+                params.setMargins(dp(10), dp(6), dp(10), dp(6));
+            } else {
+                params.setMargins(dp(8), dp(7), dp(8), dp(7));
+            }
             cell.setLayoutParams(params);
             return new RecyclerListView.Holder(cell);
         }
@@ -1660,14 +1689,22 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         FeedCell(Context context) {
             super(context);
             setOrientation(VERTICAL);
-            setBackground(Theme.createRoundRectDrawable(dp(18), Theme.getColor(Theme.key_windowBackgroundWhite)));
+            setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
             setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
-                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(20));
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(cardRadius() + 2));
                 }
             });
             setClipToOutline(true);
+            if (TigiLilac.on()) {
+                // a soft lilac shadow lifts the card off the page
+                setElevation(dp(1.5f));
+                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                    setOutlineSpotShadowColor(0xFF6A3CB8);
+                    setOutlineAmbientShadowColor(0xFF6A3CB8);
+                }
+            }
             setOnClickListener(v -> {
                 if (post != null) {
                     onPostTapped(post, -1);
@@ -1679,19 +1716,20 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             headerRow.setGravity(Gravity.CENTER_VERTICAL);
             headerRow.setPadding(dp(12), dp(10), dp(12), dp(10));
             avatarView = new BackupImageView(context);
-            avatarView.setRoundRadius(dp(16));
-            headerRow.addView(avatarView, LayoutHelper.createLinear(32, 32));
+            final int avatarSize = TigiLilac.on() ? 40 : 32;
+            avatarView.setRoundRadius(dp(avatarSize / 2f));
+            headerRow.addView(avatarView, LayoutHelper.createLinear(avatarSize, avatarSize));
             final LinearLayout names = new LinearLayout(context);
             names.setOrientation(VERTICAL);
             nameView = new TextView(context);
-            nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, TigiLilac.on() ? 15 : 14);
             nameView.setTypeface(TigiStyle.displayBold());
-            nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            nameView.setTextColor(inkColor());
             nameView.setSingleLine(true);
             nameView.setEllipsize(TextUtils.TruncateAt.END);
             timeView = new TextView(context);
             timeView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-            timeView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            timeView.setTextColor(metaColor());
             names.addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             names.addView(timeView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             headerRow.addView(names, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 10, 0, 0, 0));
@@ -1718,7 +1756,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             moreButton = new ImageView(context);
             moreButton.setScaleType(ImageView.ScaleType.CENTER);
             moreButton.setImageResource(R.drawable.ic_ab_other);
-            moreButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), PorterDuff.Mode.SRC_IN));
+            moreButton.setColorFilter(new PorterDuffColorFilter(metaColor(), PorterDuff.Mode.SRC_IN));
             moreButton.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));
             moreButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
             moreButton.setOnClickListener(v -> {
@@ -1745,7 +1783,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
             forwardedView = new TextView(context);
             forwardedView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-            forwardedView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            forwardedView.setTextColor(metaColor());
             forwardedView.setSingleLine(true);
             forwardedView.setEllipsize(TextUtils.TruncateAt.END);
             forwardedView.setPadding(dp(12), 0, dp(12), dp(8));
@@ -1760,7 +1798,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             fallbackBox.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
             fallbackLabel = new TextView(context);
             fallbackLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            fallbackLabel.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            fallbackLabel.setTextColor(inkColor());
             fallbackLabel.setMaxLines(2);
             fallbackLabel.setEllipsize(TextUtils.TruncateAt.END);
             fallbackBox.addView(fallbackLabel, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
@@ -1861,7 +1899,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             commentButton.setScaleType(ImageView.ScaleType.CENTER);
             commentButton.setImageResource(R.drawable.tigi_comment_24);
             commentButton.setContentDescription(LocaleController.getString(R.string.TigiComments));
-            commentButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
+            commentButton.setColorFilter(new PorterDuffColorFilter(inkColor(), PorterDuff.Mode.SRC_IN));
             commentButton.setOnClickListener(v -> {
                 if (post != null && !post.messages.isEmpty()) {
                     openComments(post);
@@ -1875,7 +1913,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             shareButton.setScaleType(ImageView.ScaleType.CENTER);
             shareButton.setImageResource(R.drawable.tigi_share_24);
             shareButton.setContentDescription(LocaleController.getString(R.string.ShareFile));
-            shareButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
+            shareButton.setColorFilter(new PorterDuffColorFilter(inkColor(), PorterDuff.Mode.SRC_IN));
             shareButton.setOnClickListener(v -> {
                 if (post != null) {
                     sharePost(post);
@@ -1906,7 +1944,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             captionBox.setPadding(dp(12), dp(2), dp(12), dp(12));
             captionView = new TigiEmojiTextView(context);
             captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            captionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            captionView.setTextColor(inkColor());
             captionView.setLineSpacing(dp(2), 1f);
             captionView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText));
             captionView.setMovementMethod(captionLinks);
@@ -1949,9 +1987,9 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
 
         void updateColors() {
-            setBackground(Theme.createRoundRectDrawable(dp(18), Theme.getColor(Theme.key_windowBackgroundWhite)));
-            final int text = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
-            final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
+            setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
+            final int text = inkColor();
+            final int gray = metaColor();
             nameView.setTextColor(text);
             timeView.setTextColor(gray);
             heartCountView.setTextColor(text);
@@ -1977,7 +2015,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             final TextView view = new TextView(context);
             view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
             view.setTypeface(TigiStyle.displayBold());
-            view.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            view.setTextColor(inkColor());
             return view;
         }
 
@@ -2152,7 +2190,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 statusView.setText(LocaleController.getString(R.string.TigiPostFailed));
             } else if (message.isSending()) {
                 statusView.setVisibility(VISIBLE);
-                statusView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+                statusView.setTextColor(metaColor());
                 statusView.setText(LocaleController.getString(R.string.TigiPostSending));
             } else {
                 statusView.setVisibility(GONE);
@@ -2201,7 +2239,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             if (liked) {
                 heartButton.clearColorFilter();
             } else {
-                heartButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
+                heartButton.setColorFilter(new PorterDuffColorFilter(inkColor(), PorterDuff.Mode.SRC_IN));
             }
             final int hearts = heartCount(message);
             heartCountView.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
@@ -2220,7 +2258,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                     final TextView chip = new TextView(getContext());
                     chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
                     chip.setTypeface(TigiStyle.displayBold());
-                    chip.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                    chip.setTextColor(inkColor());
                     chip.setGravity(Gravity.CENTER);
                     chip.setPadding(dp(10), 0, dp(10), 0);
                     chip.setBackground(Theme.createRoundRectDrawable(dp(15), count.chosen ? Theme.multAlpha(Theme.getColor(Theme.key_featuredStickers_addButton), 0.18f) : Theme.getColor(Theme.key_windowBackgroundGray)));
@@ -2244,7 +2282,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
             final boolean saved = post != null && !post.messages.isEmpty() && post.chat != null && TigiFeedPrefs.isSaved(currentAccount, post.chat.id, post.primary().getId());
             saveButton.setImageResource(saved ? R.drawable.tigi_save_filled_24 : R.drawable.tigi_save_24);
-            saveButton.setColorFilter(new PorterDuffColorFilter(saved ? TigiStyle.accent() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN));
+            saveButton.setColorFilter(new PorterDuffColorFilter(saved ? TigiStyle.accent() : inkColor(), PorterDuff.Mode.SRC_IN));
             saveButton.setContentDescription(LocaleController.getString(saved ? R.string.TigiUnsave : R.string.TigiSave));
             saveButton.setVisibility(post != null && post.primary().getId() > 0 ? VISIBLE : GONE);
         }

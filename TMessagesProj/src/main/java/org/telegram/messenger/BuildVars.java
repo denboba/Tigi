@@ -76,6 +76,8 @@ public class BuildVars {
     public static boolean TIGI_STREAM_MOVIES = true;
     /** Every tap on a person or channel (chat header, the personal channel row of Telegram's info) opens the Nilak profile. */
     public static boolean TIGI_PROFILE_ROUTING = true;
+    /** Nilak Lilac design: lilac light page with soft glows, a lilac sprig in the corner, social cards. Off = the plain grey feed. */
+    public static boolean NILAK_LILAC = true;
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
 

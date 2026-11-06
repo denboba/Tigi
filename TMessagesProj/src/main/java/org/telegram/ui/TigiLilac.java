@@ -46,7 +46,8 @@ public final class TigiLilac {
 
     /** The lilac sprigs: on by default, the person can turn them off in Settings. */
     public static boolean flowers() {
-        return on() && prefs().getBoolean(KEY_FLOWERS, true);
+        // the corner sprigs were retired after testing: the page glows and the floret pattern carry the look
+        return false;
     }
 
     public static void setFlowers(boolean value) {
@@ -173,7 +174,7 @@ public final class TigiLilac {
 
     /** Empty screens: a small lilac sprig above the message, so an empty page still looks finished. */
     public static void decorateEmpty(android.widget.TextView view) {
-        if (!on() || view == null) {
+        if (!flowers() || view == null) {
             return;
         }
         final Drawable sprig = view.getContext().getResources().getDrawable(R.drawable.nilak_lilac_sprig).mutate();

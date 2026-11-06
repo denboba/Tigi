@@ -389,6 +389,11 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         frame.addView(stickerFallback, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER));
         frame.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_ROUNDRECT_6DP));
         frame.setOnClickListener(v -> onStickerTap());
+        // like in chats: long-press shows the pack the sticker comes from
+        frame.setOnLongClickListener(v -> {
+            openStickerPack();
+            return true;
+        });
         final String alt = stickerAlt();
         frame.setContentDescription(TextUtils.isEmpty(alt) ? LocaleController.getString(R.string.AttachSticker) : alt + " " + LocaleController.getString(R.string.AttachSticker));
         addView(frame, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 184));
@@ -454,16 +459,41 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     }
 
     /** A sticker opens its pack (add it, or send one); a big emoji plays again. */
+    /** A tap plays it again with a little bounce and a tick, as stickers and big emoji do in chats. */
     private void onStickerTap() {
-        if (message == null || fragment == null || fragment.getParentActivity() == null) {
+        if (message == null || stickerView == null) {
             return;
         }
-        if (isBigEmoji(message)) {
-            final org.telegram.ui.Components.RLottieDrawable lottie = stickerView != null ? stickerView.getImageReceiver().getLottieAnimation() : null;
-            if (lottie != null) {
-                lottie.setCurrentFrame(0, false);
-                lottie.start();
-            }
+        final org.telegram.ui.Components.RLottieDrawable lottie = stickerView.getImageReceiver().getLottieAnimation();
+        if (lottie != null) {
+            lottie.setCurrentFrame(0, false);
+            lottie.start();
+        }
+        final org.telegram.ui.Components.AnimatedFileDrawable video = stickerView.getImageReceiver().getAnimation();
+        if (video != null) {
+            video.seekTo(0, true);
+            video.start();
+        }
+        stickerView.animate().cancel();
+        stickerView.setScaleX(1f);
+        stickerView.setScaleY(1f);
+        stickerView.animate().scaleX(1.14f).scaleY(1.14f).setDuration(140)
+            .setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_OUT)
+            .withEndAction(() -> stickerView.animate().scaleX(1f).scaleY(1f).setDuration(260)
+                .setInterpolator(new android.view.animation.OvershootInterpolator(3f)).start())
+            .start();
+        try {
+            stickerView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+        } catch (Exception ignore) {
+        }
+        if (lottie == null && video == null && !isBigEmoji(message)) {
+            // a still sticker has nothing to replay: show its pack
+            openStickerPack();
+        }
+    }
+
+    private void openStickerPack() {
+        if (message == null || fragment == null || fragment.getParentActivity() == null || isBigEmoji(message)) {
             return;
         }
         final TLRPC.InputStickerSet set = MessageObject.getInputStickerSet(message.messageOwner);

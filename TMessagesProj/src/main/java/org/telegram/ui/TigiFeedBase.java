@@ -183,9 +183,20 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /** A plain tap on a card. mediaIndex is the photo that was tapped, or -1 for the rest of the card. */
     protected void onPostTapped(FeedPost post, int mediaIndex) {
+        // a post with text opens on its own page (media on top, the whole text under it); media-only posts and
+        // taps inside that page open the media full screen
+        if (!(this instanceof TigiPostActivity) && post != null && !post.sponsored && !TextUtils.isEmpty(post.text)) {
+            presentFragment(new TigiPostActivity(post));
+            return;
+        }
         if (mediaIndex >= 0) {
             openMediaViewer(post, mediaIndex);
         }
+    }
+
+    /** The post page shows every caption in full. */
+    protected boolean expandsCaptions() {
+        return false;
     }
 
     /* view */
@@ -2212,17 +2223,24 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 return;
             }
             captionView.setVisibility(VISIBLE);
-            captionView.setMaxLines(captionExpanded ? Integer.MAX_VALUE : textFirst ? CAPTION_LINES * 2 : CAPTION_LINES);
-            captionView.setEllipsize(captionExpanded ? null : TextUtils.TruncateAt.END);
+            final boolean full = captionExpanded || expandsCaptions();
+            final int maxLines = textFirst ? CAPTION_LINES * 2 : CAPTION_LINES;
+            captionView.setMaxLines(full ? Integer.MAX_VALUE : maxLines);
+            captionView.setEllipsize(full ? null : TextUtils.TruncateAt.END);
             captionView.setText(post.text);
             moreView.setVisibility(GONE);
+            if (expandsCaptions()) {
+                return;
+            }
             captionView.post(() -> {
                 final Layout layout = captionView.getLayout();
-                if (layout == null || post == null) {
+                if (layout == null || post == null || post.text == null) {
                     return;
                 }
                 final int lines = layout.getLineCount();
-                final boolean truncated = lines > 0 && layout.getEllipsisCount(lines - 1) > 0;
+                // cut either by the ellipsis or by line breaks past the last shown line
+                final boolean truncated = lines > 0 && (layout.getEllipsisCount(lines - 1) > 0
+                    || lines >= maxLines && layout.getLineEnd(lines - 1) < post.text.length());
                 moreView.setText(LocaleController.getString(captionExpanded ? R.string.TigiLess : R.string.TigiMore));
                 moreView.setVisibility(captionExpanded || truncated ? VISIBLE : GONE);
             });
@@ -2253,6 +2271,14 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             heartCountView.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
             final int comments = message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
             commentCountView.setText(comments > 0 ? LocaleController.formatShortNumber(comments, null) : "");
+            // what this post does not allow looks off (grey); a tap still says why
+            final boolean commentsOn = message.messageOwner.replies != null && message.messageOwner.replies.comments
+                || post.chat != null && ChatObject.canChangeChatInfo(post.chat);
+            commentButton.setAlpha(commentsOn ? 1f : 0.32f);
+            commentCountView.setAlpha(commentsOn ? 1f : 0.32f);
+            final boolean reactionsOn = isReactionAllowed(post, ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(heartEmoji()));
+            heartButton.setAlpha(reactionsOn ? 1f : 0.32f);
+            heartCountView.setAlpha(reactionsOn ? 1f : 0.32f);
             if (shareCountView != null) {
                 final int shares = message.messageOwner.forwards;
                 shareCountView.setText(shares > 0 ? LocaleController.formatShortNumber(shares, null) : "");

@@ -337,6 +337,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             loading[i] = false;
         }
         albumSizes.clear();
+        skippedService = 0;
         errorText = null;
         loadCount();
         if (adapter != null) {
@@ -428,12 +429,13 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         req.limit = 1;
         getConnectionsManager().bindRequestToGuid(getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
             if (response instanceof TLRPC.TL_messages_channelMessages) {
-                postsCount = ((TLRPC.TL_messages_channelMessages) response).count;
+                rawCount = ((TLRPC.TL_messages_channelMessages) response).count;
             } else if (response instanceof TLRPC.TL_messages_messagesSlice) {
-                postsCount = ((TLRPC.TL_messages_messagesSlice) response).count;
+                rawCount = ((TLRPC.TL_messages_messagesSlice) response).count;
             } else if (response instanceof TLRPC.messages_Messages) {
-                postsCount = ((TLRPC.messages_Messages) response).messages.size();
+                rawCount = ((TLRPC.messages_Messages) response).messages.size();
             }
+            updatePostsCount();
             if (header != null) {
                 header.bind();
             }
@@ -486,6 +488,17 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 }
                 reachedEnd[which] = res.messages.isEmpty() || minId == offsetId[which];
                 offsetId[which] = minId;
+                if (which == TAB_POSTS) {
+                    if (!ownNotes.isEmpty() && chatId != 0) {
+                        getMessagesController().deleteMessages(new ArrayList<>(ownNotes), null, null, -chatId, 0, true, 0);
+                        ownNotes.clear();
+                    }
+                    // posts only: service notes are not counted; when everything is loaded, the grid is the count
+                    updatePostsCount();
+                    if (header != null) {
+                        header.bind();
+                    }
+                }
                 if (!reachedEnd[which] && tiles[which].size() < PAGE / 2) {
                     // a page of service messages (photo or name changes) gave too few tiles: fetch on without
                     // waiting for a scroll, which never comes while the grid shows only the loading shimmer
@@ -507,8 +520,34 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }));
     }
 
+    /** Service notes met while loading posts (channel created, live started or ended, photo or name changed). */
+    private int skippedService;
+    /** Every message in the channel, service notes included (Telegram's count). */
+    private int rawCount = -1;
+
+    /** Posts only: the grid when it is complete, else Telegram's count less the notes seen so far. */
+    private void updatePostsCount() {
+        if (reachedEnd[TAB_POSTS]) {
+            postsCount = tiles[TAB_POSTS].size();
+        } else if (rawCount >= 0) {
+            postsCount = Math.max(tiles[TAB_POSTS].size(), rawCount - skippedService);
+        }
+    }
+    private final ArrayList<Integer> ownNotes = new ArrayList<>();
+
     private void addTile(int which, MessageObject message) {
-        if (message.messageOwner instanceof TLRPC.TL_messageService || message.needDrawBluredPreview()) {
+        if (message.messageOwner instanceof TLRPC.TL_messageService) {
+            if (which == TAB_POSTS) {
+                skippedService++;
+                final TLRPC.MessageAction action = message.messageOwner.action;
+                // on the own profile, live and photo/name notes are removed: they are not posts
+                if (self && message.getId() > 0 && !(action instanceof TLRPC.TL_messageActionChannelCreate)) {
+                    ownNotes.add(message.getId());
+                }
+            }
+            return;
+        }
+        if (message.needDrawBluredPreview()) {
             return;
         }
         // every kind of post gets a tile (TigiGridTile draws it); only photos and videos of an album are merged
@@ -706,8 +745,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             LocaleController.getString(TigiLilac.flowers() ? R.string.NilakFlowersOn : R.string.NilakFlowersOff)
         };
         final int[] icons = {R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved, R.drawable.msg_theme};
-        final CharSequence[] shown = TigiLilac.on() ? items : java.util.Arrays.copyOf(items, items.length - 1);
-        final int[] shownIcons = TigiLilac.on() ? icons : java.util.Arrays.copyOf(icons, icons.length - 1);
+        // the last item (lilac flowers) is retired
+        final CharSequence[] shown = java.util.Arrays.copyOf(items, items.length - 1);
+        final int[] shownIcons = java.util.Arrays.copyOf(icons, icons.length - 1);
         final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
         builder.setItems(shown, shownIcons, (dialog, which) -> {
             switch (which) {

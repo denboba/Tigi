@@ -917,22 +917,6 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
                 captionView.setMaxLines(captionExpanded ? 12 : 2);
             });
             bottom.addView(captionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-            if (TigiLilac.on()) {
-                // Lilac: a frosted "Add a comment…" box under the caption, like stories' reply field
-                final TextView addComment = new TextView(context);
-                addComment.setText(LocaleController.getString(R.string.NilakAddComment));
-                addComment.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                addComment.setTextColor(0xE6FFFFFF);
-                addComment.setGravity(Gravity.CENTER_VERTICAL);
-                addComment.setPadding(dp(16), 0, dp(16), 0);
-                final GradientDrawable pill = new GradientDrawable();
-                pill.setCornerRadius(dp(22));
-                pill.setColor(0x33000000);
-                pill.setStroke(dp(1), 0x59FFFFFF);
-                addComment.setBackground(pill);
-                addComment.setOnClickListener(v -> openComments(post));
-                bottom.addView(addComment, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44, 0, 10, 0, 0));
-            }
             addView(bottom, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM, LocaleController.isRTL ? 76 : 16, 0, LocaleController.isRTL ? 16 : 76, bottomInset + 14));
 
             progressView = new View(context);

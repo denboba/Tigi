@@ -277,6 +277,17 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
         }
         for (int i = 0; i < chipsRow.getChildCount(); i++) {
             final TextView chip = (TextView) chipsRow.getChildAt(i);
+            if (mode == MODE_READ && !all.isEmpty()) {
+                // Read: each topic says how many articles it holds; empty topics step aside
+                int count = 0;
+                for (FeedPost post : all) {
+                    if (i == 0 || inTopic(post, i)) {
+                        count++;
+                    }
+                }
+                chip.setText(LocaleController.getString(TOPICS[i]) + (count > 0 ? "  " + count : ""));
+                chip.setVisibility(i == 0 || count > 0 || i == topic ? View.VISIBLE : View.GONE);
+            }
             final boolean on = i == topic;
             chip.setSelected(on);
             chip.setTextColor(on ? 0xFFFFFFFF : (TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText)));
@@ -767,6 +778,7 @@ public class TigiTopicFeedActivity extends TigiFeedBase {
 
     private void applyTopic() {
         bindMarkets();
+        bindChips();
         posts.clear();
         if (mode != MODE_TEXT && mode != MODE_READ || topic == 0) {
             posts.addAll(all);

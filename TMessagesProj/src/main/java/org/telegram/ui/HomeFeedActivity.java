@@ -110,6 +110,26 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         titleRow.addView(modeLabel, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 4, 2, 0, 0));
         titleRow.setOnClickListener(v -> pickFeedMode());
         bar.addView(titleRow, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 0, 16, 0));
+        // For you · Following · Read as clear pills under the title (the small "For you ⌄" label hides)
+        modeTabs = new LinearLayout(context);
+        modeTabs.setOrientation(LinearLayout.HORIZONTAL);
+        final int[] modeNames = {R.string.TigiReelsForYou, R.string.NilakFollowing, R.string.NilakRead};
+        for (int i = 0; i < modeNames.length; i++) {
+            final int index = i;
+            final TextView tab = new TextView(context);
+            tab.setText(LocaleController.getString(modeNames[i]));
+            tab.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            tab.setTypeface(TigiStyle.displayBold());
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(AndroidUtilities.dp(16), 0, AndroidUtilities.dp(16), 0);
+            tab.setOnClickListener(v -> onModeTab(index));
+            modeTabs.addView(tab, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 36, 0, 0, 8, 0));
+        }
+        modeLabel.setVisibility(View.GONE);
+        titleRow.setOnClickListener(null);
+        titleRow.setClickable(false);
+        bar.addView(modeTabs, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 36, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 16, 58, 16, 10));
+        bindModeTabs();
         searchButton = new ImageView(context);
         searchButton.setScaleType(ImageView.ScaleType.CENTER);
         searchButton.setImageResource(R.drawable.outline_header_search);
@@ -206,6 +226,46 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (modeLabel != null) {
             modeLabel.setText(LocaleController.getString(followingMode() ? R.string.NilakFollowing : R.string.TigiReelsForYou) + " ⌄");
             modeLabel.setContentDescription(LocaleController.getString(R.string.NilakFeedMode) + ": " + LocaleController.getString(followingMode() ? R.string.NilakFollowing : R.string.TigiReelsForYou));
+        }
+    }
+
+    private LinearLayout modeTabs;
+
+    private void bindModeTabs() {
+        if (modeTabs == null) {
+            return;
+        }
+        final boolean following = followingMode();
+        final int ink = TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+        for (int i = 0; i < modeTabs.getChildCount(); i++) {
+            final TextView tab = (TextView) modeTabs.getChildAt(i);
+            final boolean on = i == 0 && !following || i == 1 && following;
+            tab.setSelected(on);
+            tab.setTextColor(on ? 0xFFFFFFFF : ink);
+            tab.setBackground(on ? TigiStyle.primaryPill(18)
+                : Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(18), TigiLilac.on() ? TigiLilac.chip() : Theme.getColor(Theme.key_windowBackgroundGray), Theme.multAlpha(TigiStyle.accent(), 0.15f)));
+        }
+    }
+
+    private void onModeTab(int index) {
+        if (index == 2) {
+            presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_READ));
+            return;
+        }
+        final boolean wantFollowing = index == 1;
+        if (wantFollowing == followingMode()) {
+            if (layoutManager != null) {
+                layoutManager.scrollToPositionWithOffset(0, 0);
+            }
+            return;
+        }
+        org.telegram.messenger.MessagesController.getMainSettings(currentAccount).edit().putBoolean(KEY_FOLLOWING, wantFollowing).apply();
+        bindModeLabel();
+        bindModeTabs();
+        lastLoadTime = 0;
+        loadFeed();
+        if (layoutManager != null) {
+            layoutManager.scrollToPositionWithOffset(0, 0);
         }
     }
 
@@ -382,6 +442,10 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         titleBar.setTranslationY(titleOffset);
         final float shown = hideable > 0 ? 1f + titleOffset / hideable : 1f;
         titleView.setAlpha(shown);
+        if (modeTabs != null) {
+            modeTabs.setAlpha(shown);
+            modeTabs.setEnabled(shown > 0.5f);
+        }
         searchButton.setAlpha(shown);
         searchButton.setEnabled(shown > 0.5f);
         activityButton.setAlpha(shown);
@@ -425,6 +489,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (modeLabel != null) {
             modeLabel.setTextColor(lilac ? TigiLilac.meta() : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         }
+        bindModeTabs();
     }
 
     @Override

@@ -9627,13 +9627,13 @@ public class Theme {
         // Nilak Lilac: lavender, rose, lilac and mint with a faint floret pattern; Telegram's green and doodles otherwise
         final boolean lilac = org.telegram.messenger.BuildVars.NILAK_LILAC;
         MotionBackgroundDrawable motionBackgroundDrawable = lilac
-            ? new MotionBackgroundDrawable(0xffE7DBF8, 0xffCDB3F0, 0xffF2DDEA, 0xffD9EBD9, w != 0)
+            ? new MotionBackgroundDrawable(0xffD9C6F6, 0xffA888E3, 0xffEBC9E6, 0xffBFDCC8, w != 0)
             : new MotionBackgroundDrawable(0xffdbddbb, 0xff6ba587, 0xffd5d88d, 0xff88b884, w != 0);
         if (w <= 0 || h <= 0) {
             w = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
             h = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
         }
-        motionBackgroundDrawable.setPatternBitmap(lilac ? 22 : 34, SvgHelper.getBitmap(lilac ? R.raw.nilak_pattern : R.raw.default_pattern, w, h, Color.BLACK, 1f, SvgHelper.ScaleMode.ByWidth));
+        motionBackgroundDrawable.setPatternBitmap(lilac ? 42 : 34, SvgHelper.getBitmap(lilac ? R.raw.nilak_pattern : R.raw.default_pattern, w, h, Color.BLACK, 1f, SvgHelper.ScaleMode.ByWidth));
         motionBackgroundDrawable.setPatternColorFilter(motionBackgroundDrawable.getPatternColor());
         return motionBackgroundDrawable;
     }

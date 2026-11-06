@@ -21,8 +21,8 @@ public class ThemeColors {
         int[] defaultColors = new int[Theme.colorsCount];
 
         defaultColors[key_wallpaperFileOffset] = 0;
-        defaultColors[key_dialogBackground] = 0xffffffff;
-        defaultColors[key_dialogBackgroundGray] = 0xfff0f0f0;
+        defaultColors[key_dialogBackground] = org.telegram.messenger.BuildVars.NILAK_LILAC ? 0xFFFBF8FE : 0xffffffff;
+        defaultColors[key_dialogBackgroundGray] = org.telegram.messenger.BuildVars.NILAK_LILAC ? 0xFFF0EAF8 : 0xfff0f0f0;
         defaultColors[key_dialogTextBlack] = DEFAULT_BLACK_TEXT;
         defaultColors[key_dialogTextLink] = 0xff5e33a9;
         defaultColors[key_dialogLinkSelection] = 0x33946ed7;
@@ -54,9 +54,9 @@ public class ThemeColors {
         defaultColors[key_dialogRoundCheckBoxCheck] = 0xffffffff;
         defaultColors[key_dialog_inlineProgressBackground] = 0xf6f0f2f5;
         defaultColors[key_dialog_inlineProgress] = 0xff6b7378;
-        defaultColors[key_dialogSearchBackground] = 0xfff2f4f5;
-        defaultColors[key_dialogSearchHint] = 0xff98a0a7;
-        defaultColors[key_dialogSearchIcon] = 0xffa1a8af;
+        defaultColors[key_dialogSearchBackground] = org.telegram.messenger.BuildVars.NILAK_LILAC ? 0xFFF0EAF8 : 0xfff2f4f5;
+        defaultColors[key_dialogSearchHint] = org.telegram.messenger.BuildVars.NILAK_LILAC ? 0xFF8C819E : 0xff98a0a7;
+        defaultColors[key_dialogSearchIcon] = org.telegram.messenger.BuildVars.NILAK_LILAC ? 0xFF8C819E : 0xffa1a8af;
         defaultColors[key_dialogSearchText] = 0xff222222;
         defaultColors[key_dialogFloatingButton] = TELEGRAM_COLOR;
         defaultColors[key_dialogFloatingButtonPressed] = 0x0f000000;

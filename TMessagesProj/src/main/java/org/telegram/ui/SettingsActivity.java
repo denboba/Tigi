@@ -466,7 +466,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
         titleView = new TextView(context);
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
-        titleView.setTypeface(AndroidUtilities.bold());
+        titleView.setTypeface(org.telegram.ui.TigiLilac.on() ? org.telegram.ui.TigiStyle.displayExtraBold() : AndroidUtilities.bold());
         titleView.setGravity(Gravity.CENTER);
         titleView.setSingleLine();
         titleView.setEllipsize(TextUtils.TruncateAt.END);
@@ -564,7 +564,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     public void updateColors() {
         actionBar.setTitleColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
         actionBar.setItemsColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText), false);
-        contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
+        if (org.telegram.ui.TigiLilac.on()) {
+            // the Nilak page: lilac light with soft glows (lilac night in dark mode)
+            contentView.setBackground(org.telegram.ui.TigiLilac.page());
+        } else {
+            contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
+        }
         titleView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
         subtitleView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
         searchItem.updateColor();
@@ -1280,6 +1285,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             }
 
             public void setColor(int topColor, int bottomColor) {
+                if (org.telegram.ui.TigiLilac.on()) {
+                    // Nilak: every settings icon on the same lilac tile instead of Telegram's rainbow
+                    topColor = 0xFFA374E6;
+                    bottomColor = 0xFF7440C8;
+                }
                 gradient = new LinearGradient(0, 0, 0, dp(28), new int[] { topColor, bottomColor }, new float[] { 0, 1 }, Shader.TileMode.CLAMP);
                 paint.setShader(gradient);
             }

@@ -25,6 +25,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.TigiHeart;
@@ -54,6 +55,50 @@ import java.util.Collections;
  * "Comments are off", and its owner can turn them on (a quiet linked group, see TigiPosting).
  */
 public class TigiCommentsSheet extends BottomSheet {
+
+    /**
+     * Comments, the Telegram way: the post's comment thread with the full keyboard (emoji, animated emoji,
+     * stickers, GIFs, voice). Without comments, the owner gets this sheet (to turn them on), others a short note.
+     */
+    public static void openThread(BaseFragment fragment, TLRPC.Chat chat, MessageObject message) {
+        if (fragment == null || chat == null || message == null || fragment.getParentActivity() == null) {
+            return;
+        }
+        final TLRPC.MessageReplies replies = message.messageOwner.replies;
+        if (replies == null || !replies.comments || message.getId() <= 0) {
+            if (ChatObject.canChangeChatInfo(chat)) {
+                fragment.showDialog(new TigiCommentsSheet(fragment, chat, message));
+            } else {
+                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString(R.string.NilakCommentsOff)).show();
+            }
+            return;
+        }
+        final int account = fragment.getCurrentAccount();
+        final TLRPC.TL_messages_getDiscussionMessage req = new TLRPC.TL_messages_getDiscussionMessage();
+        req.peer = MessagesController.getInstance(account).getInputPeer(-chat.id);
+        req.msg_id = message.getId();
+        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (fragment.getParentActivity() == null || !(response instanceof TLRPC.TL_messages_discussionMessage)) {
+                return;
+            }
+            final TLRPC.TL_messages_discussionMessage res = (TLRPC.TL_messages_discussionMessage) response;
+            MessagesController.getInstance(account).putUsers(res.users, false);
+            MessagesController.getInstance(account).putChats(res.chats, false);
+            final java.util.ArrayList<MessageObject> thread = new java.util.ArrayList<>();
+            for (int i = 0; i < res.messages.size(); i++) {
+                thread.add(new MessageObject(account, res.messages.get(i), true, true));
+            }
+            if (thread.isEmpty()) {
+                return;
+            }
+            final android.os.Bundle args = new android.os.Bundle();
+            args.putLong("chat_id", -thread.get(0).getDialogId());
+            args.putInt("message_id", Math.max(1, message.getId()));
+            final ChatActivity chatActivity = new ChatActivity(args);
+            chatActivity.setThreadMessages(thread, chat, req.msg_id, res.read_inbox_max_id, res.read_outbox_max_id, null);
+            fragment.presentFragment(chatActivity);
+        }));
+    }
 
     private static final int PAGE = 50;
 

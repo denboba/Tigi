@@ -611,7 +611,7 @@ public class TigiActivityActivity extends BaseFragment {
             args.putInt("type", ChatUsersActivity.TYPE_USERS);
             presentFragment(new ChatUsersActivity(args));
         } else if (item.kind == KIND_COMMENT && item.post != null) {
-            showDialog(new TigiCommentsSheet(this, channel, item.post));
+            TigiCommentsSheet.openThread(this, channel, item.post);
         } else if (item.post != null) {
             final Bundle args = new Bundle();
             args.putLong("chat_id", channel.id);

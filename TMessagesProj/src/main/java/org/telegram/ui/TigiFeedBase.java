@@ -1020,13 +1020,17 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         if (BuildVars.TIGI_COMMENTS && getParentActivity() != null && message.getId() > 0) {
             final TLRPC.MessageReplies postReplies = message.messageOwner.replies;
             final boolean commentsOn = postReplies != null && postReplies.comments;
-            if (!commentsOn && !ChatObject.canChangeChatInfo(post.chat)) {
-                // say it right away instead of opening an empty sheet; owners get the sheet to turn comments on
-                BulletinFactory.of(this).createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString(R.string.NilakCommentsOff)).show();
+            if (!commentsOn) {
+                if (ChatObject.canChangeChatInfo(post.chat)) {
+                    // the owner gets the sheet that turns comments on
+                    showDialog(new TigiCommentsSheet(this, post.chat, message));
+                } else {
+                    BulletinFactory.of(this).createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString(R.string.NilakCommentsOff)).show();
+                }
                 return;
             }
-            showDialog(new TigiCommentsSheet(this, post.chat, message));
-            return;
+            // comments open in Telegram's own comment thread: the full keyboard with emoji, animated emoji,
+            // stickers, GIFs, voice, replies and reactions, in the Nilak colours
         }
         final TLRPC.MessageReplies replies = message.messageOwner.replies;
         if (replies == null || !replies.comments || message.getId() <= 0) {
@@ -1966,9 +1970,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             captionView.setMovementMethod(captionLinks);
             // a tap that is not on a link opens or closes a long caption
             captionView.setOnClickListener(v -> {
-                if (FeedCell.this.moreView.getVisibility() == VISIBLE) {
-                    captionExpanded = !captionExpanded;
-                    updateCaption();
+                if (post != null && FeedCell.this.moreView.getVisibility() == VISIBLE) {
+                    onPostTapped(post, -1);
                 }
             });
             // long-press on the text reacts with any emoji, as long-press on a photo does
@@ -1992,9 +1995,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             moreView.setTextColor(TigiStyle.accent());
             moreView.setPadding(0, dp(4), 0, dp(4));
             moreView.setVisibility(GONE);
+            // "See more" opens the post on its own page, the whole text under the media
             moreView.setOnClickListener(v -> {
-                captionExpanded = !captionExpanded;
-                updateCaption();
+                if (post != null) {
+                    onPostTapped(post, -1);
+                }
             });
             captionBox.addView(moreView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
             addView(captionBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -2233,16 +2238,21 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 return;
             }
             captionView.post(() -> {
-                final Layout layout = captionView.getLayout();
-                if (layout == null || post == null || post.text == null) {
+                if (post == null || post.text == null) {
                     return;
                 }
-                final int lines = layout.getLineCount();
-                // cut either by the ellipsis or by line breaks past the last shown line
-                final boolean truncated = lines > 0 && (layout.getEllipsisCount(lines - 1) > 0
-                    || lines >= maxLines && layout.getLineEnd(lines - 1) < post.text.length());
-                moreView.setText(LocaleController.getString(captionExpanded ? R.string.TigiLess : R.string.TigiMore));
-                moreView.setVisibility(captionExpanded || truncated ? VISIBLE : GONE);
+                // measure the whole text at the card's width: more lines than shown means it is cut
+                final int width = captionView.getWidth() - captionView.getPaddingLeft() - captionView.getPaddingRight();
+                if (width <= 0) {
+                    return;
+                }
+                final android.text.StaticLayout full = android.text.StaticLayout.Builder
+                    .obtain(post.text, 0, post.text.length(), captionView.getPaint(), width)
+                    .setLineSpacing(captionView.getLineSpacingExtra(), captionView.getLineSpacingMultiplier())
+                    .build();
+                final boolean truncated = full.getLineCount() > maxLines;
+                moreView.setText(LocaleController.getString(R.string.NilakSeeMore));
+                moreView.setVisibility(truncated ? VISIBLE : GONE);
             });
         }
 

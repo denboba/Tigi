@@ -410,7 +410,7 @@ public class TigiArticleReaderActivity extends BaseFragment {
             final LinearLayout actions = new LinearLayout(context);
             actions.setOrientation(LinearLayout.HORIZONTAL);
             if (chat != null) {
-                actions.addView(actionButton(context, R.string.TigiComments, v -> showDialog(new TigiCommentsSheet(this, chat, message))), LayoutHelper.createLinear(0, 44, 1f, 0, 0, 6, 0));
+                actions.addView(actionButton(context, R.string.TigiComments, v -> TigiCommentsSheet.openThread(this, chat, message)), LayoutHelper.createLinear(0, 44, 1f, 0, 0, 6, 0));
             }
             actions.addView(actionButton(context, R.string.ShareFile, v -> share()), LayoutHelper.createLinear(0, 44, 1f, 6, 0, 0, 0));
             column.addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));

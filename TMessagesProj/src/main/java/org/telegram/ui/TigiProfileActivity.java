@@ -171,7 +171,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         });
 
         final FrameLayout root = new FrameLayout(context);
-        root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        applyPage(root);
         listView = new RecyclerListView(context);
         gridManager = new GridLayoutManager(context, 3);
         gridManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
@@ -202,9 +202,19 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         } else {
             root.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         }
+        // Lilac: a sprig in the top corner, behind the profile (tiles and text scroll over it)
+        TigiLilac.addSprig(root, 150);
         fragmentView = root;
         load(TAB_POSTS);
         return fragmentView;
+    }
+
+    private static void applyPage(View view) {
+        if (TigiLilac.on()) {
+            view.setBackground(TigiLilac.page());
+        } else {
+            view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
     }
 
     private TextView topTitle;
@@ -337,7 +347,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         final ArrayList<ThemeDescription> list = new ArrayList<>();
         final ThemeDescription.ThemeDescriptionDelegate delegate = () -> {
             if (fragmentView != null) {
-                fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                applyPage(fragmentView);
             }
             if (header != null) {
                 header.updateColors();
@@ -950,8 +960,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
 
         void updateColors() {
-            final int text = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
-            final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
+            final int text = TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+            final int gray = TigiLilac.on() ? TigiLilac.meta() : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
             postsValue.setTextColor(text);
             followersValue.setTextColor(text);
             postsLabel.setTextColor(gray);

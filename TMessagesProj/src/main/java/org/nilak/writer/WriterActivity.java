@@ -73,6 +73,14 @@ public class WriterActivity extends BaseFragment {
     private FrameLayout emojiPanel;
     private org.telegram.ui.Components.EmojiView emojiView;
     private TextView emojiButton;
+    /** @mentions: people, channels and groups with a public username, suggested above the toolbar. */
+    private android.widget.HorizontalScrollView mentionStrip;
+    private LinearLayout mentionRow;
+    private BlockEdit mentionTarget;
+    private int mentionStart = -1;
+    private String mentionQuery;
+    private int mentionRequest;
+    private Runnable mentionSearch;
 
     /** A new article. */
     public WriterActivity() {
@@ -222,6 +230,16 @@ public class WriterActivity extends BaseFragment {
         scroll.addView(content, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
         page.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0, 1f));
 
+        mentionStrip = new android.widget.HorizontalScrollView(context);
+        mentionStrip.setHorizontalScrollBarEnabled(false);
+        mentionStrip.setVisibility(View.GONE);
+        mentionStrip.setBackgroundColor(dark() ? 0xFF1B1820 : 0xFFFAF7FE);
+        mentionRow = new LinearLayout(context);
+        mentionRow.setOrientation(LinearLayout.HORIZONTAL);
+        mentionRow.setGravity(Gravity.CENTER_VERTICAL);
+        mentionRow.setPadding(dp(10), 0, dp(10), 0);
+        mentionStrip.addView(mentionRow, new android.widget.FrameLayout.LayoutParams(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT));
+        page.addView(mentionStrip, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56));
         toolbar = createToolbar(context);
         page.addView(toolbar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 52));
         emojiPanel = new FrameLayout(context);
@@ -354,6 +372,7 @@ public class WriterActivity extends BaseFragment {
 
     /** Insert sheet: "Emoji" opens the Telegram keyboard on its emoji page. */
     private static final int EMOJI = 100;
+    private static final int MENTION = 101;
     private static final int PICK_VIDEO = 7302;
     private static final long MAX_VIDEO_BYTES = 200L * 1024 * 1024;
 
@@ -447,6 +466,211 @@ public class WriterActivity extends BaseFragment {
         } catch (Throwable e) {
             org.telegram.messenger.FileLog.e(e);
             return null;
+        }
+    }
+
+    /* ---------- @mentions ---------- */
+
+    /** Finds an "@name" being typed right before the cursor and offers matching people, channels and groups. */
+    private void checkMention(BlockEdit edit) {
+        if (edit == null || edit.type == WriterDoc.CODE || edit.type == WriterDoc.TABLE || edit.type == WriterDoc.EMBED
+            || edit.type == WriterDoc.DIVIDER || edit.type == WriterDoc.STICKER) {
+            hideMentions();
+            return;
+        }
+        final int cursor = edit.getSelectionEnd();
+        if (cursor < 0 || edit.getSelectionStart() != cursor) {
+            hideMentions();
+            return;
+        }
+        final CharSequence text = edit.getText();
+        int i = cursor - 1;
+        while (i >= 0 && (Character.isLetterOrDigit(text.charAt(i)) || text.charAt(i) == '_')) {
+            i--;
+        }
+        if (i < 0 || text.charAt(i) != '@' || (i > 0 && !Character.isWhitespace(text.charAt(i - 1))) || cursor - i - 1 > 32) {
+            hideMentions();
+            return;
+        }
+        if (edit.getText().getSpans(i, cursor, URLSpan.class).length > 0) {
+            hideMentions(); // already a mention
+            return;
+        }
+        final String query = text.subSequence(i + 1, cursor).toString().toLowerCase(java.util.Locale.ROOT);
+        mentionTarget = edit;
+        mentionStart = i;
+        if (query.equals(mentionQuery) && mentionStrip.getVisibility() == View.VISIBLE) {
+            return;
+        }
+        mentionQuery = query;
+        showMentions(localMentions(query), query);
+        if (mentionSearch != null) {
+            AndroidUtilities.cancelRunOnUIThread(mentionSearch);
+        }
+        if (query.length() >= 3) {
+            // public people, channels and groups beyond your chats, found by Telegram's search
+            mentionSearch = () -> searchMentions(query);
+            AndroidUtilities.runOnUIThread(mentionSearch, 350);
+        }
+    }
+
+    /** Your chats with a public username (so readers can open them), matching the name or the username. */
+    private ArrayList<org.telegram.tgnet.TLObject> localMentions(String query) {
+        final ArrayList<org.telegram.tgnet.TLObject> found = new ArrayList<>();
+        final org.telegram.messenger.MessagesController controller = getMessagesController();
+        final ArrayList<org.telegram.tgnet.TLRPC.Dialog> dialogs = controller.getAllDialogs();
+        for (int d = 0; d < dialogs.size() && d < 400 && found.size() < 15; d++) {
+            final long id = dialogs.get(d).id;
+            org.telegram.tgnet.TLObject object = null;
+            String username = null;
+            String name = null;
+            if (id > 0) {
+                final org.telegram.tgnet.TLRPC.User user = controller.getUser(id);
+                if (user != null && !user.deleted) {
+                    object = user;
+                    username = org.telegram.messenger.UserObject.getPublicUsername(user);
+                    name = org.telegram.messenger.UserObject.getUserName(user);
+                }
+            } else {
+                final org.telegram.tgnet.TLRPC.Chat chat = controller.getChat(-id);
+                if (chat != null) {
+                    object = chat;
+                    username = org.telegram.messenger.ChatObject.getPublicUsername(chat);
+                    name = chat.title;
+                }
+            }
+            if (object == null || TextUtils.isEmpty(username)) {
+                continue;
+            }
+            if (query.isEmpty() || username.toLowerCase(java.util.Locale.ROOT).startsWith(query)
+                || (name != null && name.toLowerCase(java.util.Locale.ROOT).contains(query))) {
+                found.add(object);
+            }
+        }
+        return found;
+    }
+
+    private void searchMentions(String query) {
+        final org.telegram.tgnet.TLRPC.TL_contacts_search request = new org.telegram.tgnet.TLRPC.TL_contacts_search();
+        request.q = query;
+        request.limit = 15;
+        final int token = ++mentionRequest;
+        getConnectionsManager().sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (token != mentionRequest || !query.equals(mentionQuery) || !(response instanceof org.telegram.tgnet.TLRPC.TL_contacts_found)) {
+                return;
+            }
+            final org.telegram.tgnet.TLRPC.TL_contacts_found result = (org.telegram.tgnet.TLRPC.TL_contacts_found) response;
+            getMessagesController().putUsers(result.users, false);
+            getMessagesController().putChats(result.chats, false);
+            final ArrayList<org.telegram.tgnet.TLObject> list = localMentions(query);
+            for (org.telegram.tgnet.TLRPC.User user : result.users) {
+                if (!TextUtils.isEmpty(org.telegram.messenger.UserObject.getPublicUsername(user)) && !list.contains(user) && list.size() < 25) {
+                    list.add(user);
+                }
+            }
+            for (org.telegram.tgnet.TLRPC.Chat chat : result.chats) {
+                if (!TextUtils.isEmpty(org.telegram.messenger.ChatObject.getPublicUsername(chat)) && !list.contains(chat) && list.size() < 25) {
+                    list.add(chat);
+                }
+            }
+            showMentions(list, query);
+        }));
+    }
+
+    private void showMentions(ArrayList<org.telegram.tgnet.TLObject> list, String query) {
+        if (mentionRow == null) {
+            return;
+        }
+        mentionRow.removeAllViews();
+        if (list.isEmpty()) {
+            mentionStrip.setVisibility(View.GONE);
+            return;
+        }
+        final Context context = getParentActivity();
+        for (org.telegram.tgnet.TLObject object : list) {
+            final boolean user = object instanceof org.telegram.tgnet.TLRPC.User;
+            final String name = user ? org.telegram.messenger.UserObject.getUserName((org.telegram.tgnet.TLRPC.User) object) : ((org.telegram.tgnet.TLRPC.Chat) object).title;
+            final String username = user ? org.telegram.messenger.UserObject.getPublicUsername((org.telegram.tgnet.TLRPC.User) object)
+                : org.telegram.messenger.ChatObject.getPublicUsername((org.telegram.tgnet.TLRPC.Chat) object);
+            final LinearLayout chip = new LinearLayout(context);
+            chip.setOrientation(LinearLayout.HORIZONTAL);
+            chip.setGravity(Gravity.CENTER_VERTICAL);
+            chip.setPadding(dp(4), 0, dp(14), 0);
+            final GradientDrawable shape = new GradientDrawable();
+            shape.setCornerRadius(dp(20));
+            shape.setColor(dark() ? 0xFF2A2533 : 0xFFFFFFFF);
+            shape.setStroke(dp(1), dark() ? 0xFF3A3346 : 0xFFE3D9F2);
+            chip.setBackground(shape);
+            final org.telegram.ui.Components.BackupImageView avatar = new org.telegram.ui.Components.BackupImageView(context);
+            avatar.setRoundRadius(dp(16));
+            final org.telegram.ui.Components.AvatarDrawable placeholder = new org.telegram.ui.Components.AvatarDrawable();
+            placeholder.setInfo(currentAccount, object);
+            avatar.setForUserOrChat(object, placeholder);
+            chip.addView(avatar, LayoutHelper.createLinear(32, 32));
+            final LinearLayout texts = new LinearLayout(context);
+            texts.setOrientation(LinearLayout.VERTICAL);
+            final TextView title = new TextView(context);
+            title.setText(org.telegram.messenger.Emoji.replaceEmoji(name, title.getPaint().getFontMetricsInt(), false));
+            title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
+            title.setTypeface(TigiStyle.displayBold());
+            title.setTextColor(ink());
+            title.setSingleLine(true);
+            title.setMaxWidth(dp(160));
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            texts.addView(title);
+            final TextView handle = new TextView(context);
+            handle.setText("@" + username + (user ? "" : org.telegram.messenger.ChatObject.isChannelAndNotMegaGroup((org.telegram.tgnet.TLRPC.Chat) object)
+                ? " · " + LocaleController.getString(R.string.NilakMentionChannel) : " · " + LocaleController.getString(R.string.NilakMentionGroup)));
+            handle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11.5f);
+            handle.setTextColor(TigiStyle.accent());
+            handle.setSingleLine(true);
+            texts.addView(handle);
+            chip.addView(texts, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 8, 0, 0, 0));
+            chip.setContentDescription(name + ", @" + username);
+            chip.setOnClickListener(v -> insertMention(username));
+            mentionRow.addView(chip, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 42, 0, 0, 8, 0));
+        }
+        mentionStrip.setVisibility(View.VISIBLE);
+        mentionStrip.scrollTo(0, 0);
+    }
+
+    /** "@que" becomes "@username " linked to the profile (t.me), so readers can open it. */
+    private void insertMention(String username) {
+        final BlockEdit edit = mentionTarget;
+        if (edit == null || mentionStart < 0 || column == null || column.indexOfChild(edit) < 0) {
+            hideMentions();
+            return;
+        }
+        final int end = Math.max(mentionStart, edit.getSelectionEnd());
+        if (mentionStart >= edit.length() || edit.getText().charAt(mentionStart) != '@') {
+            hideMentions();
+            return;
+        }
+        final String mention = "@" + username;
+        final int start = mentionStart;
+        final Editable text = edit.getText();
+        final boolean wasBinding = binding;
+        binding = true;
+        text.replace(start, Math.min(end, text.length()), mention + " ");
+        text.setSpan(new URLSpan("https://t.me/" + username), start, start + mention.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        edit.setSelection(Math.min(text.length(), start + mention.length() + 1));
+        binding = wasBinding;
+        hideMentions();
+        changed();
+    }
+
+    private void hideMentions() {
+        mentionTarget = null;
+        mentionStart = -1;
+        mentionQuery = null;
+        mentionRequest++;
+        if (mentionSearch != null) {
+            AndroidUtilities.cancelRunOnUIThread(mentionSearch);
+            mentionSearch = null;
+        }
+        if (mentionStrip != null && mentionStrip.getVisibility() != View.GONE) {
+            mentionStrip.setVisibility(View.GONE);
+            mentionRow.removeAllViews();
         }
     }
 
@@ -810,6 +1034,16 @@ public class WriterActivity extends BaseFragment {
             changed();
             return;
         }
+        if (above.type == WriterDoc.TABLE) {
+            // Backspace under a table: an empty line goes away, otherwise the table opens to edit
+            if (edit.length() == 0) {
+                column.removeView(edit);
+                changed();
+            } else {
+                openTable(above);
+            }
+            return;
+        }
         if (WriterDoc.isMedia(above.type) || WriterDoc.isMultiline(above.type) || above.type == WriterDoc.EMBED) {
             // text never joins a photo, code, a table or a link card: an empty line goes away, otherwise the cursor moves to the caption
             if (edit.length() == 0) {
@@ -844,7 +1078,7 @@ public class WriterActivity extends BaseFragment {
     /** Insert sheet: a new heading or quote under the current block. */
     private void insertBlock(int type) {
         int index = focused != null ? column.indexOfChild(focused) + 1 : column.getChildCount();
-        if (focused != null && focused.length() == 0 && type != WriterDoc.DIVIDER && focused.type != WriterDoc.DIVIDER && !WriterDoc.isMedia(focused.type)) {
+        if (focused != null && focused.length() == 0 && type != WriterDoc.DIVIDER && type != WriterDoc.TABLE && focused.type != WriterDoc.DIVIDER && !WriterDoc.isMedia(focused.type)) {
             // an empty line simply becomes the new kind of block
             focused.setType(type);
             focusBlock(focused, 0);
@@ -852,8 +1086,16 @@ public class WriterActivity extends BaseFragment {
             changed();
             return;
         }
-        final BlockEdit edit = newBlockView(getParentActivity(), type, "");
+        final BlockEdit edit = newBlockView(getParentActivity(), type, type == WriterDoc.TABLE ? WriterTable.starter() : "");
         column.addView(edit, index++);
+        if (type == WriterDoc.TABLE) {
+            final BlockEdit after = newBlockView(getParentActivity(), WriterDoc.PARAGRAPH, "");
+            column.addView(after, index);
+            focused = after;
+            changed();
+            openTable(edit);
+            return;
+        }
         if (type == WriterDoc.DIVIDER) {
             // writing goes on under the divider
             final BlockEdit after = newBlockView(getParentActivity(), WriterDoc.PARAGRAPH, "");
@@ -1123,9 +1365,9 @@ public class WriterActivity extends BaseFragment {
             {R.string.NilakWriterHeading, WriterDoc.HEADING}, {R.string.NilakWriterQuote, WriterDoc.QUOTE}, {R.string.NilakWriterList, WriterDoc.BULLET}, {R.string.NilakWriterNumbers, WriterDoc.NUMBER},
             {R.string.NilakWriterPhoto, WriterDoc.PHOTO}, {R.string.NilakWriterVideo, WriterDoc.VIDEO}, {R.string.NilakWriterStickers, WriterDoc.STICKER}, {R.string.NilakWriterGif, WriterDoc.GIF},
             {R.string.NilakWriterCode, WriterDoc.CODE}, {R.string.NilakWriterTable, WriterDoc.TABLE}, {R.string.NilakWriterEmbed, WriterDoc.EMBED}, {R.string.NilakWriterNote, WriterDoc.CALLOUT},
-            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterEmoji, EMOJI}
+            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterEmoji, EMOJI}, {R.string.NilakWriterMention, MENTION}
         };
-        final String[] icons = {"H", "❝", "•", "1.", "🖼", "▶", "✨", "GIF", "{ }", "▦", "↗", "💡", "✣", "☺"};
+        final String[] icons = {"H", "❝", "•", "1.", "🖼", "▶", "✨", "GIF", "{ }", "▦", "↗", "💡", "✣", "☺", "@"};
         LinearLayout row = null;
         for (int i = 0; i < items.length; i++) {
             if (i % 4 == 0) {
@@ -1149,6 +1391,15 @@ public class WriterActivity extends BaseFragment {
                     showEmojiPanel(false);
                 } else if (blockType == WriterDoc.GIF) {
                     showEmojiPanel(true);
+                } else if (blockType == MENTION) {
+                    final BlockEdit target = textTarget();
+                    if (target != null) {
+                        final int at = target.getSelectionEnd() >= 0 ? target.getSelectionEnd() : target.length();
+                        final boolean space = at > 0 && !Character.isWhitespace(target.getText().charAt(at - 1));
+                        focusBlock(target, at);
+                        insertText(target, space ? " @" : "@");
+                        checkMention(target);
+                    }
                 } else {
                     insertBlock(blockType);
                 }
@@ -1217,6 +1468,30 @@ public class WriterActivity extends BaseFragment {
         view.setBackground(primary ? TigiStyle.primaryPill(17)
             : Theme.createSimpleSelectorRoundRectDrawable(dp(17), dark() ? 0xFF2A2533 : 0xFFF2EDF9, Theme.multAlpha(TigiStyle.accent(), 0.2f)));
         return view;
+    }
+
+    /** The table editor: cells, rows and columns; the block shows the result as a grid. */
+    private void openTable(BlockEdit edit) {
+        hideEmojiPanel();
+        hideMentions();
+        AndroidUtilities.hideKeyboard(root);
+        WriterTable.edit(this, edit.getText().toString(), text -> {
+            if (column == null || column.indexOfChild(edit) < 0) {
+                return;
+            }
+            final boolean wasBinding = binding;
+            binding = true;
+            edit.setText(text);
+            binding = wasBinding;
+            edit.requestLayout();
+            edit.invalidate();
+            changed();
+        }, () -> {
+            if (column != null && column.indexOfChild(edit) >= 0) {
+                column.removeView(edit);
+                changed();
+            }
+        });
     }
 
     /** Lines the table up in columns (the editor font is monospaced), so it reads as a grid while writing. */
@@ -1335,14 +1610,13 @@ public class WriterActivity extends BaseFragment {
                         return;
                     }
                     changed();
+                    checkMention(BlockEdit.this);
                 }
             });
             setOnFocusChangeListener((v, has) -> {
                 if (has) {
                     focused = BlockEdit.this;
                     updateToolbar();
-                } else if (type == WriterDoc.TABLE) {
-                    alignTable(BlockEdit.this);
                 }
             });
             setOnKeyListener((v, keyCode, event) -> {
@@ -1376,16 +1650,16 @@ public class WriterActivity extends BaseFragment {
                     setHint(LocaleController.getString(R.string.NilakWriterCodeHint));
                     break;
                 case WriterDoc.TABLE:
-                    setTypeface(Typeface.MONOSPACE);
-                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.5f);
-                    setLineSpacing(0, 1.6f);
-                    setPadding(dp(36), dp(14), dp(36), dp(14));
-                    final GradientDrawable grid = new GradientDrawable();
-                    grid.setCornerRadius(dp(12));
-                    grid.setColor(dark() ? 0xFF1B1820 : 0xFFFFFFFF);
-                    grid.setStroke(dp(1), dark() ? 0xFF3A3346 : 0xFFE3D9F2);
-                    setBackground(inset(grid));
-                    setHint(LocaleController.getString(R.string.NilakWriterTableHint));
+                    // drawn as a grid; a tap opens the table editor (cells, rows, columns)
+                    setHint(null);
+                    setFocusable(false);
+                    setFocusableInTouchMode(false);
+                    setCursorVisible(false);
+                    setLongClickable(false);
+                    setBackground(null);
+                    setPadding(dp(18), dp(10), dp(18), dp(10));
+                    setContentDescription(LocaleController.getString(R.string.NilakWriterTable));
+                    setOnClickListener(v -> openTable(BlockEdit.this));
                     break;
                 case WriterDoc.CALLOUT:
                     setTypeface(Typeface.DEFAULT);
@@ -1515,9 +1789,7 @@ public class WriterActivity extends BaseFragment {
             setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : WriterDoc.isMedia(type) ? muted() | 0xFF000000
                 : type == WriterDoc.EMBED ? TigiStyle.accent() : type == WriterDoc.CODE ? 0xFFE9E3F5 : ink());
             setHintTextColor(type == WriterDoc.CODE ? 0x80E9E3F5 : muted());
-            if (type == WriterDoc.TABLE && !hasFocus()) {
-                alignTable(this);
-            }
+            requestLayout();
         }
 
         private final android.graphics.Paint markPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
@@ -1539,6 +1811,22 @@ public class WriterActivity extends BaseFragment {
         /** Boxes (code, table, note, link) sit inside the page margins. */
         private android.graphics.drawable.Drawable inset(android.graphics.drawable.Drawable box) {
             return new android.graphics.drawable.InsetDrawable(box, dp(18), dp(6), dp(18), dp(6));
+        }
+
+        private WriterTable.Grid tableGrid;
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            if (type != WriterDoc.TABLE) {
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+                return;
+            }
+            final int width = View.MeasureSpec.getSize(widthMeasureSpec);
+            if (tableGrid == null) {
+                tableGrid = new WriterTable.Grid();
+            }
+            tableGrid.layout(getText().toString(), width - dp(44), ink());
+            setMeasuredDimension(width, dp(10) + tableGrid.height + dp(28));
         }
 
         private void setMedia(org.telegram.tgnet.TLRPC.Document document) {
@@ -1592,14 +1880,17 @@ public class WriterActivity extends BaseFragment {
 
         @Override
         protected void onDraw(android.graphics.Canvas canvas) {
-            if (type == WriterDoc.TABLE && getLayout() != null && getLayout().getLineCount() > 0 && length() > 0) {
-                // the first row is the header: a soft accent band behind it
-                final int firstRowEnd = TextUtils.indexOf(getText(), '\n');
-                final int lastLine = getLayout().getLineForOffset(firstRowEnd < 0 ? length() : firstRowEnd);
-                markPaint.setColor(Theme.multAlpha(TigiStyle.accent(), dark() ? 0.22f : 0.10f));
-                final float top = getTotalPaddingTop() - dp(8);
-                final float bottom = getTotalPaddingTop() + getLayout().getLineBottom(lastLine) + dp(2);
-                canvas.drawRect(dp(19), Math.max(dp(7), top), getWidth() - dp(19), bottom, markPaint);
+            if (type == WriterDoc.TABLE) {
+                if (tableGrid != null) {
+                    tableGrid.draw(canvas, dp(22), dp(10), getWidth() - dp(44), dark());
+                    // a small hint under the table: tap to edit
+                    markPaint.setTextAlign(android.graphics.Paint.Align.RIGHT);
+                    markPaint.setTypeface(Typeface.DEFAULT);
+                    markPaint.setTextSize(dp(11.5f));
+                    markPaint.setColor(muted() | 0xFF000000);
+                    canvas.drawText(LocaleController.getString(R.string.NilakTableTapToEdit), getWidth() - dp(24), dp(10) + tableGrid.height + dp(17), markPaint);
+                }
+                return;
             }
             super.onDraw(canvas);
             if (type == WriterDoc.CODE || type == WriterDoc.CALLOUT) {
@@ -1661,6 +1952,9 @@ public class WriterActivity extends BaseFragment {
             super.onSelectionChanged(selStart, selEnd);
             if (focused == this) {
                 updateToolbar();
+                if (mentionStrip != null && mentionStrip.getVisibility() == View.VISIBLE) {
+                    checkMention(this);
+                }
                 if (selEnd > selStart) {
                     showBubble(this);
                 } else {

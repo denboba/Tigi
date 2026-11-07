@@ -665,6 +665,10 @@ public final class TigiArticle {
             } else if (m.group(5) != null) {
                 out.append(inline(m.group(5)));
                 out.setSpan(new URLSpan(m.group(6)), start, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                if (m.group(5).startsWith("@") && m.group(6).startsWith("https://t.me/")) {
+                    // a mention of a person, channel or group: bold, it opens their profile
+                    out.setSpan(new StyleSpan(Typeface.BOLD), start, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
             } else if (m.group(7) != null || m.group(8) != null) {
                 out.append(inline(m.group(7) != null ? m.group(7) : m.group(8)));
                 out.setSpan(new StyleSpan(Typeface.ITALIC), start, out.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);

@@ -995,8 +995,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (getParentActivity() == null) {
             return;
         }
-        // Nilak Create: every way to post in one sheet (post, article, photos, poll, location, file, live)
-        TigiCreateSheet.show(this);
+        // straight to the compose screen: Telegram's keyboard and attach bar, with Barruu next to Article
+        TigiCreateSheet.openCompose(this);
     }
 
     private DialogsActivity dialogsActivity;

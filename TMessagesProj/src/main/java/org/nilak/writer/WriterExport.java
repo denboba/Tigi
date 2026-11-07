@@ -44,10 +44,17 @@ public final class WriterExport {
 
     public static void publish(int account, TLRPC.Chat channel, WriterDoc doc, String topic, boolean showInRead, boolean notify,
                                MessageObject editing, Result result) {
+        publish(account, -channel.id, doc, topic, showInRead, notify, editing, result);
+    }
+
+    /** Publishes into any chat: a channel, a group or a private chat (dialogId as Telegram counts it). */
+    public static void publish(int account, long dialogId, WriterDoc doc, String topic, boolean showInRead, boolean notify,
+                               MessageObject editing, Result result) {
+        final TLRPC.Chat channel = dialogId < 0 ? org.telegram.messenger.MessagesController.getInstance(account).getChat(-dialogId) : null;
         final String body = markdown(doc);
         final String title = doc.title.trim().isEmpty() ? LocaleController.getString(R.string.NilakWriterUntitled) : doc.title.trim();
         final TLRPC.User me = UserConfig.getInstance(account).getCurrentUser();
-        final String author = me != null ? UserObject.getUserName(me) : channel.title;
+        final String author = me != null ? UserObject.getUserName(me) : channel != null ? channel.title : "";
         final String cover = firstPhoto(doc);
         final int words = doc.wordCount();
         final int minutes = doc.minutes();
@@ -102,7 +109,7 @@ public final class WriterExport {
                 if (!TextUtils.isEmpty(topic)) {
                     caption += " · " + topic;
                 }
-                if (showInRead && !TextUtils.isEmpty(ChatObject.getPublicUsername(channel))) {
+                if (showInRead && channel != null && ChatObject.isChannelAndNotMegaGroup(channel) && !TextUtils.isEmpty(ChatObject.getPublicUsername(channel))) {
                     caption += " · #" + TigiTopicFeedActivity.READ_TAG;
                 }
                 if (editing != null) {
@@ -110,7 +117,7 @@ public final class WriterExport {
                     editing.editingMessage = caption;
                 }
                 SendMessagesHelper.prepareSendingDocument(AccountInstance.getInstance(account), file.getAbsolutePath(), file.getAbsolutePath(), null,
-                    caption, TigiArticle.MIME, -channel.id, null, null, null, null, editing, notify, 0, null, null, false);
+                    caption, TigiArticle.MIME, dialogId, null, null, null, null, editing, notify, 0, null, null, false);
                 result.run(true);
             });
         });

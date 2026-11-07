@@ -239,16 +239,24 @@ public class WriterPublishActivity extends BaseFragment implements org.telegram.
         if (editing == null && doc.editMessageId != 0) {
             // a draft of an edit: find the published post first
             publishing = true;
-            final TLRPC.Chat chat = getMessagesController().getChat(-doc.editDialogId);
-            if (chat == null) {
+            final TLRPC.Chat chat = doc.editDialogId < 0 ? getMessagesController().getChat(-doc.editDialogId) : null;
+            final org.telegram.tgnet.TLObject req;
+            if (chat != null && ChatObject.isChannel(chat)) {
+                final TLRPC.TL_channels_getMessages channelReq = new TLRPC.TL_channels_getMessages();
+                channelReq.channel = MessagesController.getInputChannel(chat);
+                channelReq.id.add(doc.editMessageId);
+                req = channelReq;
+            } else if (doc.editDialogId != 0) {
+                // groups and private chats keep their messages in one shared list
+                final TLRPC.TL_messages_getMessages plainReq = new TLRPC.TL_messages_getMessages();
+                plainReq.id.add(doc.editMessageId);
+                req = plainReq;
+            } else {
                 publishing = false;
                 doc.editMessageId = 0;
                 publish();
                 return;
             }
-            final TLRPC.TL_channels_getMessages req = new TLRPC.TL_channels_getMessages();
-            req.channel = MessagesController.getInputChannel(chat);
-            req.id.add(doc.editMessageId);
             getConnectionsManager().sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
                 publishing = false;
                 if (response instanceof TLRPC.messages_Messages && !((TLRPC.messages_Messages) response).messages.isEmpty()
@@ -266,11 +274,17 @@ public class WriterPublishActivity extends BaseFragment implements org.telegram.
             return;
         }
         if (editing != null) {
-            final TLRPC.Chat chat = getMessagesController().getChat(-editing.getDialogId());
-            if (chat != null && ChatObject.canPost(chat)) {
-                done(chat);
+            final long dialog = editing.getDialogId();
+            final TLRPC.Chat chat = dialog < 0 ? getMessagesController().getChat(-dialog) : null;
+            if (dialog > 0 || chat != null && (ChatObject.canPost(chat) || !ChatObject.isChannelAndNotMegaGroup(chat))) {
+                doneIn(dialog);
                 return;
             }
+        }
+        if (doc.targetDialogId != 0) {
+            // started from a chat's attach menu (Barruu): it goes back there
+            doneIn(doc.targetDialogId);
+            return;
         }
         TigiCreateSheet.pickChannel(this, this::done);
     }
@@ -279,13 +293,20 @@ public class WriterPublishActivity extends BaseFragment implements org.telegram.
         if (channel == null || getParentActivity() == null) {
             return;
         }
+        doneIn(-channel.id);
+    }
+
+    private void doneIn(long dialogId) {
+        if (dialogId == 0 || getParentActivity() == null) {
+            return;
+        }
         publishing = true;
         setButtonBusy(true);
         final String topicName = topic >= 0 ? LocaleController.getString(TOPICS[topic]) : null;
-        waitingDialog = -channel.id;
+        waitingDialog = dialogId;
         waitingEdit = editing != null;
         // always a .nilak file: packed here, posted as a file, downloaded and read as a file
-        WriterExport.publish(currentAccount, channel, doc, topicName, showInRead, notifyFollowers, editing, handedOver -> {
+        WriterExport.publish(currentAccount, dialogId, doc, topicName, showInRead, notifyFollowers, editing, handedOver -> {
             if (isFinishing()) {
                 return;
             }

@@ -82,6 +82,8 @@ public class BuildVars {
     public static boolean NILAK_SMART_FOLD = true;
     // Nilak: albums in groups are one compact card instead of a photo per row.
     public static boolean NILAK_ALBUM_CARD = true;
+    // Nilak: Barruu (Nilak's own articles) in the attach menu of every chat, and as cards in chats.
+    public static boolean NILAK_BARRUU = true;
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
 

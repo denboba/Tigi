@@ -229,6 +229,7 @@ public final class WriterBridge {
         final WriterDoc doc = new WriterDoc();
         doc.editDialogId = message.getDialogId();
         doc.editMessageId = message.getId();
+        doc.targetDialogId = message.getDialogId();
         if (message.messageOwner.rich_message != null) {
             boolean titleTaken = false;
             for (TL_iv.PageBlock block : message.messageOwner.rich_message.blocks) {

@@ -4293,6 +4293,27 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         int y = (int) getEventY(event);
 
         boolean result = false;
+        if (nilakBarruu && documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
+            // a Barruu card: a tap anywhere on it opens the reader (it downloads the file itself)
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                if (x >= backgroundDrawableLeft && x <= backgroundDrawableLeft + backgroundWidth && y >= photoImage.getImageY() - dp(6) && y <= photoImage.getImageY() + photoImage.getImageHeight() + dp(6)) {
+                    imagePressed = true;
+                    return true;
+                }
+                return false;
+            } else if (event.getAction() == MotionEvent.ACTION_UP && imagePressed) {
+                imagePressed = false;
+                playSoundEffect(SoundEffectConstants.CLICK);
+                if (delegate != null) {
+                    delegate.didPressImage(this, x, y, false);
+                }
+                invalidate();
+                return true;
+            } else if (event.getAction() == MotionEvent.ACTION_CANCEL) {
+                imagePressed = false;
+            }
+            return imagePressed;
+        }
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             boolean area2 = false;
             int side = dp(48);
@@ -6780,6 +6801,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public MultiLayoutTypingAnimator botDraftTypingAnimator;
 
     private void setMessageContent(MessageObject messageObject, MessageObject.GroupedMessages groupedMessages, boolean bottomNear, boolean topNear, boolean firstInChat, boolean lastInChatList) {
+        nilakBarruu = messageObject != null && messageObject.type == MessageObject.TYPE_FILE && org.telegram.messenger.BuildVars.NILAK_BARRUU && org.telegram.ui.TigiArticle.isArticle(messageObject);
         if (messageObject.checkLayout() || currentPosition != null && lastHeight != AndroidUtilities.displaySize.y) {
             currentMessageObject = null;
         }
@@ -9345,6 +9367,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
 
                 photoImage.setForcePreview(messageObject.needDrawBluredPreview());
+                nilakBarruu = messageObject.type == MessageObject.TYPE_FILE && org.telegram.messenger.BuildVars.NILAK_BARRUU && org.telegram.ui.TigiArticle.isArticle(messageObject);
                 if (messageObject.type == MessageObject.TYPE_FILE) {
                     if (currentPosition == null) {
                         backgroundWidth = messageObject.getMaxMessageTextWidth();
@@ -9362,7 +9385,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     int maxWidth = backgroundWidth - dp(86 + (currentPosition == null ? 0 : 52));
                     if (currentPosition == null) {
                         captionFullWidth = backgroundWidth - getExtraTextX() * 2;
-                        currentCaption = messageObject.caption;
+                        currentCaption = nilakBarruu ? nilakBarruuLead(messageObject) : messageObject.caption;
                         if (!TextUtils.isEmpty(currentCaption)) {
                             try {
                                 captionLayout = new MessageObject.TextLayoutBlocks(getPrimaryMessageObject(), currentCaption, Theme.chat_msgTextPaint, captionFullWidth);
@@ -12877,6 +12900,16 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             if (name.length() == 0) {
                 name = getString("AttachDocument", R.string.AttachDocument);
             }
+            if (nilakBarruu) {
+                // a Barruu: its title, like the headline of a post, instead of the file name
+                if (nilakBarruuTitlePaint == null) {
+                    nilakBarruuTitlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+                    nilakBarruuTitlePaint.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
+                }
+                nilakBarruuTitlePaint.setTextSize(dp(16.5f));
+                nilakBarruuTitlePaint.setColor(getThemedColor(messageObject.isOutOwner() ? Theme.key_chat_messageTextOut : Theme.key_chat_messageTextIn));
+                docTitleLayout = StaticLayoutEx.createStaticLayout(org.telegram.ui.TigiArticle.titleOf(messageObject), nilakBarruuTitlePaint, maxWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0.0f, false, TextUtils.TruncateAt.END, maxWidth, 2, false);
+            } else
             docTitleLayout = StaticLayoutEx.createStaticLayout(name, Theme.chat_docNamePaint, maxWidth, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0.0f, false, TextUtils.TruncateAt.MIDDLE, maxWidth, 2, false);
             docTitleOffsetX = Integer.MIN_VALUE;
             int width;
@@ -12894,6 +12927,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
             String str = AndroidUtilities.formatFileSize(documentAttach.size) + " " + FileLoader.getDocumentExtension(documentAttach);
             infoWidth = Math.min(maxWidth - dp(30), (int) Math.ceil(Theme.chat_infoPaint.measureText("000.0 mm / " + AndroidUtilities.formatFileSize(documentAttach.size))));
+            if (nilakBarruu) {
+                // "BARRUU · 3 min read" instead of the size and extension
+                final int minutes = org.telegram.ui.TigiArticle.minutesOf(messageObject);
+                str = getString(R.string.NilakBarruu).toUpperCase() + (minutes > 0 ? " · " + LocaleController.formatString(R.string.NilakReadMinutes, minutes) : "");
+                infoWidth = Math.min(maxWidth - dp(10), (int) Math.ceil(Theme.chat_infoPaint.measureText(str)) + dp(4));
+            }
             CharSequence str2 = TextUtils.ellipsize(str, Theme.chat_infoPaint, infoWidth, TextUtils.TruncateAt.END);
             try {
                 if (infoWidth < 0) {
@@ -21632,6 +21671,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
             canvas.restoreToCount(saveCount);
         }
+    }
+
+    private boolean nilakBarruu;
+    private TextPaint nilakBarruuTitlePaint;
+
+    /** The Barruu's lead (its caption without the title and the reading-time line). */
+    private static CharSequence nilakBarruuLead(MessageObject messageObject) {
+        final String lead = org.telegram.ui.TigiArticle.subtitleOf(messageObject);
+        return TextUtils.isEmpty(lead) ? null : lead;
     }
 
     private TextPaint nilakFoldPaint;

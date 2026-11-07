@@ -205,6 +205,8 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
     public static final int LAYOUT_TYPE_LINK = 15;
     public static final int LAYOUT_TYPE_RICH = 16;
     public static final int LAYOUT_TYPE_MONEY = 17;
+    /** Nilak: Barruu, Nilak's own articles, next to Telegram's Article. */
+    public static final int LAYOUT_TYPE_BARRUU = 40;
 
     private static final int ANIMATOR_ID_CAPTION_ABOVE = 0;
     private static final int ANIMATOR_ID_CAPTION_VISIBLE = 1;
@@ -2904,6 +2906,13 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                         emojiLayout.setDelegate(emojiViewDelegate);
                     }
                     showLayout(emojiLayout);
+                } else if (num == LAYOUT_TYPE_BARRUU) {
+                    // the Barruu panel: write one for this chat, continue a draft, edit what is published here
+                    final ChatActivity chatActivity = baseFragment instanceof ChatActivity ? (ChatActivity) baseFragment : null;
+                    dismiss(true);
+                    if (chatActivity != null) {
+                        org.nilak.writer.BarruuPanel.show(chatActivity, chatActivity.getDialogId());
+                    }
                 } else if (num == LAYOUT_TYPE_RICH) {
                     if (richLayout == null) {
                         layouts[10] = richLayout = new ChatAttachAlertRichLayout(this, getContext(), currentAccount, resourcesProvider);
@@ -6600,6 +6609,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
         private int emojiButton;
         private int linksButton;
         private int richButton;
+        private int barruuButton;
         private int buttonsCount;
 
         public ButtonsAdapter(Context context) {
@@ -6675,6 +6685,10 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                     } else if (position == emojiButton) {
                         attachButton.setTextAndIcon(LAYOUT_TYPE_EMOJI, getString(R.string.ChatEmoji), GlassTabView.TabAnimation.EMOJI);
                         attachButton.setTag(LAYOUT_TYPE_EMOJI);
+                    } else if (position == barruuButton) {
+                        // the same page icon as Article: Barruu is the Nilak kind of article
+                        attachButton.setTextAndIcon(LAYOUT_TYPE_BARRUU, getString(R.string.NilakBarruu), GlassTabView.TabAnimation.ARTICLE);
+                        attachButton.setTag(LAYOUT_TYPE_BARRUU);
                     } else if (position == richButton) {
                         attachButton.setTextAndIcon(LAYOUT_TYPE_RICH, getString(R.string.AttachArticle), GlassTabView.TabAnimation.ARTICLE);
                         attachButton.setTag(LAYOUT_TYPE_RICH);
@@ -6735,6 +6749,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             stickerButton = -1;
             linksButton = -1;
             richButton = -1;
+            barruuButton = -1;
             emojiButton = -1;
             attachBotsStartRow = -1;
             attachBotsEndRow = -1;
@@ -6797,6 +6812,10 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 }
                 if (plainTextEnabled && MessagesController.getInstance(currentAccount).richEditorAvailable()) {
                     richButton = buttonsCount++;
+                }
+                if (BuildVars.NILAK_BARRUU && plainTextEnabled && editingMessageObject == null && baseFragment instanceof ChatActivity
+                    && ((ChatActivity) baseFragment).getChatMode() == ChatActivity.MODE_DEFAULT && !((ChatActivity) baseFragment).isSecretChat()) {
+                    barruuButton = buttonsCount++;
                 }
 
                 if (pollsEnabled) {

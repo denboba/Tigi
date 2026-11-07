@@ -80,6 +80,8 @@ public final class WriterDoc {
     /** The published post this draft edits (0 = a new article). */
     public long editDialogId;
     public int editMessageId;
+    /** Where the Barruu goes when published: the chat it was started from (0 = the person's own channel). */
+    public long targetDialogId;
 
     public boolean isEmpty() {
         if (title.trim().length() > 0) {
@@ -116,6 +118,7 @@ public final class WriterDoc {
         json.put("updated", updated);
         json.put("editDialog", editDialogId);
         json.put("editMessage", editMessageId);
+        json.put("target", targetDialogId);
         final JSONArray list = new JSONArray();
         for (Block block : blocks) {
             final JSONObject item = new JSONObject();
@@ -138,6 +141,7 @@ public final class WriterDoc {
         doc.updated = json.optLong("updated", 0);
         doc.editDialogId = json.optLong("editDialog", 0);
         doc.editMessageId = json.optInt("editMessage", 0);
+        doc.targetDialogId = json.optLong("target", 0);
         final JSONArray list = json.optJSONArray("blocks");
         if (list != null) {
             for (int i = 0; i < list.length(); i++) {

@@ -39,6 +39,10 @@ final class WriterPreview {
             meta.subtitle = "";
             final TLRPC.User me = UserConfig.getInstance(fragment.getCurrentAccount()).getCurrentUser();
             meta.author = me != null ? UserObject.getUserName(me) : "";
+            if (cover == null) {
+                final String made = WriterExport.makeCover(fragment.getCurrentAccount(), doc, media);
+                cover = made != null ? "media/" + made : null;
+            }
             meta.cover = cover;
             meta.words = doc.wordCount();
             meta.minutes = doc.minutes();

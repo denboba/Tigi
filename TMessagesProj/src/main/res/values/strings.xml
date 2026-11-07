@@ -10740,6 +10740,8 @@
     <string name="NilakWriterDownloading">Getting the article. Tap Edit again in a moment.</string>
     <string name="NilakSeeMore">See more</string>
     <string name="NilakFoldMore">Show more ▾</string>
+    <string name="NilakFoldLess">Show less ▴</string>
+    <string name="NilakArticleCover">Article cover</string>
     <string name="NilakFoldMoreMinutes">Show more · %1$d min read ▾</string>
     <string name="NilakWriterNumbers">Numbers</string>
     <string name="NilakWriterListItem">List item</string>

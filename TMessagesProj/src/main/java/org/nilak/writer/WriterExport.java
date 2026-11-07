@@ -71,7 +71,8 @@ public final class WriterExport {
                 meta.subtitle = "";
                 meta.author = author;
                 meta.lang = TigiRegion.language();
-                meta.cover = cover != null ? "media/" + new File(cover).getName() : null;
+                final String coverName = cover != null ? new File(cover).getName() : makeCover(account, doc, media);
+                meta.cover = coverName != null ? "media/" + coverName : null;
                 meta.words = words;
                 meta.minutes = minutes;
                 meta.created = System.currentTimeMillis() / 1000;
@@ -113,6 +114,74 @@ public final class WriterExport {
                 result.run(true);
             });
         });
+    }
+
+    /**
+     * When there is no photo, the cover is made from what the article has: a frame of the first video, else the first
+     * sticker or GIF on a soft lilac page. Saved in media/ and returned by name (null when nothing fits).
+     */
+    static String makeCover(int account, WriterDoc doc, File media) {
+        for (WriterDoc.Block block : doc.blocks) {
+            android.graphics.Bitmap bitmap = null;
+            boolean sticker = false;
+            try {
+                if (block.type == WriterDoc.VIDEO && !TextUtils.isEmpty(block.path) && new File(block.path).exists()) {
+                    bitmap = android.media.ThumbnailUtils.createVideoThumbnail(block.path, android.provider.MediaStore.Images.Thumbnails.FULL_SCREEN_KIND);
+                } else if (block.type == WriterDoc.STICKER || block.type == WriterDoc.GIF) {
+                    final TLRPC.Document document = WriterMedia.decode(block.path);
+                    if (document == null) {
+                        continue;
+                    }
+                    sticker = WriterMedia.isSticker(document);
+                    final File file = org.telegram.messenger.FileLoader.getInstance(account).getPathToAttach(document, true);
+                    if (file != null && file.exists()) {
+                        if (org.telegram.messenger.MessageObject.isVideoStickerDocument(document) || !sticker) {
+                            bitmap = android.media.ThumbnailUtils.createVideoThumbnail(file.getAbsolutePath(), android.provider.MediaStore.Images.Thumbnails.MINI_KIND);
+                        } else if (!org.telegram.messenger.MessageObject.isAnimatedStickerDocument(document, true)) {
+                            bitmap = android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath());
+                        }
+                    }
+                    if (bitmap == null) {
+                        final TLRPC.PhotoSize thumb = org.telegram.messenger.FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 320);
+                        final File thumbFile = thumb != null ? org.telegram.messenger.FileLoader.getInstance(account).getPathToAttach(thumb, true) : null;
+                        if (thumbFile != null && thumbFile.exists()) {
+                            bitmap = android.graphics.BitmapFactory.decodeFile(thumbFile.getAbsolutePath());
+                        }
+                    }
+                } else {
+                    continue;
+                }
+                if (bitmap == null) {
+                    continue;
+                }
+                if (sticker) {
+                    // the sticker in the middle of a wide lilac page
+                    final android.graphics.Bitmap page = android.graphics.Bitmap.createBitmap(1280, 720, android.graphics.Bitmap.Config.ARGB_8888);
+                    final android.graphics.Canvas canvas = new android.graphics.Canvas(page);
+                    final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG | android.graphics.Paint.FILTER_BITMAP_FLAG);
+                    paint.setShader(new android.graphics.LinearGradient(0, 0, 1280, 720, 0xFFEADCFB, 0xFFF8F1FD, android.graphics.Shader.TileMode.CLAMP));
+                    canvas.drawRect(0, 0, 1280, 720, paint);
+                    paint.setShader(null);
+                    final float side = 500f;
+                    final float scale = side / Math.max(bitmap.getWidth(), bitmap.getHeight());
+                    final float w = bitmap.getWidth() * scale;
+                    final float h = bitmap.getHeight() * scale;
+                    canvas.drawBitmap(bitmap, null, new android.graphics.RectF((1280 - w) / 2f, (720 - h) / 2f, (1280 + w) / 2f, (720 + h) / 2f), paint);
+                    bitmap.recycle();
+                    bitmap = page;
+                }
+                media.mkdirs();
+                final File out = new File(media, "cover.jpg");
+                try (OutputStream os = new FileOutputStream(out)) {
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, os);
+                }
+                bitmap.recycle();
+                return out.getName();
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
+        }
+        return null;
     }
 
     private static String firstPhoto(WriterDoc doc) {

@@ -9488,6 +9488,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 }
                 cover = audioInfo.getCover();
             }
+        } else if (extL.equals("nilak")) {
+            // Nilak: an article's cover becomes the file's thumbnail, so feeds show it before the download
+            cover = org.telegram.ui.TigiArticle.coverBitmap(f, 640);
         } else if (extL.equals("opus") || extL.equals("ogg") || extL.equals("flac")) {
             MediaMetadataRetriever mediaMetadataRetriever = null;
             try {
@@ -9627,7 +9630,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 }
             }
             if (cover != null) {
-                TLRPC.PhotoSize thumb = ImageLoader.scaleAndSaveImage(cover, 132, 132, 55, isEncrypted);
+                final boolean article = extL.equals("nilak");
+                TLRPC.PhotoSize thumb = ImageLoader.scaleAndSaveImage(cover, article ? 320 : 132, article ? 320 : 132, article ? 82 : 55, isEncrypted);
                 if (thumb != null) {
                     document.thumbs.add(thumb);
                     document.flags |= 1;

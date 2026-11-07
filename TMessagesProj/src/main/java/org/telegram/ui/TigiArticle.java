@@ -277,6 +277,59 @@ public final class TigiArticle {
         }
     }
 
+    /**
+     * The cover picture inside a .nilak file (the manifest's "cover"), at most about maxSide px; null when it has none.
+     * Used for the file's thumbnail when it is sent and for the card's sharp cover once it is downloaded.
+     */
+    public static android.graphics.Bitmap coverBitmap(File file, int maxSide) {
+        if (file == null || !file.exists()) {
+            return null;
+        }
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(file)) {
+            final java.util.zip.ZipEntry manifest = zip.getEntry(MANIFEST);
+            if (manifest == null) {
+                return null;
+            }
+            final JSONObject json = new JSONObject(new String(readAll(zip.getInputStream(manifest), 256 * 1024), "UTF-8"));
+            final String cover = json.optString("cover", "");
+            if (TextUtils.isEmpty(cover) || cover.contains("..") || !cover.startsWith(MEDIA_DIR + "/")) {
+                return null;
+            }
+            final java.util.zip.ZipEntry entry = zip.getEntry(cover);
+            if (entry == null) {
+                return null;
+            }
+            final byte[] bytes = readAll(zip.getInputStream(entry), 30 * 1024 * 1024);
+            final android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+            int sample = 1;
+            while (Math.max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) {
+                sample *= 2;
+            }
+            final android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+            options.inSampleSize = sample;
+            return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private static byte[] readAll(InputStream in, int limit) throws IOException {
+        try (InputStream stream = in) {
+            final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            final byte[] chunk = new byte[16384];
+            int read;
+            while ((read = stream.read(chunk)) > 0) {
+                buffer.write(chunk, 0, read);
+                if (buffer.size() > limit) {
+                    throw new IOException("too big");
+                }
+            }
+            return buffer.toByteArray();
+        }
+    }
+
     /** Zips manifest.json, article.md and the media the body (or the cover) uses into out. Unused media stay out. */
     public static void pack(File dir, File out) throws IOException {
         final String body = readBody(dir);

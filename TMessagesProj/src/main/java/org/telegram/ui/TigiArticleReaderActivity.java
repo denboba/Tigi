@@ -355,7 +355,17 @@ public class TigiArticleReaderActivity extends BaseFragment {
         final int ink = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
         final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
 
-        if (!TextUtils.isEmpty(meta.cover)) {
+        // the cover on top, unless the same picture opens the text (or it was made from a sticker, GIF or video below)
+        boolean coverInText = "media/cover.jpg".equals(meta.cover);
+        if (blocks != null && !coverInText) {
+            for (TigiArticle.Block block : blocks) {
+                if (meta.cover != null && meta.cover.equals(block.path)) {
+                    coverInText = true;
+                    break;
+                }
+            }
+        }
+        if (!TextUtils.isEmpty(meta.cover) && !coverInText) {
             final View cover = mediaView(context, meta.cover, false);
             if (cover != null) {
                 column.addView(cover, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 16));
@@ -467,20 +477,28 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 return box;
             }
             case TigiArticle.BLOCK_CALLOUT: {
+                // a note: an accent bar, an icon and a label, the text under it, on a soft tint
+                final int color = "WARNING".equals(block.kind) ? 0xFFE0A030 : "IMPORTANT".equals(block.kind) ? 0xFFF0446B : "TIP".equals(block.kind) ? 0xFF22C55E : TigiStyle.accent();
+                final String icon = "WARNING".equals(block.kind) ? "⚠️" : "IMPORTANT".equals(block.kind) ? "❗" : "TIP".equals(block.kind) ? "✅" : "💡";
+                final LinearLayout row = new LinearLayout(context);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setBackground(Theme.createRoundRectDrawable(dp(16), Theme.multAlpha(color, Theme.isCurrentThemeDark() ? 0.16f : 0.09f)));
+                final View bar = new View(context);
+                bar.setBackground(Theme.createRoundRectDrawable(dp(2), color));
+                row.addView(bar, LayoutHelper.createLinear(4, LayoutHelper.MATCH_PARENT, 0, 12, 0, 12));
                 final LinearLayout box = new LinearLayout(context);
                 box.setOrientation(LinearLayout.VERTICAL);
-                box.setPadding(dp(14), dp(12), dp(14), dp(12));
-                final int color = "WARNING".equals(block.kind) ? 0xFFE0A030 : "IMPORTANT".equals(block.kind) ? 0xFFF0446B : "TIP".equals(block.kind) ? 0xFF22C55E : TigiStyle.accent();
-                box.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.multAlpha(color, 0.14f)));
+                box.setPadding(dp(14), dp(12), dp(16), dp(14));
                 final TextView label = new TextView(context);
-                label.setText(LocaleController.getString("WARNING".equals(block.kind) ? R.string.NilakCalloutWarning
-                    : "IMPORTANT".equals(block.kind) ? R.string.NilakCalloutImportant : "TIP".equals(block.kind) ? R.string.NilakCalloutTip : R.string.NilakCalloutNote));
-                label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+                label.setText(nativeText(icon + "  " + LocaleController.getString("WARNING".equals(block.kind) ? R.string.NilakCalloutWarning
+                    : "IMPORTANT".equals(block.kind) ? R.string.NilakCalloutImportant : "TIP".equals(block.kind) ? R.string.NilakCalloutTip : R.string.NilakCalloutNote), label.getPaint()));
+                label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
                 label.setTypeface(TigiStyle.displayExtraBold());
                 label.setTextColor(color);
                 box.addView(label);
-                box.addView(text(context, block.text, 16 * s, ink), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
-                return box;
+                box.addView(text(context, block.text, 16 * s, ink), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+                row.addView(box, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+                return row;
             }
             case TigiArticle.BLOCK_BULLETS:
             case TigiArticle.BLOCK_NUMBERS: {
@@ -504,14 +522,48 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 return view;
             }
             case TigiArticle.BLOCK_CODE: {
+                // code on a dark card, the way developers read it: a header with Copy, lines that scroll sideways
+                final LinearLayout card = new LinearLayout(context);
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setBackground(Theme.createRoundRectDrawable(dp(14), 0xFF1E1A26));
+                final LinearLayout header = new LinearLayout(context);
+                header.setOrientation(LinearLayout.HORIZONTAL);
+                header.setGravity(Gravity.CENTER_VERTICAL);
+                header.setPadding(dp(14), dp(8), dp(6), 0);
+                final TextView kind = new TextView(context);
+                kind.setText("</>  " + LocaleController.getString(R.string.NilakWriterCode));
+                kind.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+                kind.setTypeface(TigiStyle.displayBold());
+                kind.setTextColor(0xFFB9A6E0);
+                header.addView(kind, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+                final TextView copy = new TextView(context);
+                copy.setText(LocaleController.getString(R.string.Copy));
+                copy.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+                copy.setTypeface(TigiStyle.displayBold());
+                copy.setTextColor(0xFFE9E3F5);
+                copy.setGravity(Gravity.CENTER);
+                copy.setPadding(dp(10), 0, dp(10), 0);
+                copy.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(10), 0x22FFFFFF, 0x44FFFFFF));
+                final CharSequence code = block.text;
+                copy.setOnClickListener(v -> {
+                    AndroidUtilities.addToClipboard(code);
+                    org.telegram.ui.Components.BulletinFactory.of(this).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
+                });
+                header.addView(copy, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 28));
+                card.addView(header, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
                 final HorizontalScrollView box = new HorizontalScrollView(context);
-                box.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray)));
-                final TextView view = text(context, block.text, 14 * s, ink);
+                box.setHorizontalScrollBarEnabled(false);
+                final TextView view = new TextView(context);
+                view.setText(code);
+                view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f * s);
                 view.setTypeface(Typeface.MONOSPACE);
-                view.setPadding(dp(14), dp(12), dp(14), dp(12));
-                view.setMovementMethod(null);
+                view.setTextColor(0xFFE9E3F5);
+                view.setLineSpacing(0, 1.35f);
+                view.setPadding(dp(14), dp(8), dp(14), dp(14));
+                view.setTextIsSelectable(true);
                 box.addView(view);
-                return box;
+                card.addView(box, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                return card;
             }
             case TigiArticle.BLOCK_IMAGE:
             case TigiArticle.BLOCK_VIDEO: {
@@ -526,17 +578,41 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 return box;
             }
             case TigiArticle.BLOCK_TABLE: {
-                // a grid that scrolls sideways when it is wider than the page; the first row is the header
+                // a real table: a tinted header, soft stripes, a thin border; wide tables scroll sideways
+                final boolean darkTheme = Theme.isCurrentThemeDark();
+                final int border = darkTheme ? 0xFF3A3346 : 0xFFE6DCF4;
+                final android.graphics.drawable.GradientDrawable frame = new android.graphics.drawable.GradientDrawable();
+                frame.setCornerRadius(dp(14));
+                frame.setColor(darkTheme ? 0xFF1B1820 : 0xFFFFFFFF);
+                frame.setStroke(Math.max(1, dp(1)), border);
                 final HorizontalScrollView box = new HorizontalScrollView(context);
-                box.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray)));
+                box.setHorizontalScrollBarEnabled(false);
+                box.setBackground(frame);
+                box.setClipToOutline(true);
+                box.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                    @Override
+                    public void getOutline(View view, android.graphics.Outline outline) {
+                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(14));
+                    }
+                });
                 final android.widget.TableLayout table = new android.widget.TableLayout(context);
-                table.setPadding(dp(4), dp(4), dp(4), dp(4));
-                final int line = Theme.multAlpha(gray, 0.25f);
+                table.setStretchAllColumns(true);
+                int columns = 0;
+                for (ArrayList<CharSequence> cells : block.rows) {
+                    columns = Math.max(columns, cells.size());
+                }
                 for (int r = 0; r < block.rows.size(); r++) {
                     final android.widget.TableRow row = new android.widget.TableRow(context);
-                    for (CharSequence cell : block.rows.get(r)) {
-                        final TextView view = text(context, cell, 15 * s, ink);
-                        view.setPadding(dp(12), dp(8), dp(12), dp(8));
+                    if (r == 0) {
+                        row.setBackgroundColor(Theme.multAlpha(TigiStyle.accent(), darkTheme ? 0.22f : 0.10f));
+                    } else if (r % 2 == 0) {
+                        row.setBackgroundColor(darkTheme ? 0x0CFFFFFF : 0xFFFAF7FE);
+                    }
+                    final ArrayList<CharSequence> cells = block.rows.get(r);
+                    for (int c = 0; c < columns; c++) {
+                        final TextView view = text(context, c < cells.size() ? cells.get(c) : "", (r == 0 ? 14 : 15) * s, r == 0 ? TigiStyle.accent() : ink);
+                        view.setPadding(dp(14), dp(10), dp(14), dp(10));
+                        view.setMinWidth(dp(72));
                         if (r == 0) {
                             view.setTypeface(TigiStyle.displayBold());
                         }
@@ -544,31 +620,59 @@ public class TigiArticleReaderActivity extends BaseFragment {
                     }
                     if (r >= 1) {
                         final View rule = new View(context);
-                        rule.setBackgroundColor(line);
+                        rule.setBackgroundColor(border);
                         table.addView(rule, new android.widget.TableLayout.LayoutParams(android.widget.TableLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1) / 2)));
                     }
                     table.addView(row);
                 }
-                box.addView(table);
+                box.addView(table, new android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+                box.setFillViewport(true);
                 return box;
             }
             case TigiArticle.BLOCK_LINK: {
+                // a link as a card: a round icon with the site's letter, the site, the address, an arrow
                 final LinearLayout card = new LinearLayout(context);
-                card.setOrientation(LinearLayout.VERTICAL);
-                card.setPadding(dp(14), dp(12), dp(14), dp(12));
-                card.setBackground(Theme.createRoundRectDrawable(dp(14), Theme.getColor(Theme.key_windowBackgroundGray)));
+                card.setOrientation(LinearLayout.HORIZONTAL);
+                card.setGravity(Gravity.CENTER_VERTICAL);
+                card.setPadding(dp(12), dp(12), dp(14), dp(12));
+                final android.graphics.drawable.GradientDrawable frame = new android.graphics.drawable.GradientDrawable();
+                frame.setCornerRadius(dp(16));
+                frame.setColor(Theme.isCurrentThemeDark() ? 0xFF1B1820 : 0xFFFFFFFF);
+                frame.setStroke(Math.max(1, dp(1)), Theme.isCurrentThemeDark() ? 0xFF3A3346 : 0xFFE6DCF4);
+                card.setBackground(frame);
                 String host = block.url;
                 try {
                     host = Uri.parse(block.url).getHost();
+                    if (host != null && host.startsWith("www.")) {
+                        host = host.substring(4);
+                    }
                 } catch (Exception ignore) {
                 }
+                if (host == null) {
+                    host = block.url;
+                }
+                final TextView letter = new TextView(context);
+                letter.setText(host.isEmpty() ? "↗" : host.substring(0, 1).toUpperCase(java.util.Locale.ROOT));
+                letter.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
+                letter.setTypeface(TigiStyle.displayExtraBold());
+                letter.setTextColor(0xFFFFFFFF);
+                letter.setGravity(Gravity.CENTER);
+                letter.setBackground(TigiStyle.primaryPill(21));
+                card.addView(letter, LayoutHelper.createLinear(42, 42));
+                final LinearLayout texts = new LinearLayout(context);
+                texts.setOrientation(LinearLayout.VERTICAL);
                 final TextView name = text(context, host, 15, ink);
                 name.setTypeface(TigiStyle.displayBold());
-                card.addView(name);
-                final TextView url = text(context, block.url, 13, TigiStyle.accent());
+                name.setSingleLine(true);
+                name.setEllipsize(TextUtils.TruncateAt.END);
+                texts.addView(name);
+                final TextView url = text(context, block.url, 13, gray);
                 url.setSingleLine(true);
                 url.setEllipsize(TextUtils.TruncateAt.END);
-                card.addView(url);
+                texts.addView(url);
+                card.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 12, 0, 8, 0));
+                final TextView arrow = text(context, "↗", 18, TigiStyle.accent());
+                card.addView(arrow);
                 card.setOnClickListener(v -> Browser.openUrl(getParentActivity(), block.url));
                 return card;
             }

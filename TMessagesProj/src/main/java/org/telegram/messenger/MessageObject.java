@@ -9184,6 +9184,9 @@ public class MessageObject {
     // first 8 lines with a fade and a "Show more" pill. It reuses the
     // collapsible-quote state (expandedQuotes), so a tap expands and collapses.
     public static final int NILAK_FOLD_LINES = 8;
+    public static int nilakFoldRow() {
+        return AndroidUtilities.dp(34);
+    }
     public int nilakFoldMinutes;
 
     private void nilakSmartFold(TextLayoutBlock block) {
@@ -9193,8 +9196,10 @@ public class MessageObject {
         final StaticLayout layout = block.textLayout;
         final int lines = layout.getLineCount();
         if (lines <= NILAK_FOLD_LINES + 2) return;
-        final int folded = layout.getLineBottom(NILAK_FOLD_LINES - 1) + dp(26);
+        final int folded = layout.getLineBottom(NILAK_FOLD_LINES - 1);
         if (folded >= block.height) return;
+        // the Show more / Show less button gets its own row under the text
+        block.padBottom += nilakFoldRow();
         block.quoteCollapse = true;
         block.nilakFold = true;
         block.messageObject = this;

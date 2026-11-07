@@ -1219,6 +1219,67 @@ public class WriterActivity extends BaseFragment {
         return view;
     }
 
+    /** Lines the table up in columns (the editor font is monospaced), so it reads as a grid while writing. */
+    private void alignTable(BlockEdit edit) {
+        final String text = edit.getText().toString();
+        if (text.trim().isEmpty() || !text.contains("|")) {
+            return;
+        }
+        final ArrayList<String[]> rows = new ArrayList<>();
+        int columns = 0;
+        for (String line : text.split("\n")) {
+            String row = line.trim();
+            if (row.isEmpty()) {
+                continue;
+            }
+            if (row.startsWith("|")) {
+                row = row.substring(1);
+            }
+            if (row.endsWith("|")) {
+                row = row.substring(0, row.length() - 1);
+            }
+            final String[] cells = row.split("\\|", -1);
+            for (int i = 0; i < cells.length; i++) {
+                cells[i] = cells[i].trim();
+            }
+            columns = Math.max(columns, cells.length);
+            rows.add(cells);
+        }
+        final int[] widths = new int[columns];
+        for (String[] cells : rows) {
+            for (int c = 0; c < cells.length; c++) {
+                widths[c] = Math.max(widths[c], cells[c].codePointCount(0, cells[c].length()));
+            }
+        }
+        final StringBuilder out = new StringBuilder();
+        for (int r = 0; r < rows.size(); r++) {
+            if (r > 0) {
+                out.append('\n');
+            }
+            final String[] cells = rows.get(r);
+            for (int c = 0; c < columns; c++) {
+                final String cell = c < cells.length ? cells[c] : "";
+                out.append(cell);
+                if (c < columns - 1) {
+                    for (int pad = cell.codePointCount(0, cell.length()); pad < widths[c]; pad++) {
+                        out.append(' ');
+                    }
+                    out.append(" | ");
+                }
+            }
+        }
+        final String aligned = out.toString();
+        if (!aligned.equals(text)) {
+            final boolean wasBinding = binding;
+            binding = true;
+            edit.setText(aligned);
+            binding = wasBinding;
+            if (!wasBinding) {
+                changed();
+            }
+        }
+    }
+
     /* ---------- one block of text ---------- */
 
     private class BlockEdit extends org.telegram.ui.Components.EditTextEffects {
@@ -1280,6 +1341,8 @@ public class WriterActivity extends BaseFragment {
                 if (has) {
                     focused = BlockEdit.this;
                     updateToolbar();
+                } else if (type == WriterDoc.TABLE) {
+                    alignTable(BlockEdit.this);
                 }
             });
             setOnKeyListener((v, keyCode, event) -> {
@@ -1308,8 +1371,8 @@ public class WriterActivity extends BaseFragment {
                     setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.5f);
                     setLineSpacing(0, 1.3f);
                     setGravity(Gravity.TOP | Gravity.LEFT);
-                    setPadding(dp(36), dp(14), dp(36), dp(14));
-                    setBackground(inset(Theme.createRoundRectDrawable(dp(12), dark() ? 0xFF221E29 : 0xFFF4F0FA)));
+                    setPadding(dp(36), dp(40), dp(36), dp(18));
+                    setBackground(inset(Theme.createRoundRectDrawable(dp(14), 0xFF1E1A26)));
                     setHint(LocaleController.getString(R.string.NilakWriterCodeHint));
                     break;
                 case WriterDoc.TABLE:
@@ -1328,16 +1391,20 @@ public class WriterActivity extends BaseFragment {
                     setTypeface(Typeface.DEFAULT);
                     setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16.5f);
                     setLineSpacing(0, 1.45f);
-                    setPadding(dp(36), dp(14), dp(36), dp(14));
-                    setBackground(inset(Theme.createRoundRectDrawable(dp(14), Theme.multAlpha(TigiStyle.accent(), dark() ? 0.22f : 0.12f))));
+                    setPadding(dp(40), dp(40), dp(36), dp(18));
+                    setBackground(inset(Theme.createRoundRectDrawable(dp(16), Theme.multAlpha(TigiStyle.accent(), dark() ? 0.18f : 0.09f))));
                     setHint(LocaleController.getString(R.string.NilakWriterNoteHint));
                     break;
                 case WriterDoc.EMBED:
                     setTypeface(TigiStyle.displayBold());
                     setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
                     setLineSpacing(0, 1.2f);
-                    setPadding(dp(36), dp(16), dp(36), dp(16));
-                    setBackground(inset(Theme.createRoundRectDrawable(dp(14), dark() ? 0xFF221E29 : 0xFFF4F0FA)));
+                    setPadding(dp(80), dp(20), dp(36), dp(20));
+                    final GradientDrawable card = new GradientDrawable();
+                    card.setCornerRadius(dp(16));
+                    card.setColor(dark() ? 0xFF1B1820 : 0xFFFFFFFF);
+                    card.setStroke(dp(1), dark() ? 0xFF3A3346 : 0xFFE3D9F2);
+                    setBackground(inset(card));
                     setHint(LocaleController.getString(R.string.NilakWriterEmbedHint));
                     break;
                 case WriterDoc.VIDEO:
@@ -1446,7 +1513,11 @@ public class WriterActivity extends BaseFragment {
                     setHint(column != null && (column.getChildCount() == 0 || index == 0) ? LocaleController.getString(R.string.NilakWriterStart) : null);
             }
             setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : WriterDoc.isMedia(type) ? muted() | 0xFF000000
-                : type == WriterDoc.EMBED ? TigiStyle.accent() : ink());
+                : type == WriterDoc.EMBED ? TigiStyle.accent() : type == WriterDoc.CODE ? 0xFFE9E3F5 : ink());
+            setHintTextColor(type == WriterDoc.CODE ? 0x80E9E3F5 : muted());
+            if (type == WriterDoc.TABLE && !hasFocus()) {
+                alignTable(this);
+            }
         }
 
         private final android.graphics.Paint markPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
@@ -1507,7 +1578,40 @@ public class WriterActivity extends BaseFragment {
 
         @Override
         protected void onDraw(android.graphics.Canvas canvas) {
+            if (type == WriterDoc.TABLE && getLayout() != null && getLayout().getLineCount() > 0 && length() > 0) {
+                // the first row is the header: a soft accent band behind it
+                final int firstRowEnd = TextUtils.indexOf(getText(), '\n');
+                final int lastLine = getLayout().getLineForOffset(firstRowEnd < 0 ? length() : firstRowEnd);
+                markPaint.setColor(Theme.multAlpha(TigiStyle.accent(), dark() ? 0.22f : 0.10f));
+                final float top = getTotalPaddingTop() - dp(8);
+                final float bottom = getTotalPaddingTop() + getLayout().getLineBottom(lastLine) + dp(2);
+                canvas.drawRect(dp(19), Math.max(dp(7), top), getWidth() - dp(19), bottom, markPaint);
+            }
             super.onDraw(canvas);
+            if (type == WriterDoc.CODE || type == WriterDoc.CALLOUT) {
+                // the label at the top of the box
+                markPaint.setTextAlign(android.graphics.Paint.Align.LEFT);
+                markPaint.setTypeface(TigiStyle.displayBold());
+                markPaint.setTextSize(dp(12.5f));
+                markPaint.setColor(type == WriterDoc.CODE ? 0xFFB9A6E0 : TigiStyle.accent());
+                final String label = type == WriterDoc.CODE ? "</>  " + LocaleController.getString(R.string.NilakWriterCode)
+                    : "💡  " + LocaleController.getString(R.string.NilakWriterNote);
+                canvas.drawText(label, type == WriterDoc.CODE ? dp(36) : dp(40), dp(29), markPaint);
+                if (type == WriterDoc.CALLOUT) {
+                    markPaint.setColor(TigiStyle.accent());
+                    canvas.drawRoundRect(new android.graphics.RectF(dp(26), dp(18), dp(30), getHeight() - dp(18)), dp(2), dp(2), markPaint);
+                }
+            } else if (type == WriterDoc.EMBED) {
+                // a round badge with an arrow, like the link card readers see
+                markPaint.setColor(TigiStyle.accent());
+                final float cy = getHeight() / 2f;
+                canvas.drawCircle(dp(55), cy, dp(19), markPaint);
+                markPaint.setColor(0xFFFFFFFF);
+                markPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
+                markPaint.setTypeface(TigiStyle.displayExtraBold());
+                markPaint.setTextSize(dp(17));
+                canvas.drawText("↗", dp(55), cy + dp(6), markPaint);
+            }
             if (media != null) {
                 final float left = (getWidth() - mediaWidth) / 2f;
                 media.setImageCoords(left, dp(10) + getScrollY(), mediaWidth, mediaHeight);

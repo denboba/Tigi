@@ -2570,7 +2570,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 y -= textY;
                 for (int a = 0; a < currentMessageObject.textLayoutBlocks.size(); a++) {
                     MessageObject.TextLayoutBlock block = currentMessageObject.textLayoutBlocks.get(a);
-                    if (block.quoteCollapse && block.collapsedHeight < block.height && !(block.nilakFold && !block.collapsed()) && y >= block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) && y < block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
+                    if (block.quoteCollapse && block.collapsedHeight < block.height && !(block.nilakFold && !block.collapsed() && y < block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams)) && y >= block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) && y < block.textYOffset(currentMessageObject.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
                         pressedBlock = a;
                         if (block.collapsedBounce == null || block.collapsedBounce.getView() != this) {
                             block.collapsedBounce = new ButtonBounce(this);
@@ -2794,7 +2794,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 y -= captionY;
                 for (int a = 0; a < captionLayout.textLayoutBlocks.size(); a++) {
                     MessageObject.TextLayoutBlock block = captionLayout.textLayoutBlocks.get(a);
-                    if (block.quoteCollapse && block.collapsedHeight < block.height && !(block.nilakFold && !block.collapsed()) && y >= block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) && y < block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
+                    if (block.quoteCollapse && block.collapsedHeight < block.height && !(block.nilakFold && !block.collapsed() && y < block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams)) && y >= block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) && y < block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
                         pressedBlock = a;
                         if (block.collapsedBounce == null || block.collapsedBounce.getView() != this) {
                             block.collapsedBounce = new ButtonBounce(this);
@@ -16992,6 +16992,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     drawProgressLoadingLink(canvas, a);
                 }
                 float collapsed = 1f;
+                int nilakLayer = -1;
                 int blockSpoilersColor = spoilersColor;
                 final int width = block.nilakFold ? (int) maxWidth : (int) (block.maxRight + dp(24) > maxWidth * .7f ? maxWidth : block.maxRight + dp(24));
                 if (block.quote) {
@@ -17074,7 +17075,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
                     if (block.nilakFold && block.height > block.collapsedHeight) {
                         collapsed = block.collapsed(transitionParams);
-                        canvas.saveLayerAlpha(blockRtl, 0, width + blockRtl, block.height(transitionParams) - 1, 0xFF, Canvas.ALL_SAVE_FLAG);
+                        nilakLayer = canvas.saveLayerAlpha(blockRtl, 0, width + blockRtl, block.height(transitionParams) - 1, 0xFF, Canvas.ALL_SAVE_FLAG);
                     }
 
                     if (block.code) {
@@ -17165,6 +17166,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.BOTTOM, collapsed);
                     canvas.restore();
                     if (block.nilakFold) {
+                        // the button sits under the text, outside the faded layer
+                        if (nilakLayer >= 0) {
+                            canvas.restoreToCount(nilakLayer);
+                        }
                         drawNilakFoldPill(canvas, block, width, blockRtl, collapsed, alpha);
                     }
                 }
@@ -21634,7 +21639,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     // Nilak smart fold: the "Show more" pill over the faded last lines.
     private void drawNilakFoldPill(Canvas canvas, MessageObject.TextLayoutBlock block, int width, float blockRtl, float collapsed, float alpha) {
-        if (collapsed <= 0.02f || currentMessageObject == null) return;
+        if (currentMessageObject == null) return;
         if (nilakFoldPaint == null) {
             nilakFoldPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
             nilakFoldPaint.setTextSize(dp(13));
@@ -21642,20 +21647,21 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             nilakFoldBg = new Paint(Paint.ANTI_ALIAS_FLAG);
         }
         final int minutes = currentMessageObject.nilakFoldMinutes;
-        final String text = minutes > 1 ? LocaleController.formatString(R.string.NilakFoldMoreMinutes, minutes) : LocaleController.getString(R.string.NilakFoldMore);
+        final String text = collapsed < 0.5f ? LocaleController.getString(R.string.NilakFoldLess)
+            : minutes > 1 ? LocaleController.formatString(R.string.NilakFoldMoreMinutes, minutes) : LocaleController.getString(R.string.NilakFoldMore);
         final int color = getThemedColor(Theme.key_chat_messageLinkIn);
         final float textW = nilakFoldPaint.measureText(text);
         final float h = dp(24);
         final float w = Math.min(textW + dp(20), width);
-        final float bottom = block.height(transitionParams) - dp(1);
+        final float bottom = block.height(transitionParams) + MessageObject.nilakFoldRow() - dp(6);
         final float left = block.isRtl() ? blockRtl + width - w : blockRtl;
-        final int a = (int) (0xFF * alpha * collapsed);
+        final int a = (int) (0xFF * alpha);
         AndroidUtilities.rectTmp.set(left, bottom - h, left + w, bottom);
         nilakFoldBg.setColor(getThemedColor(Theme.key_chat_inBubble));
         nilakFoldBg.setAlpha(a);
         canvas.drawRoundRect(AndroidUtilities.rectTmp, h / 2f, h / 2f, nilakFoldBg);
         nilakFoldBg.setColor(Theme.multAlpha(color, .14f));
-        nilakFoldBg.setAlpha((int) (nilakFoldBg.getAlpha() * alpha * collapsed));
+        nilakFoldBg.setAlpha((int) (nilakFoldBg.getAlpha() * alpha));
         canvas.drawRoundRect(AndroidUtilities.rectTmp, h / 2f, h / 2f, nilakFoldBg);
         nilakFoldPaint.setColor(color);
         nilakFoldPaint.setAlpha(a);

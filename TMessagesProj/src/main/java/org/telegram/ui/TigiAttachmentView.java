@@ -788,10 +788,18 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
     private void buildArticle() {
         setPadding(dp(12), dp(10), dp(12), dp(10));
         setBackground(null);
+        final LinearLayout outer = new LinearLayout(getContext());
+        outer.setOrientation(VERTICAL);
+        outer.setBackground(Theme.createRoundRectDrawable(dp(16), Theme.multAlpha(TigiStyle.accent(), Theme.isCurrentThemeDark() ? 0.18f : 0.08f)));
+        // the cover on top, like the photo of a post: the file's thumbnail first, the sharp picture once downloaded
+        final View cover = articleCover();
+        if (cover != null) {
+            outer.addView(cover, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 188));
+        }
         final LinearLayout box = new LinearLayout(getContext());
         box.setOrientation(VERTICAL);
         box.setPadding(dp(16), dp(14), dp(16), dp(14));
-        box.setBackground(Theme.createRoundRectDrawable(dp(16), Theme.multAlpha(TigiStyle.accent(), Theme.isCurrentThemeDark() ? 0.18f : 0.08f)));
+        outer.addView(box, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         final boolean featured = fragment instanceof TigiTopicFeedActivity && ((TigiTopicFeedActivity) fragment).isFeatured(message);
         final TextView label = new TextView(getContext());
         label.setText((featured ? LocaleController.getString(R.string.NilakFeatured) + " · " : "")
@@ -846,13 +854,58 @@ public class TigiAttachmentView extends LinearLayout implements NotificationCent
         size.setTextColor(gray());
         row.addView(size, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 12, 0, 0, 0));
         box.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
-        box.setContentDescription(LocaleController.getString(R.string.NilakArticleLabel) + ", " + title.getText());
-        box.setOnClickListener(v -> TigiArticleReaderActivity.open(fragment, message));
-        addView(box, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        outer.setContentDescription(LocaleController.getString(R.string.NilakArticleLabel) + ", " + title.getText());
+        outer.setOnClickListener(v -> TigiArticleReaderActivity.open(fragment, message));
+        addView(outer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         // small articles download ahead on Wi-Fi, so they open at once
         if (TigiDataSaverActivity.prefetchAllowed() && message.getDocument().size < 20 * 1024 * 1024) {
             FileLoader.getInstance(fragment.getCurrentAccount()).loadFile(message.getDocument(), message, FileLoader.PRIORITY_LOW, 0);
         }
+    }
+
+    private static final android.util.LruCache<Long, android.graphics.Bitmap> articleCovers = new android.util.LruCache<>(12);
+
+    /** The article's cover, or null when it has none (older articles, text only). */
+    private View articleCover() {
+        final TLRPC.Document document = message.getDocument();
+        if (document == null) {
+            return null;
+        }
+        final TLRPC.PhotoSize thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 320);
+        final File file = FileLoader.getInstance(fragment.getCurrentAccount()).getPathToMessage(message.messageOwner);
+        final boolean local = file != null && file.exists();
+        final android.graphics.Bitmap cached = articleCovers.get(document.id);
+        if (cached == null && (thumb == null || thumb instanceof TLRPC.TL_photoStrippedSize) && !local) {
+            return null;
+        }
+        final BackupImageView image = new BackupImageView(getContext());
+        image.setRoundRadius(dp(16), dp(16), 0, 0);
+        image.getImageReceiver().setCrossfadeWithOldImage(true);
+        if (cached != null) {
+            image.setImageBitmap(cached);
+        } else {
+            if (thumb != null && !(thumb instanceof TLRPC.TL_photoStrippedSize)) {
+                image.setImage(ImageLocation.getForDocument(thumb, document), "640_360", (android.graphics.drawable.Drawable) null, message);
+            }
+            if (local) {
+                final long id = document.id;
+                org.telegram.messenger.Utilities.globalQueue.postRunnable(() -> {
+                    final android.graphics.Bitmap sharp = TigiArticle.coverBitmap(file, 1280);
+                    if (sharp == null) {
+                        if (thumb == null || thumb instanceof TLRPC.TL_photoStrippedSize) {
+                            AndroidUtilities.runOnUIThread(() -> image.setVisibility(GONE));
+                        }
+                        return;
+                    }
+                    AndroidUtilities.runOnUIThread(() -> {
+                        articleCovers.put(id, sharp);
+                        image.setImageBitmap(sharp);
+                    });
+                });
+            }
+        }
+        image.setContentDescription(LocaleController.getString(R.string.NilakArticleCover));
+        return image;
     }
 
     /** Telegram's file colours by type: PDF red, documents blue, sheets green, archives orange, media violet. */

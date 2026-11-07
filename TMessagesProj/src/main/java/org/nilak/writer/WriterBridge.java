@@ -296,6 +296,8 @@ public final class WriterBridge {
                         }
                     }
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.TABLE, rows.toString()));
+                } else if (block.type == TigiArticle.BLOCK_IMAGE && WriterPoll.isRef(block.path)) {
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.POLL, block.caption != null ? block.caption : "", block.path));
                 } else if (block.type == TigiArticle.BLOCK_IMAGE && WriterMedia.isDocRef(block.path)) {
                     final TLRPC.Document document = WriterMedia.decode(block.path);
                     if (document != null) {

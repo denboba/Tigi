@@ -82,7 +82,10 @@ public class WriterPublishActivity extends BaseFragment implements org.telegram.
         }
         if (id == org.telegram.messenger.NotificationCenter.messageReceivedByServer) {
             final long did = args.length > 3 && args[3] instanceof Long ? (Long) args[3] : 0;
-            if (did == waitingDialog) {
+            // only the Barruu file itself (polls of the Barruu are sent to the same chat just before it)
+            final boolean barruu = args.length > 2 && args[2] instanceof TLRPC.Message
+                && org.telegram.ui.TigiArticle.isArticle(new MessageObject(currentAccount, (TLRPC.Message) args[2], false, false));
+            if (did == waitingDialog && barruu) {
                 finishPublished(false);
             }
         } else if (id == org.telegram.messenger.NotificationCenter.messageSendError) {

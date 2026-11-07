@@ -10711,6 +10711,15 @@
     <string name="NilakWriterNote">Note</string>
     <string name="NilakWriterMention">Mention</string>
     <string name="NilakBarruu">Barruu</string>
+    <string name="NilakWriterPoll">Poll</string>
+    <string name="NilakPollLive">Live poll</string>
+    <string name="NilakPollQuestionHint">Ask a question</string>
+    <string name="NilakPollOptionHint">Option</string>
+    <string name="NilakPollAddOption">Add an option</string>
+    <string name="NilakPollOptions">Options</string>
+    <string name="NilakPollRemove">Remove poll</string>
+    <string name="NilakPollLiveNote">This poll is published and people may have voted, so it can\'t be changed. You can remove it from this Barruu.</string>
+    <string name="NilakPollLoading">Loading the poll…</string>
     <string name="NilakBarruuKind">Nilak articles</string>
     <string name="NilakBarruuWrite">Write a new Barruu</string>
     <string name="NilakBarruuWriteHint">Headings, photos, tables, stickers, @mentions</string>

@@ -150,6 +150,8 @@ public final class BarruuPanel {
 
         final ScrollView scroll = new ScrollView(context);
         scroll.addView(column);
+        // the lilac page inside the sheet, white cards on it
+        scroll.setBackground(Theme.createRoundRectDrawable(dp(18), 0, dark ? 0xFF1A1326 : 0xFFF7F2FD));
         final BottomSheet.Builder builder = new BottomSheet.Builder(context, false, fragment.getResourceProvider());
         builder.setCustomView(scroll);
         sheet = builder.create();
@@ -179,7 +181,8 @@ public final class BarruuPanel {
         final LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(18), dark ? 0xFF221E29 : 0xFFFAF7FE, Theme.multAlpha(TigiStyle.accent(), 0.15f)));
+        row.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(18), dark ? 0xFF241B34 : 0xFFFFFFFF, Theme.multAlpha(TigiStyle.accent(), 0.15f)));
+        row.setElevation(dp(1));
         final TLRPC.Document document = message != null ? message.getDocument() : null;
         final TLRPC.PhotoSize thumb = document != null ? FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 320) : null;
         if (thumb != null && !(thumb instanceof TLRPC.TL_photoStrippedSize)) {

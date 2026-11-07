@@ -62,17 +62,17 @@ public class WriterActivity extends BaseFragment {
     private LinearLayout column;
     private TextView savedView;
     private LinearLayout toolbar;
-    private TextView headingButton;
-    private TextView quoteButton;
-    private TextView boldButton;
-    private TextView italicButton;
+    private android.widget.ImageView headingButton;
+    private android.widget.ImageView quoteButton;
+    private android.widget.ImageView boldButton;
+    private android.widget.ImageView italicButton;
     private LinearLayout bubble;
     private BlockEdit focused;
     private boolean binding;
     /** Telegram's own emoji, sticker and GIF keyboard, shown in place of the system keyboard. */
     private FrameLayout emojiPanel;
     private org.telegram.ui.Components.EmojiView emojiView;
-    private TextView emojiButton;
+    private android.widget.ImageView emojiButton;
     /** @mentions: people, channels and groups with a public username, suggested above the toolbar. */
     private android.widget.HorizontalScrollView mentionStrip;
     private LinearLayout mentionRow;
@@ -110,11 +110,16 @@ public class WriterActivity extends BaseFragment {
     }
 
     private int page() {
-        return dark() ? 0xFF141217 : 0xFFFFFFFF;
+        return dark() ? 0xFF1A1326 : 0xFFF7F2FD;
     }
 
     private int ink() {
-        return dark() ? 0xFFECE7F3 : 0xFF1E1A24;
+        return dark() ? 0xFFECE7F3 : 0xFF241A33;
+    }
+
+    /** Titles and headings: a deep lilac ink, so the structure of a Barruu reads at a glance. */
+    private int headingInk() {
+        return dark() ? 0xFFD9C6FA : 0xFF3D1F72;
     }
 
     private int muted() {
@@ -136,7 +141,11 @@ public class WriterActivity extends BaseFragment {
     public View createView(Context context) {
         actionBar.setAddToContainer(false);
         root = new FrameLayout(context);
-        root.setBackgroundColor(page());
+        if (TigiLilac.on()) {
+            root.setBackground(TigiLilac.page());
+        } else {
+            root.setBackgroundColor(page());
+        }
         final LinearLayout page = new LinearLayout(context);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(0, AndroidUtilities.statusBarHeight, 0, 0);
@@ -148,11 +157,11 @@ public class WriterActivity extends BaseFragment {
         bar.setPadding(dp(6), 0, dp(12), 0);
         final TextView close = new TextView(context);
         close.setText("✕");
-        close.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
+        close.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
         close.setTextColor(ink());
         close.setGravity(Gravity.CENTER);
         close.setContentDescription(LocaleController.getString(R.string.Close));
-        close.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        close.setBackground(TigiLilac.on() ? TigiLilac.roundButton() : Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
         close.setOnClickListener(v -> finishFragment());
         bar.addView(close, LayoutHelper.createLinear(44, 44));
         savedView = new TextView(context);
@@ -177,7 +186,7 @@ public class WriterActivity extends BaseFragment {
         titleView.setBackground(null);
         titleView.setHint(LocaleController.getString(R.string.NilakWriterTitleHint));
         titleView.setHintTextColor(muted());
-        titleView.setTextColor(ink());
+        titleView.setTextColor(headingInk());
         titleView.setTypeface(TigiStyle.displayExtraBold());
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 28);
         titleView.setLineSpacing(dp(2), 1f);
@@ -241,7 +250,7 @@ public class WriterActivity extends BaseFragment {
         mentionStrip.addView(mentionRow, new android.widget.FrameLayout.LayoutParams(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT));
         page.addView(mentionStrip, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56));
         toolbar = createToolbar(context);
-        page.addView(toolbar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 52));
+        page.addView(toolbar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56, 10, 4, 10, 8));
         emojiPanel = new FrameLayout(context);
         emojiPanel.setVisibility(View.GONE);
         final int panelHeight = Math.max(dp(240), org.telegram.messenger.MessagesController.getGlobalEmojiSettings().getInt("kbd_height", dp(260)));
@@ -1034,13 +1043,15 @@ public class WriterActivity extends BaseFragment {
             changed();
             return;
         }
-        if (above.type == WriterDoc.TABLE) {
-            // Backspace under a table: an empty line goes away, otherwise the table opens to edit
+        if (above.type == WriterDoc.TABLE || above.type == WriterDoc.POLL) {
+            // Backspace under a table or poll: an empty line goes away, otherwise it opens to edit
             if (edit.length() == 0) {
                 column.removeView(edit);
                 changed();
-            } else {
+            } else if (above.type == WriterDoc.TABLE) {
                 openTable(above);
+            } else {
+                openPoll(above);
             }
             return;
         }
@@ -1078,7 +1089,7 @@ public class WriterActivity extends BaseFragment {
     /** Insert sheet: a new heading or quote under the current block. */
     private void insertBlock(int type) {
         int index = focused != null ? column.indexOfChild(focused) + 1 : column.getChildCount();
-        if (focused != null && focused.length() == 0 && type != WriterDoc.DIVIDER && type != WriterDoc.TABLE && focused.type != WriterDoc.DIVIDER && !WriterDoc.isMedia(focused.type)) {
+        if (focused != null && focused.length() == 0 && type != WriterDoc.DIVIDER && type != WriterDoc.TABLE && type != WriterDoc.POLL && focused.type != WriterDoc.DIVIDER && !WriterDoc.isMedia(focused.type)) {
             // an empty line simply becomes the new kind of block
             focused.setType(type);
             focusBlock(focused, 0);
@@ -1088,12 +1099,16 @@ public class WriterActivity extends BaseFragment {
         }
         final BlockEdit edit = newBlockView(getParentActivity(), type, type == WriterDoc.TABLE ? WriterTable.starter() : "");
         column.addView(edit, index++);
-        if (type == WriterDoc.TABLE) {
+        if (type == WriterDoc.TABLE || type == WriterDoc.POLL) {
             final BlockEdit after = newBlockView(getParentActivity(), WriterDoc.PARAGRAPH, "");
             column.addView(after, index);
             focused = after;
             changed();
-            openTable(edit);
+            if (type == WriterDoc.TABLE) {
+                openTable(edit);
+            } else {
+                openPoll(edit);
+            }
             return;
         }
         if (type == WriterDoc.DIVIDER) {
@@ -1238,33 +1253,39 @@ public class WriterActivity extends BaseFragment {
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(8), 0, dp(8), 0);
-        final GradientDrawable line = new GradientDrawable();
-        line.setColor(dark() ? 0xFF1B1820 : 0xFFFFFFFF);
-        line.setStroke(1, dark() ? 0xFF2B2632 : 0xFFEFE9F6);
-        bar.setBackground(line);
-        headingButton = tool(context, "H", R.string.NilakWriterHeading, v -> setFocusedType(WriterDoc.HEADING));
-        headingButton.setTypeface(TigiStyle.displayExtraBold());
-        quoteButton = tool(context, "❝", R.string.NilakWriterQuote, v -> setFocusedType(WriterDoc.QUOTE));
-        boldButton = tool(context, "B", R.string.NilakWriterBold, v -> toggleStyle(Typeface.BOLD));
-        boldButton.setTypeface(Typeface.DEFAULT_BOLD);
-        italicButton = tool(context, "I", R.string.NilakWriterItalic, v -> toggleStyle(Typeface.ITALIC));
-        italicButton.setTypeface(Typeface.create(Typeface.SERIF, Typeface.ITALIC));
-        final TextView link = tool(context, "🔗", R.string.NilakWriterLink, v -> editLink());
-        emojiButton = tool(context, "☺", R.string.NilakWriterEmoji, v -> toggleEmojiPanel());
-        final TextView add = tool(context, "＋", R.string.NilakWriterAdd, v -> openInsertSheet());
-        add.setTextColor(TigiStyle.accent());
-        for (TextView view : new TextView[]{headingButton, quoteButton, boldButton, italicButton, link, emojiButton, add}) {
-            bar.addView(view, LayoutHelper.createLinear(0, 40, 1f, 2, 0, 2, 0));
+        // a floating glass bar on the lilac page, Telegram's own editor icons
+        final GradientDrawable glass = new GradientDrawable();
+        glass.setCornerRadius(dp(28));
+        glass.setColor(dark() ? 0xF2241B34 : 0xF5FFFFFF);
+        glass.setStroke(1, dark() ? 0xFF3A2E50 : 0xFFE9DFF7);
+        bar.setBackground(glass);
+        bar.setElevation(dp(3));
+        headingButton = tool(context, R.drawable.iv_h, R.string.NilakWriterHeading, v -> setFocusedType(WriterDoc.HEADING));
+        quoteButton = tool(context, R.drawable.iv_quote, R.string.NilakWriterQuote, v -> setFocusedType(WriterDoc.QUOTE));
+        boldButton = tool(context, R.drawable.formatting_bold, R.string.NilakWriterBold, v -> toggleStyle(Typeface.BOLD));
+        italicButton = tool(context, R.drawable.formatting_italic, R.string.NilakWriterItalic, v -> toggleStyle(Typeface.ITALIC));
+        final android.widget.ImageView link = tool(context, R.drawable.msg_link, R.string.NilakWriterLink, v -> editLink());
+        emojiButton = tool(context, R.drawable.input_smile, R.string.NilakWriterEmoji, v -> toggleEmojiPanel());
+        for (View view : new View[]{headingButton, quoteButton, boldButton, italicButton, link, emojiButton}) {
+            bar.addView(view, LayoutHelper.createLinear(0, 42, 1f, 1, 0, 1, 0));
         }
+        // ＋ : a round gradient button, the way into every block
+        final android.widget.ImageView add = new android.widget.ImageView(context);
+        add.setImageResource(R.drawable.tigi_add_24);
+        add.setScaleType(android.widget.ImageView.ScaleType.CENTER);
+        add.setColorFilter(new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.SRC_IN));
+        add.setBackground(TigiStyle.primaryPill(20));
+        add.setContentDescription(LocaleController.getString(R.string.NilakWriterAdd));
+        add.setOnClickListener(v -> openInsertSheet());
+        bar.addView(add, LayoutHelper.createLinear(40, 40, 0f, 6, 0, 2, 0));
         return bar;
     }
 
-    private TextView tool(Context context, String label, int description, View.OnClickListener onClick) {
-        final TextView view = new TextView(context);
-        view.setText(label);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
-        view.setTextColor(dark() ? 0xFFD6CEE3 : 0xFF3A3046);
-        view.setGravity(Gravity.CENTER);
+    private android.widget.ImageView tool(Context context, int icon, int description, View.OnClickListener onClick) {
+        final android.widget.ImageView view = new android.widget.ImageView(context);
+        view.setImageResource(icon);
+        view.setScaleType(android.widget.ImageView.ScaleType.CENTER);
+        view.setColorFilter(new android.graphics.PorterDuffColorFilter(dark() ? 0xFFD6CEE3 : 0xFF3A3046, android.graphics.PorterDuff.Mode.SRC_IN));
         view.setContentDescription(LocaleController.getString(description));
         view.setOnClickListener(onClick);
         return view;
@@ -1280,10 +1301,13 @@ public class WriterActivity extends BaseFragment {
         light(italicButton, hasStyle(Typeface.ITALIC));
     }
 
-    private void light(TextView view, boolean on) {
+    private void light(android.widget.ImageView view, boolean on) {
+        if (view == null) {
+            return;
+        }
         view.setSelected(on);
-        view.setBackground(on ? Theme.createRoundRectDrawable(dp(10), dark() ? 0xFF33284A : 0xFFEFE6FC) : null);
-        view.setTextColor(on ? TigiStyle.accent() : (dark() ? 0xFFD6CEE3 : 0xFF3A3046));
+        view.setBackground(on ? Theme.createRoundRectDrawable(dp(14), dark() ? 0xFF33284A : 0xFFEFE6FC) : null);
+        view.setColorFilter(new android.graphics.PorterDuffColorFilter(on ? TigiStyle.accent() : (dark() ? 0xFFD6CEE3 : 0xFF3A3046), android.graphics.PorterDuff.Mode.SRC_IN));
     }
 
     private LinearLayout createBubble(Context context) {
@@ -1361,13 +1385,16 @@ public class WriterActivity extends BaseFragment {
         column.addView(header);
         final BottomSheet[] sheet = new BottomSheet[1];
         // {label, block type to insert (-1 = coming soon)}
+        // emoji, stickers and GIFs all come from 😊 on the toolbar (Telegram's keyboard), so they are not repeated here
         final int[][] items = {
-            {R.string.NilakWriterHeading, WriterDoc.HEADING}, {R.string.NilakWriterQuote, WriterDoc.QUOTE}, {R.string.NilakWriterList, WriterDoc.BULLET}, {R.string.NilakWriterNumbers, WriterDoc.NUMBER},
-            {R.string.NilakWriterPhoto, WriterDoc.PHOTO}, {R.string.NilakWriterVideo, WriterDoc.VIDEO}, {R.string.NilakWriterStickers, WriterDoc.STICKER}, {R.string.NilakWriterGif, WriterDoc.GIF},
-            {R.string.NilakWriterCode, WriterDoc.CODE}, {R.string.NilakWriterTable, WriterDoc.TABLE}, {R.string.NilakWriterEmbed, WriterDoc.EMBED}, {R.string.NilakWriterNote, WriterDoc.CALLOUT},
-            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterEmoji, EMOJI}, {R.string.NilakWriterMention, MENTION}
+            {R.string.NilakWriterHeading, WriterDoc.HEADING, R.drawable.iv_h}, {R.string.NilakWriterQuote, WriterDoc.QUOTE, R.drawable.iv_quote},
+            {R.string.NilakWriterList, WriterDoc.BULLET, R.drawable.iv_list}, {R.string.NilakWriterNumbers, WriterDoc.NUMBER, R.drawable.iv_ordered_list},
+            {R.string.NilakWriterPhoto, WriterDoc.PHOTO, R.drawable.iv_media}, {R.string.NilakWriterVideo, WriterDoc.VIDEO, R.drawable.input_video},
+            {R.string.NilakWriterPoll, WriterDoc.POLL, R.drawable.filled_chatlist_poll}, {R.string.NilakWriterTable, WriterDoc.TABLE, R.drawable.iv_table},
+            {R.string.NilakWriterCode, WriterDoc.CODE, R.drawable.iv_code}, {R.string.NilakWriterNote, WriterDoc.CALLOUT, R.drawable.menu_lightbulb},
+            {R.string.NilakWriterEmbed, WriterDoc.EMBED, R.drawable.msg_link}, {R.string.NilakWriterMention, MENTION, R.drawable.filled_chatlist_mention},
+            {R.string.NilakWriterDivider, WriterDoc.DIVIDER, R.drawable.iv_divider}
         };
-        final String[] icons = {"H", "❝", "•", "1.", "🖼", "▶", "✨", "GIF", "{ }", "▦", "↗", "💡", "✣", "☺", "@"};
         LinearLayout row = null;
         for (int i = 0; i < items.length; i++) {
             if (i % 4 == 0) {
@@ -1377,7 +1404,7 @@ public class WriterActivity extends BaseFragment {
             }
             final boolean live = items[i][1] >= 0;
             final int blockType = items[i][1];
-            row.addView(insertItem(context, icons[i], items[i][0], live, v -> {
+            row.addView(insertItem(context, items[i][2], items[i][0], live, v -> {
                 if (sheet[0] != null) {
                     sheet[0].dismiss();
                 }
@@ -1387,10 +1414,6 @@ public class WriterActivity extends BaseFragment {
                     pickPhoto();
                 } else if (blockType == WriterDoc.VIDEO) {
                     pickVideo();
-                } else if (blockType == WriterDoc.STICKER || blockType == EMOJI) {
-                    showEmojiPanel(false);
-                } else if (blockType == WriterDoc.GIF) {
-                    showEmojiPanel(true);
                 } else if (blockType == MENTION) {
                     final BlockEdit target = textTarget();
                     if (target != null) {
@@ -1415,24 +1438,24 @@ public class WriterActivity extends BaseFragment {
         words.setGravity(Gravity.END);
         words.setPadding(dp(8), dp(6), dp(8), 0);
         column.addView(words, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        // the lilac page inside the sheet
+        column.setBackground(Theme.createRoundRectDrawable(dp(18), 0, dark() ? 0xFF1A1326 : 0xFFF7F2FD));
         final BottomSheet.Builder builder = new BottomSheet.Builder(context);
         builder.setCustomView(column);
         sheet[0] = builder.create();
         showDialog(sheet[0]);
     }
 
-    private View insertItem(Context context, String icon, int label, boolean live, View.OnClickListener onClick) {
+    private View insertItem(Context context, int icon, int label, boolean live, View.OnClickListener onClick) {
         final LinearLayout item = new LinearLayout(context);
         item.setOrientation(LinearLayout.VERTICAL);
         item.setGravity(Gravity.CENTER_HORIZONTAL);
         final FrameLayout tile = new FrameLayout(context);
-        final TextView glyph = new TextView(context);
-        glyph.setText(icon);
-        glyph.setGravity(Gravity.CENTER);
-        glyph.setTextSize(TypedValue.COMPLEX_UNIT_DIP, icon.length() > 2 ? 15 : 21);
-        glyph.setTypeface(TigiStyle.displayExtraBold());
-        glyph.setTextColor(live ? TigiStyle.accent() : 0xFFB9B0C7);
-        glyph.setBackground(Theme.createRoundRectDrawable(dp(16), live ? Theme.multAlpha(TigiStyle.accent(), 0.10f) : Theme.multAlpha(0xFF8C819E, 0.10f)));
+        final android.widget.ImageView glyph = new android.widget.ImageView(context);
+        glyph.setImageResource(icon);
+        glyph.setScaleType(android.widget.ImageView.ScaleType.CENTER);
+        glyph.setColorFilter(new android.graphics.PorterDuffColorFilter(live ? TigiStyle.accent() : 0xFFB9B0C7, android.graphics.PorterDuff.Mode.SRC_IN));
+        glyph.setBackground(Theme.createRoundRectDrawable(dp(16), live ? Theme.multAlpha(TigiStyle.accent(), dark() ? 0.20f : 0.10f) : Theme.multAlpha(0xFF8C819E, 0.10f)));
         tile.addView(glyph, LayoutHelper.createFrame(52, 52, Gravity.CENTER));
         if (!live) {
             final TextView soon = new TextView(context);
@@ -1468,6 +1491,30 @@ public class WriterActivity extends BaseFragment {
         view.setBackground(primary ? TigiStyle.primaryPill(17)
             : Theme.createSimpleSelectorRoundRectDrawable(dp(17), dark() ? 0xFF2A2533 : 0xFFF2EDF9, Theme.multAlpha(TigiStyle.accent(), 0.2f)));
         return view;
+    }
+
+    /** The poll editor: a question and its options; a published poll can only be removed. */
+    private void openPoll(BlockEdit edit) {
+        hideEmojiPanel();
+        hideMentions();
+        AndroidUtilities.hideKeyboard(root);
+        WriterPoll.edit(this, edit.getText().toString(), WriterPoll.isRef(edit.path), text -> {
+            if (column == null || column.indexOfChild(edit) < 0) {
+                return;
+            }
+            final boolean wasBinding = binding;
+            binding = true;
+            edit.setText(text);
+            binding = wasBinding;
+            edit.requestLayout();
+            edit.invalidate();
+            changed();
+        }, () -> {
+            if (column != null && column.indexOfChild(edit) >= 0) {
+                column.removeView(edit);
+                changed();
+            }
+        });
     }
 
     /** The table editor: cells, rows and columns; the block shows the result as a grid. */
@@ -1649,6 +1696,18 @@ public class WriterActivity extends BaseFragment {
                     setBackground(inset(Theme.createRoundRectDrawable(dp(14), 0xFF1E1A26)));
                     setHint(LocaleController.getString(R.string.NilakWriterCodeHint));
                     break;
+                case WriterDoc.POLL:
+                    // drawn as a poll card; a tap opens the poll editor
+                    setHint(null);
+                    setFocusable(false);
+                    setFocusableInTouchMode(false);
+                    setCursorVisible(false);
+                    setLongClickable(false);
+                    setBackground(null);
+                    setPadding(dp(18), dp(10), dp(18), dp(10));
+                    setContentDescription(LocaleController.getString(R.string.NilakWriterPoll));
+                    setOnClickListener(v -> openPoll(BlockEdit.this));
+                    break;
                 case WriterDoc.TABLE:
                     // drawn as a grid; a tap opens the table editor (cells, rows, columns)
                     setHint(null);
@@ -1772,7 +1831,7 @@ public class WriterActivity extends BaseFragment {
                     setFocusableInTouchMode(false);
                     setCursorVisible(false);
                     setLongClickable(false);
-                    setMinHeight(dp(44));
+                    setMinHeight(dp(56));
                     setPadding(dp(22), dp(8), dp(22), dp(8));
                     setBackground(null);
                     setContentDescription(LocaleController.getString(R.string.NilakWriterDivider));
@@ -1786,13 +1845,35 @@ public class WriterActivity extends BaseFragment {
                     setBackground(null);
                     setHint(column != null && (column.getChildCount() == 0 || index == 0) ? LocaleController.getString(R.string.NilakWriterStart) : null);
             }
-            setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : WriterDoc.isMedia(type) ? muted() | 0xFF000000
+            setTextColor(type == WriterDoc.HEADING ? headingInk() : type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : WriterDoc.isMedia(type) ? muted() | 0xFF000000
                 : type == WriterDoc.EMBED ? TigiStyle.accent() : type == WriterDoc.CODE ? 0xFFE9E3F5 : ink());
             setHintTextColor(type == WriterDoc.CODE ? 0x80E9E3F5 : muted());
             requestLayout();
         }
 
         private final android.graphics.Paint markPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private android.graphics.drawable.Drawable flower;
+
+        /** The divider: a small lilac sprig between two fading hairlines. */
+        private void drawFlowerDivider(android.graphics.Canvas canvas) {
+            if (flower == null) {
+                flower = getContext().getResources().getDrawable(R.drawable.nilak_lilac_sprig).mutate();
+            }
+            final int size = dp(30);
+            final float cx = getWidth() / 2f;
+            final float cy = getHeight() / 2f;
+            flower.setBounds((int) (cx - size / 2f), (int) (cy - size / 2f), (int) (cx + size / 2f), (int) (cy + size / 2f));
+            flower.setAlpha(dark() ? 190 : 255);
+            flower.draw(canvas);
+            markPaint.setShader(null);
+            final float half = Math.min(dp(90), getWidth() / 2f - size);
+            markPaint.setStrokeWidth(Math.max(1, dp(1)));
+            markPaint.setShader(new android.graphics.LinearGradient(cx - size / 2f - half, 0, cx - size / 2f - dp(6), 0, 0x00A374E6, 0x99A374E6, android.graphics.Shader.TileMode.CLAMP));
+            canvas.drawLine(cx - size / 2f - half, cy, cx - size / 2f - dp(6), cy, markPaint);
+            markPaint.setShader(new android.graphics.LinearGradient(cx + size / 2f + dp(6), 0, cx + size / 2f + half, 0, 0x99A374E6, 0x00A374E6, android.graphics.Shader.TileMode.CLAMP));
+            canvas.drawLine(cx + size / 2f + dp(6), cy, cx + size / 2f + half, cy, markPaint);
+            markPaint.setShader(null);
+        }
 
         /**
          * A box background (an inset drawable) reports its insets as padding, and Android would replace the text
@@ -1814,9 +1895,19 @@ public class WriterActivity extends BaseFragment {
         }
 
         private WriterTable.Grid tableGrid;
+        private WriterPoll.Card pollCard;
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            if (type == WriterDoc.POLL) {
+                final int width = View.MeasureSpec.getSize(widthMeasureSpec);
+                if (pollCard == null) {
+                    pollCard = new WriterPoll.Card();
+                }
+                pollCard.layout(getText().toString(), WriterPoll.isRef(path), width - dp(44), ink());
+                setMeasuredDimension(width, dp(10) + pollCard.height + dp(12));
+                return;
+            }
             if (type != WriterDoc.TABLE) {
                 super.onMeasure(widthMeasureSpec, heightMeasureSpec);
                 return;
@@ -1880,6 +1971,12 @@ public class WriterActivity extends BaseFragment {
 
         @Override
         protected void onDraw(android.graphics.Canvas canvas) {
+            if (type == WriterDoc.POLL) {
+                if (pollCard != null) {
+                    pollCard.draw(canvas, dp(22), dp(10), getWidth() - dp(44), dark());
+                }
+                return;
+            }
             if (type == WriterDoc.TABLE) {
                 if (tableGrid != null) {
                     tableGrid.draw(canvas, dp(22), dp(10), getWidth() - dp(44), dark());
@@ -1923,10 +2020,7 @@ public class WriterActivity extends BaseFragment {
                 media.draw(canvas);
             }
             if (type == WriterDoc.DIVIDER) {
-                markPaint.setColor(Theme.multAlpha(TigiStyle.accent(), 0.55f));
-                markPaint.setTextSize(dp(15));
-                markPaint.setTextAlign(android.graphics.Paint.Align.CENTER);
-                canvas.drawText("✣     ✣     ✣", getWidth() / 2f, getHeight() / 2f + dp(5), markPaint);
+                drawFlowerDivider(canvas);
                 return;
             }
             if (!WriterDoc.isList(type) || getLayout() == null) {

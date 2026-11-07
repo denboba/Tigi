@@ -41,6 +41,8 @@ public final class WriterDoc {
     public static final int STICKER = 12;
     /** A Telegram GIF (path = WriterMedia reference) with its caption. */
     public static final int GIF = 13;
+    /** A poll: the first line is the question, then the options; path = WriterPoll link once posted. */
+    public static final int POLL = 14;
 
     public static boolean isList(int type) {
         return type == BULLET || type == NUMBER;
@@ -88,7 +90,7 @@ public final class WriterDoc {
             return false;
         }
         for (Block block : blocks) {
-            if (block.type == DIVIDER || isMedia(block.type) || block.text.toString().trim().length() > 0) {
+            if (block.type == DIVIDER || block.type == POLL || isMedia(block.type) || block.text.toString().trim().length() > 0) {
                 return false;
             }
         }

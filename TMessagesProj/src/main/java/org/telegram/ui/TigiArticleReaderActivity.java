@@ -135,7 +135,12 @@ public class TigiArticleReaderActivity extends BaseFragment {
     public View createView(Context context) {
         actionBar.setAddToContainer(false);
         root = new FrameLayout(context);
-        root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (TigiLilac.on()) {
+            // the lilac page, like the rest of Nilak
+            root.setBackground(TigiLilac.page());
+        } else {
+            root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
         final LinearLayout outer = new LinearLayout(context);
         outer.setOrientation(LinearLayout.VERTICAL);
         outer.setPadding(0, AndroidUtilities.statusBarHeight, 0, 0);
@@ -375,7 +380,7 @@ public class TigiArticleReaderActivity extends BaseFragment {
         title.setText(meta.title);
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 28 * s);
         title.setTypeface(TigiStyle.displayExtraBold());
-        title.setTextColor(ink);
+        title.setTextColor(headingInk());
         title.setLineSpacing(dp(2), 1f);
         androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
         column.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
@@ -457,7 +462,7 @@ public class TigiArticleReaderActivity extends BaseFragment {
     private View blockView(Context context, TigiArticle.Block block, float s, int ink, int gray) {
         switch (block.type) {
             case TigiArticle.BLOCK_HEADING: {
-                final TextView view = text(context, block.text, (block.level == 1 ? 24 : block.level == 2 ? 21 : 18) * s, ink);
+                final TextView view = text(context, block.text, (block.level == 1 ? 24 : block.level == 2 ? 21 : 18) * s, headingInk());
                 view.setTypeface(TigiStyle.displayExtraBold());
                 androidx.core.view.ViewCompat.setAccessibilityHeading(view, true);
                 view.setPadding(0, dp(8), 0, 0);
@@ -516,10 +521,24 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 return list;
             }
             case TigiArticle.BLOCK_DIVIDER: {
-                final TextView view = text(context, "•   •   •", 16, gray);
-                view.setGravity(Gravity.CENTER);
-                view.setPadding(0, dp(6), 0, dp(6));
-                return view;
+                // a small lilac sprig between two fading hairlines
+                final LinearLayout row = new LinearLayout(context);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER);
+                row.setPadding(0, dp(8), 0, dp(8));
+                final View left = new View(context);
+                left.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0x00A374E6, 0x99A374E6}));
+                row.addView(left, LayoutHelper.createLinear(90, 1, Gravity.CENTER_VERTICAL, 0, 0, 8, 0));
+                final ImageView sprig = new ImageView(context);
+                sprig.setImageResource(R.drawable.nilak_lilac_sprig);
+                sprig.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                sprig.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                sprig.setAlpha(Theme.isCurrentThemeDark() ? 0.75f : 1f);
+                row.addView(sprig, LayoutHelper.createLinear(30, 30));
+                final View right = new View(context);
+                right.setBackground(new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0x99A374E6, 0x00A374E6}));
+                row.addView(right, LayoutHelper.createLinear(90, 1, Gravity.CENTER_VERTICAL, 8, 0, 0, 0));
+                return row;
             }
             case TigiArticle.BLOCK_CODE: {
                 // code on a dark card, the way developers read it: a header with Copy, lines that scroll sideways
@@ -574,7 +593,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 final LinearLayout box = new LinearLayout(context);
                 box.setOrientation(LinearLayout.VERTICAL);
                 box.addView(media, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-                addCaption(context, box, block.caption, gray);
+                if (!org.nilak.writer.WriterPoll.isRef(block.path)) {
+                    addCaption(context, box, block.caption, gray);
+                }
                 return box;
             }
             case TigiArticle.BLOCK_TABLE: {
@@ -688,6 +709,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
         if (TextUtils.isEmpty(ref)) {
             return null;
         }
+        if (org.nilak.writer.WriterPoll.isRef(ref)) {
+            return org.nilak.writer.WriterPoll.readerView(this, ref, "", Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        }
         if (org.nilak.writer.WriterMedia.isDocRef(ref)) {
             return telegramDocumentView(context, org.nilak.writer.WriterMedia.decode(ref));
         }
@@ -715,6 +739,11 @@ public class TigiArticleReaderActivity extends BaseFragment {
     }
 
     /** A Telegram sticker (centred, animated) or GIF (full width, playing) saved in the article by the Writer. */
+    /** Title and headings: deep lilac ink. */
+    private static int headingInk() {
+        return Theme.isCurrentThemeDark() ? 0xFFD9C6FA : 0xFF3D1F72;
+    }
+
     private View telegramDocumentView(Context context, TLRPC.Document document) {
         if (document == null) {
             return null;

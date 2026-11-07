@@ -50,6 +50,12 @@ public final class WriterExport {
     /** Publishes into any chat: a channel, a group or a private chat (dialogId as Telegram counts it). */
     public static void publish(int account, long dialogId, WriterDoc doc, String topic, boolean showInRead, boolean notify,
                                MessageObject editing, Result result) {
+        // polls first: each new one is posted in the chat, and the Barruu links to it
+        WriterPoll.postPolls(account, dialogId, doc, () -> publishPacked(account, dialogId, doc, topic, showInRead, notify, editing, result));
+    }
+
+    private static void publishPacked(int account, long dialogId, WriterDoc doc, String topic, boolean showInRead, boolean notify,
+                                      MessageObject editing, Result result) {
         final TLRPC.Chat channel = dialogId < 0 ? org.telegram.messenger.MessagesController.getInstance(account).getChat(-dialogId) : null;
         final String body = markdown(doc);
         final String title = doc.title.trim().isEmpty() ? LocaleController.getString(R.string.NilakWriterUntitled) : doc.title.trim();
@@ -220,7 +226,7 @@ public final class WriterExport {
         int previous = -1;
         int number = 0;
         for (WriterDoc.Block block : doc.blocks) {
-            final boolean noText = block.type == WriterDoc.DIVIDER || WriterDoc.isMedia(block.type);
+            final boolean noText = block.type == WriterDoc.DIVIDER || block.type == WriterDoc.POLL || WriterDoc.isMedia(block.type);
             final String text = noText ? "" : block.type == WriterDoc.CODE || block.type == WriterDoc.TABLE || block.type == WriterDoc.EMBED
                 ? block.text.toString().replaceAll("\\s+$", "") : inline(block.text).trim();
             if (text.trim().isEmpty() && !noText) {
@@ -286,6 +292,14 @@ public final class WriterExport {
                 case WriterDoc.TABLE:
                     out.append(table(text));
                     break;
+                case WriterDoc.POLL: {
+                    // a posted poll: its question as the caption, the link to the live Telegram poll
+                    if (!WriterPoll.isRef(block.path)) {
+                        continue;
+                    }
+                    out.append("![").append(WriterPoll.question(block.text.toString()).replace("]", "")).append("](").append(block.path).append(")");
+                    break;
+                }
                 default:
                     out.append(text);
             }

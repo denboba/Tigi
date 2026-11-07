@@ -995,8 +995,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (getParentActivity() == null) {
             return;
         }
-        // straight to the compose screen; stories and live stay where Telegram has them (stories row, channel menu)
-        TigiCreateSheet.openCompose(this);
+        // Nilak Create: every way to post in one sheet (post, article, photos, poll, location, file, live)
+        TigiCreateSheet.show(this);
     }
 
     private DialogsActivity dialogsActivity;

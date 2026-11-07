@@ -54,6 +54,11 @@ public class TigiCreateSheet {
     }
 
     public static void openCompose(BaseFragment fragment, String initialText) {
+        openCompose(fragment, initialText, 0);
+    }
+
+    /** action: ChatActivity.TIGI_ACTION_* to open a tool right away (attach menu, poll, location). */
+    public static void openCompose(BaseFragment fragment, String initialText, int action) {
         pickChannel(fragment, chat -> {
             final Bundle args = new Bundle();
             args.putLong("chat_id", chat.id);
@@ -61,8 +66,107 @@ public class TigiCreateSheet {
             if (initialText != null) {
                 args.putString("tigi_text", initialText);
             }
+            if (action != 0) {
+                args.putInt("tigi_action", action);
+            }
             fragment.presentFragment(new ChatActivity(args));
         });
+    }
+
+    /**
+     * Nilak Create: one sheet with every way to post, so nothing is hidden behind the channel screen.
+     * Post and the tools open the user's channel (made quietly on first use); Article opens Nilak Writer.
+     */
+    public static void show(BaseFragment fragment) {
+        final Context context = fragment != null ? fragment.getParentActivity() : null;
+        if (context == null) {
+            return;
+        }
+        final boolean dark = Theme.isCurrentThemeDark();
+        final LinearLayout column = new LinearLayout(context);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(dp(14), dp(6), dp(14), dp(18));
+        final TextView title = new TextView(context);
+        title.setText(LocaleController.getString(R.string.TigiCreate));
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
+        title.setTypeface(TigiStyle.displayExtraBold());
+        title.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        title.setPadding(dp(8), dp(8), dp(8), dp(2));
+        column.addView(title);
+        final TextView subtitle = new TextView(context);
+        subtitle.setText(LocaleController.getString(R.string.NilakCreateSubtitle));
+        subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
+        subtitle.setTextColor(Theme.getColor(Theme.key_dialogTextGray3));
+        subtitle.setPadding(dp(8), 0, dp(8), dp(14));
+        column.addView(subtitle);
+
+        final BottomSheet[] sheet = new BottomSheet[1];
+        final ArrayList<Object[]> items = new ArrayList<>();
+        items.add(new Object[]{"✏️", R.string.NilakCreatePost, R.string.NilakCreatePostHint, (Runnable) () -> openCompose(fragment, null, 0)});
+        items.add(new Object[]{"📖", R.string.NilakCreateArticle, R.string.NilakCreateArticleHint, (Runnable) () -> fragment.presentFragment(new org.nilak.writer.WriterActivity())});
+        items.add(new Object[]{"🖼", R.string.NilakCreateMedia, R.string.NilakCreateMediaHint, (Runnable) () -> openCompose(fragment, null, ChatActivity.TIGI_ACTION_ATTACH)});
+        items.add(new Object[]{"📊", R.string.NilakCreatePoll, R.string.NilakCreatePollHint, (Runnable) () -> openCompose(fragment, null, ChatActivity.TIGI_ACTION_POLL)});
+        items.add(new Object[]{"📍", R.string.NilakCreateLocation, R.string.NilakCreateLocationHint, (Runnable) () -> openCompose(fragment, null, ChatActivity.TIGI_ACTION_LOCATION)});
+        items.add(new Object[]{"📎", R.string.NilakCreateFile, R.string.NilakCreateFileHint, (Runnable) () -> openCompose(fragment, null, ChatActivity.TIGI_ACTION_ATTACH)});
+        if (BuildVars.TIGI_LIVE) {
+            items.add(new Object[]{"🔴", R.string.NilakCreateLive, R.string.NilakCreateLiveHint, (Runnable) () -> TigiLive.start(fragment)});
+        }
+        items.add(new Object[]{"🗂", R.string.NilakCreateArticles, R.string.NilakCreateArticlesHint, (Runnable) () -> fragment.presentFragment(new org.nilak.writer.WriterHomeActivity())});
+
+        LinearLayout row = null;
+        for (int i = 0; i < items.size(); i++) {
+            if (i % 2 == 0) {
+                row = new LinearLayout(context);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                column.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 10));
+            }
+            final Object[] item = items.get(i);
+            final Runnable action = (Runnable) item[3];
+            final LinearLayout tile = new LinearLayout(context);
+            tile.setOrientation(LinearLayout.HORIZONTAL);
+            tile.setGravity(Gravity.CENTER_VERTICAL);
+            tile.setPadding(dp(12), dp(12), dp(10), dp(12));
+            tile.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(18), dark ? 0xFF221E29 : 0xFFF6F1FD, Theme.multAlpha(TigiStyle.accent(), 0.18f)));
+            final TextView icon = new TextView(context);
+            icon.setText(org.telegram.messenger.Emoji.replaceEmoji((String) item[0], icon.getPaint().getFontMetricsInt(), false));
+            icon.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
+            icon.setGravity(Gravity.CENTER);
+            icon.setBackground(Theme.createRoundRectDrawable(dp(14), dark ? 0xFF2F2840 : 0xFFFFFFFF));
+            tile.addView(icon, LayoutHelper.createLinear(42, 42));
+            final LinearLayout texts = new LinearLayout(context);
+            texts.setOrientation(LinearLayout.VERTICAL);
+            final TextView name = new TextView(context);
+            name.setText(LocaleController.getString((Integer) item[1]));
+            name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            name.setTypeface(TigiStyle.displayBold());
+            name.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+            name.setSingleLine(true);
+            texts.addView(name);
+            final TextView hint = new TextView(context);
+            hint.setText(LocaleController.getString((Integer) item[2]));
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+            hint.setTextColor(Theme.getColor(Theme.key_dialogTextGray3));
+            hint.setMaxLines(2);
+            texts.addView(hint);
+            tile.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 10, 0, 0, 0));
+            tile.setContentDescription(name.getText() + ", " + hint.getText());
+            tile.setOnClickListener(v -> {
+                if (sheet[0] != null) {
+                    sheet[0].dismiss();
+                }
+                action.run();
+            });
+            row.addView(tile, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, i % 2 == 0 ? 0 : 5, 0, i % 2 == 0 ? 5 : 0, 0));
+        }
+        if (items.size() % 2 == 1 && row != null) {
+            row.addView(new View(context), LayoutHelper.createLinear(0, 1, 1f, 5, 0, 0, 0));
+        }
+        final ScrollView scroll = new ScrollView(context);
+        scroll.addView(column);
+        final BottomSheet.Builder builder = new BottomSheet.Builder(context, false, fragment.getResourceProvider());
+        builder.setCustomView(scroll);
+        sheet[0] = builder.create();
+        fragment.showDialog(sheet[0]);
     }
 
     /**

@@ -1688,6 +1688,21 @@ public class ChatActivity extends BaseFragment implements
     private final static int tigi_media_feed = 9101;
 
     // Tigi "+" > Post / Text: open Telegram's own composer right away and go back once the post is sent
+    public static final int TIGI_ACTION_ATTACH = 1;
+    public static final int TIGI_ACTION_POLL = 2;
+    public static final int TIGI_ACTION_LOCATION = 3;
+
+    /** Nilak Create → Location: the place picker, sent to this channel. */
+    private void tigiOpenLocation() {
+        if (getParentActivity() == null || !AndroidUtilities.isMapsInstalled(this)) {
+            return;
+        }
+        final LocationActivity fragment = new LocationActivity(LocationActivity.LOCATION_TYPE_SEND);
+        fragment.setDialogId(dialog_id);
+        fragment.setDelegate((location, live, notify, scheduleDate, payStars) -> didSelectLocation(location, live, notify, scheduleDate, payStars));
+        presentFragment(fragment);
+    }
+
     public static final int TIGI_COMPOSE_MEDIA = 1;
     public static final int TIGI_COMPOSE_TEXT = 2;
     /** Nilak's compose screen: the channel as Nilak cards above Telegram's message bar; stays open after sending. */
@@ -27647,6 +27662,15 @@ public class ChatActivity extends BaseFragment implements
                 chatActivityEnterView.setSelection(0);
                 chatActivityEnterView.openKeyboard();
             }
+            // Nilak Create: the tool picked in the Create menu opens right away
+            final int tigiAction = arguments != null ? arguments.getInt("tigi_action", 0) : 0;
+            if (tigiAction == TIGI_ACTION_ATTACH) {
+                AndroidUtilities.runOnUIThread(this::openAttachMenu, 80);
+            } else if (tigiAction == TIGI_ACTION_POLL) {
+                AndroidUtilities.runOnUIThread(() -> openPollCreate(null), 80);
+            } else if (tigiAction == TIGI_ACTION_LOCATION) {
+                AndroidUtilities.runOnUIThread(this::tigiOpenLocation, 80);
+            }
         }
         if (isOpen) {
             checkShowBlur(false);
@@ -41810,6 +41834,11 @@ public class ChatActivity extends BaseFragment implements
         @Override
         public void didPressImage(ChatMessageCell cell, float x, float y, boolean fullPreview) {
             MessageObject message = cell.getMessageObject();
+            if (message != null && TigiArticle.isArticle(message)) {
+                // a Nilak article opens in the reader, not as a file
+                TigiArticleReaderActivity.open(ChatActivity.this, message);
+                return;
+            }
             if (message.type == MessageObject.TYPE_STORY) {
                 if (message.messageOwner.media.storyItem != null && !(message.messageOwner.media.storyItem instanceof TL_stories.TL_storyItemDeleted)) {
                     TL_stories.StoryItem storyItem = message.messageOwner.media.storyItem;

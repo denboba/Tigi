@@ -1522,6 +1522,20 @@ public class WriterActivity extends BaseFragment {
 
         private final android.graphics.Paint markPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
 
+        /**
+         * A box background (an inset drawable) reports its insets as padding, and Android would replace the text
+         * padding with them: the text then runs under the labels and to the edge. Keep the padding we set.
+         */
+        @Override
+        public void setBackground(android.graphics.drawable.Drawable background) {
+            final int left = getPaddingLeft();
+            final int top = getPaddingTop();
+            final int right = getPaddingRight();
+            final int bottom = getPaddingBottom();
+            super.setBackground(background);
+            setPadding(left, top, right, bottom);
+        }
+
         /** Boxes (code, table, note, link) sit inside the page margins. */
         private android.graphics.drawable.Drawable inset(android.graphics.drawable.Drawable box) {
             return new android.graphics.drawable.InsetDrawable(box, dp(18), dp(6), dp(18), dp(6));

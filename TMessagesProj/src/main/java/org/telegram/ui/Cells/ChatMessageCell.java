@@ -2794,7 +2794,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 y -= captionY;
                 for (int a = 0; a < captionLayout.textLayoutBlocks.size(); a++) {
                     MessageObject.TextLayoutBlock block = captionLayout.textLayoutBlocks.get(a);
-                    if (block.quoteCollapse && block.collapsedHeight < block.height && y >= block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) && y < block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
+                    if (block.quoteCollapse && block.collapsedHeight < block.height && !(block.nilakFold && !block.collapsed()) && y >= block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) && y < block.textYOffset(captionLayout.textLayoutBlocks, transitionParams) + block.padTop + block.height(transitionParams) + block.padBottom) {
                         pressedBlock = a;
                         if (block.collapsedBounce == null || block.collapsedBounce.getView() != this) {
                             block.collapsedBounce = new ButtonBounce(this);
@@ -16993,7 +16993,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
                 float collapsed = 1f;
                 int blockSpoilersColor = spoilersColor;
-                final int width = (int) (block.maxRight + dp(24) > maxWidth * .7f ? maxWidth : block.maxRight + dp(24));
+                final int width = block.nilakFold ? (int) maxWidth : (int) (block.maxRight + dp(24) > maxWidth * .7f ? maxWidth : block.maxRight + dp(24));
                 if (block.quote) {
                     if (quoteLine == null) {
                         quoteLine = new ReplyMessageLine(this);
@@ -21602,7 +21602,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 textColorKey = Theme.key_windowBackgroundWhiteBlackText;
             }
             float collapsed = 1f;
-            final int width = (int) (block.maxRight + dp(24) > maxWidth * .7f ? maxWidth : block.maxRight + dp(24));
+            final int width = block.nilakFold ? (int) maxWidth : (int) (block.maxRight + dp(24) > maxWidth * .7f ? maxWidth : block.maxRight + dp(24));
             if (block.quoteCollapse) {
                 AndroidUtilities.rectTmp.set(0, -block.padTop + dp(block.first ? 3 + 1.66f : 3), width, block.height(transitionParams) + dp(4));
                 AndroidUtilities.rectTmp.offset((block.isRtl() ? rtlOffset - dp(10) : 0), 0);

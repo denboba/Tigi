@@ -9515,6 +9515,9 @@ public class MessageObject {
                     CodeHighlighting.highlight((Spannable) block.textLayout.getText(), 0, block.textLayout.getText().length(), range.language, 0, null, true);
                 }
 
+                if (messageObject != null && textPaint == Theme.chat_msgTextPaint) {
+                    messageObject.nilakSmartFold(block);
+                }
                 textLayoutBlocks.add(block);
 
                 final int currentBlockLinesCount = block.textLayout.getLineCount();

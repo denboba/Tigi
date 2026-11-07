@@ -1908,6 +1908,16 @@ public class AndroidUtilities {
         if (pathString.endsWith(".attheme")) {
             return false;
         }
+        // Nilak: articles are packed into cache/nilak_publish/<name>.nilak by the app itself and then sent
+        if (pathString.endsWith(".nilak")) {
+            try {
+                final String publishDir = new File(ApplicationLoader.applicationContext.getCacheDir(), "nilak_publish").getCanonicalPath();
+                final File f = new File(pathString);
+                if (f.getParentFile() != null && publishDir.equals(f.getParentFile().getCanonicalPath())) {
+                    return false;
+                }
+            } catch (Exception ignore) {}
+        }
         return pathString != null && pathString.toLowerCase().contains("/data/data/" + ApplicationLoader.applicationContext.getPackageName());
     }
 

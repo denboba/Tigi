@@ -15,6 +15,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.TigiArticleMedia;
 import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.TigiArticle;
@@ -275,8 +276,38 @@ public final class WriterBridge {
             for (TigiArticle.Block block : TigiArticle.parse(body)) {
                 if (block.type == TigiArticle.BLOCK_HEADING) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.HEADING, block.text));
-                } else if (block.type == TigiArticle.BLOCK_QUOTE || block.type == TigiArticle.BLOCK_CALLOUT) {
+                } else if (block.type == TigiArticle.BLOCK_QUOTE) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.QUOTE, block.text));
+                } else if (block.type == TigiArticle.BLOCK_CALLOUT) {
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.CALLOUT, block.text));
+                } else if (block.type == TigiArticle.BLOCK_CODE) {
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.CODE, block.text != null ? block.text.toString() : ""));
+                } else if (block.type == TigiArticle.BLOCK_LINK && block.url != null) {
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.EMBED, block.url));
+                } else if (block.type == TigiArticle.BLOCK_TABLE) {
+                    final StringBuilder rows = new StringBuilder();
+                    for (java.util.ArrayList<CharSequence> row : block.rows) {
+                        if (rows.length() > 0) {
+                            rows.append('\n');
+                        }
+                        for (int c = 0; c < row.size(); c++) {
+                            rows.append(c > 0 ? " | " : "").append(row.get(c));
+                        }
+                    }
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.TABLE, rows.toString()));
+                } else if (block.type == TigiArticle.BLOCK_IMAGE && WriterMedia.isDocRef(block.path)) {
+                    final TLRPC.Document document = WriterMedia.decode(block.path);
+                    if (document != null) {
+                        doc.blocks.add(new WriterDoc.Block(WriterMedia.isSticker(document) ? WriterDoc.STICKER : WriterDoc.GIF,
+                            block.caption != null ? block.caption : "", block.path));
+                    }
+                } else if (block.type == TigiArticle.BLOCK_VIDEO && block.path != null && !TigiArticleMedia.isTelegramRef(block.path)) {
+                    final File source = new File(dir, block.path);
+                    if (source.exists() && source.getCanonicalPath().startsWith(dir.getCanonicalPath())) {
+                        final File copy = new File(WriterDrafts.mediaDir(message.currentAccount), System.currentTimeMillis() + "_" + source.getName());
+                        copyFile(source, copy);
+                        doc.blocks.add(new WriterDoc.Block(WriterDoc.VIDEO, block.caption != null ? block.caption : "", copy.getAbsolutePath()));
+                    }
                 } else if (block.type == TigiArticle.BLOCK_IMAGE && block.path != null) {
                     // the photo is copied out of the file so the draft keeps it after the folder is cleaned up
                     final File source = new File(dir, block.path);

@@ -69,6 +69,10 @@ public class WriterActivity extends BaseFragment {
     private LinearLayout bubble;
     private BlockEdit focused;
     private boolean binding;
+    /** Telegram's own emoji, sticker and GIF keyboard, shown in place of the system keyboard. */
+    private FrameLayout emojiPanel;
+    private org.telegram.ui.Components.EmojiView emojiView;
+    private TextView emojiButton;
 
     /** A new article. */
     public WriterActivity() {
@@ -220,6 +224,10 @@ public class WriterActivity extends BaseFragment {
 
         toolbar = createToolbar(context);
         page.addView(toolbar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 52));
+        emojiPanel = new FrameLayout(context);
+        emojiPanel.setVisibility(View.GONE);
+        final int panelHeight = Math.max(dp(240), org.telegram.messenger.MessagesController.getGlobalEmojiSettings().getInt("kbd_height", dp(260)));
+        page.addView(emojiPanel, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, panelHeight));
         root.addView(page, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         bubble = createBubble(context);
@@ -257,7 +265,21 @@ public class WriterActivity extends BaseFragment {
     @Override
     public void onFragmentDestroy() {
         AndroidUtilities.cancelRunOnUIThread(saver);
+        if (emojiView != null) {
+            emojiView.onDestroy();
+        }
         super.onFragmentDestroy();
+    }
+
+    @Override
+    public boolean onBackPressed(boolean invoked) {
+        if (emojiPanel != null && emojiPanel.getVisibility() == View.VISIBLE) {
+            if (invoked) {
+                hideEmojiPanel();
+            }
+            return false;
+        }
+        return super.onBackPressed(invoked);
     }
 
     /** Called by the publish screen once the article went out: the draft is done. */
@@ -330,6 +352,260 @@ public class WriterActivity extends BaseFragment {
         return edit;
     }
 
+    /** Insert sheet: "Emoji" opens the Telegram keyboard on its emoji page. */
+    private static final int EMOJI = 100;
+    private static final int PICK_VIDEO = 7302;
+    private static final long MAX_VIDEO_BYTES = 200L * 1024 * 1024;
+
+    private void pickVideo() {
+        final android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_GET_CONTENT);
+        intent.setType("video/*");
+        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        try {
+            startActivityForResult(android.content.Intent.createChooser(intent, LocaleController.getString(R.string.NilakWriterVideo)), PICK_VIDEO);
+        } catch (Exception e) {
+            org.telegram.messenger.FileLog.e(e);
+        }
+    }
+
+    /** The picked video is copied into the writer's folder (it goes into the .nilak file when published). */
+    private void onVideoPicked(android.net.Uri uri) {
+        final int account = currentAccount;
+        org.telegram.messenger.Utilities.globalQueue.postRunnable(() -> {
+            String name = "video_" + System.currentTimeMillis();
+            final android.content.ContentResolver resolver = org.telegram.messenger.ApplicationLoader.applicationContext.getContentResolver();
+            String type = resolver.getType(uri);
+            name += type != null && type.contains("webm") ? ".webm" : type != null && type.contains("3gp") ? ".3gp" : ".mp4";
+            final java.io.File out = new java.io.File(WriterDrafts.mediaDir(account), name);
+            int failure = 0;
+            try (java.io.InputStream in = resolver.openInputStream(uri); java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+                final byte[] buffer = new byte[64 * 1024];
+                long total = 0;
+                int n;
+                while (in != null && (n = in.read(buffer)) > 0) {
+                    total += n;
+                    if (total > MAX_VIDEO_BYTES) {
+                        failure = R.string.NilakWriterVideoTooBig;
+                        break;
+                    }
+                    os.write(buffer, 0, n);
+                }
+                if (total == 0 && failure == 0) {
+                    failure = R.string.NilakWriterVideoFailed;
+                }
+            } catch (Throwable e) {
+                org.telegram.messenger.FileLog.e(e);
+                failure = R.string.NilakWriterVideoFailed;
+            }
+            if (failure != 0) {
+                out.delete();
+            }
+            final int error = failure;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (error != 0) {
+                    BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(error)).show();
+                    return;
+                }
+                insertMedia(WriterDoc.VIDEO, out.getAbsolutePath());
+            });
+        });
+    }
+
+    /** A frame of the video with a play mark, as wide as the text, for the editor. */
+    private android.graphics.drawable.Drawable videoDrawable(String path) {
+        if (path == null) {
+            return null;
+        }
+        try {
+            final android.graphics.Bitmap frame = android.media.ThumbnailUtils.createVideoThumbnail(path, android.provider.MediaStore.Images.Thumbnails.MINI_KIND);
+            final int width = AndroidUtilities.displaySize.x - dp(44);
+            final int height = frame != null ? Math.min(dp(360), Math.round(width * (frame.getHeight() / (float) Math.max(1, frame.getWidth())))) : dp(200);
+            final android.graphics.Bitmap canvasBitmap = android.graphics.Bitmap.createBitmap(width, Math.max(dp(120), height), android.graphics.Bitmap.Config.ARGB_8888);
+            final android.graphics.Canvas canvas = new android.graphics.Canvas(canvasBitmap);
+            canvas.drawColor(0xFF1E1A24);
+            if (frame != null) {
+                canvas.drawBitmap(frame, null, new android.graphics.Rect(0, 0, canvasBitmap.getWidth(), canvasBitmap.getHeight()), new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+                frame.recycle();
+            }
+            final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            paint.setColor(0x99000000);
+            final float cx = canvasBitmap.getWidth() / 2f;
+            final float cy = canvasBitmap.getHeight() / 2f;
+            canvas.drawCircle(cx, cy, dp(28), paint);
+            paint.setColor(0xFFFFFFFF);
+            final android.graphics.Path play = new android.graphics.Path();
+            play.moveTo(cx - dp(8), cy - dp(12));
+            play.lineTo(cx + dp(13), cy);
+            play.lineTo(cx - dp(8), cy + dp(12));
+            play.close();
+            canvas.drawPath(play, paint);
+            final androidx.core.graphics.drawable.RoundedBitmapDrawable drawable =
+                androidx.core.graphics.drawable.RoundedBitmapDrawableFactory.create(getParentActivity().getResources(), canvasBitmap);
+            drawable.setCornerRadius(dp(12));
+            drawable.setBounds(0, 0, canvasBitmap.getWidth(), canvasBitmap.getHeight());
+            return drawable;
+        } catch (Throwable e) {
+            org.telegram.messenger.FileLog.e(e);
+            return null;
+        }
+    }
+
+    /* ---------- Telegram keyboard: emoji, animated emoji, stickers, GIFs ---------- */
+
+    private void createEmojiView() {
+        if (emojiView != null || getParentActivity() == null) {
+            return;
+        }
+        emojiView = new org.telegram.ui.Components.EmojiView(this, true, true, true, getParentActivity(), true, null, null, true, null, false);
+        emojiView.allowEmojisForNonPremium(true);
+        emojiView.setDelegate(new org.telegram.ui.Components.EmojiView.EmojiViewDelegate() {
+            @Override
+            public boolean onBackspace() {
+                final BlockEdit target = textTarget();
+                if (target == null || target.length() == 0) {
+                    return false;
+                }
+                target.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL));
+                target.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL));
+                return true;
+            }
+
+            @Override
+            public void onEmojiSelected(String emoji) {
+                final BlockEdit target = textTarget();
+                if (target == null) {
+                    return;
+                }
+                insertText(target, org.telegram.messenger.Emoji.replaceEmoji(emoji, target.getPaint().getFontMetricsInt(), false));
+            }
+
+            @Override
+            public void onCustomEmojiSelected(long documentId, org.telegram.tgnet.TLRPC.Document document, String emoticon, boolean isRecent) {
+                final BlockEdit target = textTarget();
+                if (target == null) {
+                    return;
+                }
+                final android.text.SpannableString emoji = new android.text.SpannableString(TextUtils.isEmpty(emoticon) ? "😀" : emoticon);
+                final org.telegram.ui.Components.AnimatedEmojiSpan span = document != null
+                    ? new org.telegram.ui.Components.AnimatedEmojiSpan(document, target.getPaint().getFontMetricsInt())
+                    : new org.telegram.ui.Components.AnimatedEmojiSpan(documentId, target.getPaint().getFontMetricsInt());
+                emoji.setSpan(span, 0, emoji.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                insertText(target, emoji);
+            }
+
+            @Override
+            public void onStickerSelected(View view, org.telegram.tgnet.TLRPC.Document sticker, String query, Object parent, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod) {
+                final String ref = WriterMedia.encode(sticker);
+                if (ref != null) {
+                    hideEmojiPanel();
+                    insertMedia(WriterDoc.STICKER, ref);
+                }
+            }
+
+            @Override
+            public void onGifSelected(View view, Object gif, String query, Object parent, boolean notify, int scheduleDate, int scheduleRepeatPeriod) {
+                org.telegram.tgnet.TLRPC.Document document = null;
+                if (gif instanceof org.telegram.tgnet.TLRPC.Document) {
+                    document = (org.telegram.tgnet.TLRPC.Document) gif;
+                } else if (gif instanceof org.telegram.tgnet.TLRPC.BotInlineResult) {
+                    document = ((org.telegram.tgnet.TLRPC.BotInlineResult) gif).document;
+                }
+                final String ref = WriterMedia.encode(document);
+                if (ref == null) {
+                    BulletinFactory.of(WriterActivity.this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakWriterGifFailed)).show();
+                    return;
+                }
+                hideEmojiPanel();
+                insertMedia(WriterDoc.GIF, ref);
+            }
+
+            @Override
+            public void onClearEmojiRecent() {
+                if (emojiView != null) {
+                    emojiView.clearRecentEmoji();
+                }
+            }
+        });
+        emojiPanel.addView(emojiView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+    }
+
+    /** Where typed emoji go: the block being written (not a divider or a sticker), else a new line at the end. */
+    private BlockEdit textTarget() {
+        if (focused != null && focused.type != WriterDoc.DIVIDER && focused.type != WriterDoc.STICKER) {
+            return focused;
+        }
+        if (column == null) {
+            return null;
+        }
+        final BlockEdit edit = newBlockView(getParentActivity(), WriterDoc.PARAGRAPH, "");
+        column.addView(edit);
+        focused = edit;
+        edit.requestFocus();
+        return edit;
+    }
+
+    private void insertText(BlockEdit target, CharSequence text) {
+        int at = target.getSelectionEnd();
+        if (at < 0) {
+            at = target.length();
+        }
+        target.getText().replace(Math.min(at, target.getSelectionStart() < 0 ? at : target.getSelectionStart()), at, text);
+        target.updateAnimatedEmoji(true);
+        changed();
+    }
+
+    private void showEmojiPanel(boolean gifs) {
+        createEmojiView();
+        if (emojiView == null) {
+            return;
+        }
+        hideBubble();
+        if (focused != null) {
+            AndroidUtilities.hideKeyboard(focused);
+        } else if (root != null) {
+            AndroidUtilities.hideKeyboard(root);
+        }
+        // the panel replaces the keyboard once it has gone
+        AndroidUtilities.runOnUIThread(() -> {
+            if (emojiPanel == null || emojiView == null) {
+                return;
+            }
+            emojiPanel.setVisibility(View.VISIBLE);
+            emojiView.setVisibility(View.VISIBLE);
+            emojiView.onOpen(false, false);
+            if (gifs) {
+                emojiView.switchToGifRecent();
+            }
+            emojiView.setShowing(true);
+            light(emojiButton, true);
+            if (focused != null) {
+                focused.requestFocus();
+            }
+        }, 120);
+    }
+
+    private void hideEmojiPanel() {
+        if (emojiPanel != null && emojiPanel.getVisibility() == View.VISIBLE) {
+            emojiPanel.setVisibility(View.GONE);
+            if (emojiView != null) {
+                emojiView.setShowing(false);
+            }
+            light(emojiButton, false);
+        }
+    }
+
+    private void toggleEmojiPanel() {
+        if (emojiPanel != null && emojiPanel.getVisibility() == View.VISIBLE) {
+            hideEmojiPanel();
+            final BlockEdit target = textTarget();
+            if (target != null) {
+                focusBlock(target, target.getSelectionEnd() >= 0 ? target.getSelectionEnd() : target.length());
+            }
+        } else {
+            showEmojiPanel(false);
+        }
+    }
+
     /* ---------- photos ---------- */
 
     private static final int PICK_PHOTO = 7301;
@@ -347,6 +623,10 @@ public class WriterActivity extends BaseFragment {
 
     @Override
     public void onActivityResultFragment(int requestCode, int resultCode, android.content.Intent data) {
+        if (requestCode == PICK_VIDEO && resultCode == android.app.Activity.RESULT_OK && data != null && data.getData() != null) {
+            onVideoPicked(data.getData());
+            return;
+        }
         if (requestCode != PICK_PHOTO || resultCode != android.app.Activity.RESULT_OK || data == null || data.getData() == null) {
             return;
         }
@@ -403,6 +683,13 @@ public class WriterActivity extends BaseFragment {
     }
 
     private void insertPhoto(String path) {
+        insertMedia(WriterDoc.PHOTO, path);
+    }
+
+    private void insertMedia(int type, String path) {
+        if (column == null || getParentActivity() == null) {
+            return;
+        }
         int index = focused != null ? column.indexOfChild(focused) + 1 : column.getChildCount();
         if (focused != null && focused.length() == 0 && focused.type == WriterDoc.PARAGRAPH) {
             // an empty line is replaced by the photo
@@ -410,9 +697,12 @@ public class WriterActivity extends BaseFragment {
             column.removeView(focused);
             focused = null;
         }
-        final BlockEdit photo = newBlockView(getParentActivity(), WriterDoc.PHOTO, "", path);
+        final BlockEdit photo = newBlockView(getParentActivity(), type, "", path);
         column.addView(photo, index);
         // writing goes on under the photo; the caption is a tap away
+        if (index + 1 > column.getChildCount()) {
+            index = column.getChildCount() - 1;
+        }
         BlockEdit after = index + 1 < column.getChildCount() ? (BlockEdit) column.getChildAt(index + 1) : null;
         if (after == null || after.type != WriterDoc.PARAGRAPH || after.length() > 0) {
             after = newBlockView(getParentActivity(), WriterDoc.PARAGRAPH, "");
@@ -424,7 +714,7 @@ public class WriterActivity extends BaseFragment {
 
     private void confirmRemovePhoto(BlockEdit photo) {
         final AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle(LocaleController.getString(R.string.NilakWriterRemovePhoto));
+        builder.setTitle(LocaleController.getString(photo.type == WriterDoc.PHOTO ? R.string.NilakWriterRemovePhoto : R.string.NilakWriterRemoveMedia));
         builder.setPositiveButton(LocaleController.getString(R.string.Delete), (d, w) -> {
             column.removeView(photo);
             changed();
@@ -465,6 +755,7 @@ public class WriterActivity extends BaseFragment {
     }
 
     private void focusBlock(BlockEdit edit, int position) {
+        hideEmojiPanel();
         edit.requestFocus();
         edit.setSelection(Math.max(0, Math.min(position, edit.length())));
         AndroidUtilities.showKeyboard(edit);
@@ -492,7 +783,7 @@ public class WriterActivity extends BaseFragment {
 
     /** Backspace at the start: a heading or quote becomes a paragraph; a paragraph joins the block above. */
     private void joinUp(BlockEdit edit) {
-        if (edit.type == WriterDoc.PHOTO) {
+        if (WriterDoc.isMedia(edit.type)) {
             // Backspace in an empty caption asks to remove the photo
             if (edit.length() == 0) {
                 confirmRemovePhoto(edit);
@@ -519,8 +810,8 @@ public class WriterActivity extends BaseFragment {
             changed();
             return;
         }
-        if (above.type == WriterDoc.PHOTO) {
-            // text never joins a photo: an empty line goes away, otherwise the cursor moves to the caption
+        if (WriterDoc.isMedia(above.type) || WriterDoc.isMultiline(above.type) || above.type == WriterDoc.EMBED) {
+            // text never joins a photo, code, a table or a link card: an empty line goes away, otherwise the cursor moves to the caption
             if (edit.length() == 0) {
                 column.removeView(edit);
             }
@@ -542,7 +833,7 @@ public class WriterActivity extends BaseFragment {
             }
             focused = (BlockEdit) column.getChildAt(column.getChildCount() - 1);
         }
-        if (focused.type == WriterDoc.PHOTO || focused.type == WriterDoc.DIVIDER) {
+        if (WriterDoc.isMedia(focused.type) || focused.type == WriterDoc.DIVIDER) {
             return; // a caption stays a caption
         }
         focused.setType(focused.type == type ? WriterDoc.PARAGRAPH : type);
@@ -553,7 +844,7 @@ public class WriterActivity extends BaseFragment {
     /** Insert sheet: a new heading or quote under the current block. */
     private void insertBlock(int type) {
         int index = focused != null ? column.indexOfChild(focused) + 1 : column.getChildCount();
-        if (focused != null && focused.length() == 0 && type != WriterDoc.DIVIDER && focused.type != WriterDoc.DIVIDER) {
+        if (focused != null && focused.length() == 0 && type != WriterDoc.DIVIDER && focused.type != WriterDoc.DIVIDER && !WriterDoc.isMedia(focused.type)) {
             // an empty line simply becomes the new kind of block
             focused.setType(type);
             focusBlock(focused, 0);
@@ -717,9 +1008,10 @@ public class WriterActivity extends BaseFragment {
         italicButton = tool(context, "I", R.string.NilakWriterItalic, v -> toggleStyle(Typeface.ITALIC));
         italicButton.setTypeface(Typeface.create(Typeface.SERIF, Typeface.ITALIC));
         final TextView link = tool(context, "🔗", R.string.NilakWriterLink, v -> editLink());
+        emojiButton = tool(context, "☺", R.string.NilakWriterEmoji, v -> toggleEmojiPanel());
         final TextView add = tool(context, "＋", R.string.NilakWriterAdd, v -> openInsertSheet());
         add.setTextColor(TigiStyle.accent());
-        for (TextView view : new TextView[]{headingButton, quoteButton, boldButton, italicButton, link, add}) {
+        for (TextView view : new TextView[]{headingButton, quoteButton, boldButton, italicButton, link, emojiButton, add}) {
             bar.addView(view, LayoutHelper.createLinear(0, 40, 1f, 2, 0, 2, 0));
         }
         return bar;
@@ -829,10 +1121,11 @@ public class WriterActivity extends BaseFragment {
         // {label, block type to insert (-1 = coming soon)}
         final int[][] items = {
             {R.string.NilakWriterHeading, WriterDoc.HEADING}, {R.string.NilakWriterQuote, WriterDoc.QUOTE}, {R.string.NilakWriterList, WriterDoc.BULLET}, {R.string.NilakWriterNumbers, WriterDoc.NUMBER},
-            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterPhoto, WriterDoc.PHOTO}, {R.string.NilakWriterVideo, -1}, {R.string.NilakWriterStickers, -1},
-            {R.string.NilakWriterGif, -1}, {R.string.NilakWriterCode, -1}, {R.string.NilakWriterTable, -1}, {R.string.NilakWriterEmbed, -1}
+            {R.string.NilakWriterPhoto, WriterDoc.PHOTO}, {R.string.NilakWriterVideo, WriterDoc.VIDEO}, {R.string.NilakWriterStickers, WriterDoc.STICKER}, {R.string.NilakWriterGif, WriterDoc.GIF},
+            {R.string.NilakWriterCode, WriterDoc.CODE}, {R.string.NilakWriterTable, WriterDoc.TABLE}, {R.string.NilakWriterEmbed, WriterDoc.EMBED}, {R.string.NilakWriterNote, WriterDoc.CALLOUT},
+            {R.string.NilakWriterDivider, WriterDoc.DIVIDER}, {R.string.NilakWriterEmoji, EMOJI}
         };
-        final String[] icons = {"H", "❝", "•", "1.", "✣", "🖼", "▶", "✨", "GIF", "{ }", "▦", "↗"};
+        final String[] icons = {"H", "❝", "•", "1.", "🖼", "▶", "✨", "GIF", "{ }", "▦", "↗", "💡", "✣", "☺"};
         LinearLayout row = null;
         for (int i = 0; i < items.length; i++) {
             if (i % 4 == 0) {
@@ -850,10 +1143,19 @@ public class WriterActivity extends BaseFragment {
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.info, LocaleController.getString(R.string.NilakWriterSoonToast)).show();
                 } else if (blockType == WriterDoc.PHOTO) {
                     pickPhoto();
+                } else if (blockType == WriterDoc.VIDEO) {
+                    pickVideo();
+                } else if (blockType == WriterDoc.STICKER || blockType == EMOJI) {
+                    showEmojiPanel(false);
+                } else if (blockType == WriterDoc.GIF) {
+                    showEmojiPanel(true);
                 } else {
                     insertBlock(blockType);
                 }
             }), LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+        }
+        while (row != null && row.getChildCount() < 4) {
+            row.addView(new View(context), LayoutHelper.createLinear(0, 1, 1f));
         }
         final TextView words = new TextView(context);
         words.setText(LocaleController.formatString(R.string.NilakWriterWords, doc.wordCount(), doc.minutes()));
@@ -919,9 +1221,14 @@ public class WriterActivity extends BaseFragment {
 
     /* ---------- one block of text ---------- */
 
-    private class BlockEdit extends EditText {
+    private class BlockEdit extends org.telegram.ui.Components.EditTextEffects {
         int type = WriterDoc.PARAGRAPH;
         String path;
+        /** STICKER / GIF: the Telegram sticker or GIF drawn above the caption. */
+        private org.telegram.messenger.ImageReceiver media;
+        private int mediaWidth;
+        private int mediaHeight;
+        private boolean attached;
 
         BlockEdit(Context context) {
             super(context);
@@ -946,6 +1253,19 @@ public class WriterActivity extends BaseFragment {
                         return;
                     }
                     final int newline = TextUtils.indexOf(s, '\n');
+                    if (newline >= 0 && WriterDoc.isMultiline(type)) {
+                        // code and tables keep their lines; Enter on an empty last line leaves the block
+                        final int last = s.length() - 1;
+                        if (s.charAt(last) == '\n' && last > 0 && s.charAt(last - 1) == '\n' && getSelectionEnd() == s.length()) {
+                            binding = true;
+                            s.delete(last - 1, last + 1);
+                            binding = false;
+                            split(BlockEdit.this, s.length());
+                            return;
+                        }
+                        changed();
+                        return;
+                    }
                     if (newline >= 0) {
                         binding = true;
                         s.delete(newline, newline + 1);
@@ -975,7 +1295,84 @@ public class WriterActivity extends BaseFragment {
         void setType(int type) {
             this.type = type;
             final int index = column != null ? column.indexOfChild(this) : -1;
+            setCompoundDrawables(null, null, null, null);
+            setGravity(Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT));
+            setHorizontallyScrolling(false);
+            setMedia(null);
+            setInputType(type == WriterDoc.EMBED ? EditorInfo.TYPE_CLASS_TEXT | EditorInfo.TYPE_TEXT_VARIATION_URI | EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE
+                : WriterDoc.isMultiline(type) ? EditorInfo.TYPE_CLASS_TEXT | EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS | EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE
+                : EditorInfo.TYPE_CLASS_TEXT | EditorInfo.TYPE_TEXT_FLAG_CAP_SENTENCES | EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE);
             switch (type) {
+                case WriterDoc.CODE:
+                    setTypeface(Typeface.MONOSPACE);
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.5f);
+                    setLineSpacing(0, 1.3f);
+                    setGravity(Gravity.TOP | Gravity.LEFT);
+                    setPadding(dp(36), dp(14), dp(36), dp(14));
+                    setBackground(inset(Theme.createRoundRectDrawable(dp(12), dark() ? 0xFF221E29 : 0xFFF4F0FA)));
+                    setHint(LocaleController.getString(R.string.NilakWriterCodeHint));
+                    break;
+                case WriterDoc.TABLE:
+                    setTypeface(Typeface.MONOSPACE);
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.5f);
+                    setLineSpacing(0, 1.6f);
+                    setPadding(dp(36), dp(14), dp(36), dp(14));
+                    final GradientDrawable grid = new GradientDrawable();
+                    grid.setCornerRadius(dp(12));
+                    grid.setColor(dark() ? 0xFF1B1820 : 0xFFFFFFFF);
+                    grid.setStroke(dp(1), dark() ? 0xFF3A3346 : 0xFFE3D9F2);
+                    setBackground(inset(grid));
+                    setHint(LocaleController.getString(R.string.NilakWriterTableHint));
+                    break;
+                case WriterDoc.CALLOUT:
+                    setTypeface(Typeface.DEFAULT);
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16.5f);
+                    setLineSpacing(0, 1.45f);
+                    setPadding(dp(36), dp(14), dp(36), dp(14));
+                    setBackground(inset(Theme.createRoundRectDrawable(dp(14), Theme.multAlpha(TigiStyle.accent(), dark() ? 0.22f : 0.12f))));
+                    setHint(LocaleController.getString(R.string.NilakWriterNoteHint));
+                    break;
+                case WriterDoc.EMBED:
+                    setTypeface(TigiStyle.displayBold());
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+                    setLineSpacing(0, 1.2f);
+                    setPadding(dp(36), dp(16), dp(36), dp(16));
+                    setBackground(inset(Theme.createRoundRectDrawable(dp(14), dark() ? 0xFF221E29 : 0xFFF4F0FA)));
+                    setHint(LocaleController.getString(R.string.NilakWriterEmbedHint));
+                    break;
+                case WriterDoc.VIDEO:
+                    setTypeface(Typeface.DEFAULT);
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+                    setLineSpacing(0, 1.3f);
+                    setGravity(Gravity.CENTER_HORIZONTAL);
+                    setPadding(dp(22), dp(10), dp(22), dp(12));
+                    setBackground(null);
+                    setHint(LocaleController.getString(R.string.NilakWriterCaptionHint));
+                    setCompoundDrawablePadding(dp(8));
+                    setCompoundDrawables(null, videoDrawable(path), null, null);
+                    break;
+                case WriterDoc.STICKER:
+                case WriterDoc.GIF: {
+                    final org.telegram.tgnet.TLRPC.Document document = WriterMedia.decode(path);
+                    final int width = AndroidUtilities.displaySize.x - dp(44);
+                    if (type == WriterDoc.STICKER) {
+                        mediaWidth = mediaHeight = dp(160);
+                    } else {
+                        mediaWidth = width;
+                        mediaHeight = Math.max(dp(120), Math.min(dp(400), Math.round(width / WriterMedia.aspect(document))));
+                    }
+                    setTypeface(Typeface.DEFAULT);
+                    setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+                    setLineSpacing(0, 1.3f);
+                    setGravity(Gravity.CENTER_HORIZONTAL);
+                    setPadding(dp(22), dp(10) + mediaHeight + dp(8), dp(22), dp(12));
+                    setBackground(null);
+                    // a sticker needs no caption; a GIF can have one
+                    setHint(type == WriterDoc.GIF ? LocaleController.getString(R.string.NilakWriterCaptionHint) : null);
+                    setContentDescription(LocaleController.getString(type == WriterDoc.GIF ? R.string.AttachGif : R.string.AttachSticker));
+                    setMedia(document);
+                    break;
+                }
                 case WriterDoc.HEADING:
                     setTypeface(TigiStyle.displayExtraBold());
                     setTextSize(TypedValue.COMPLEX_UNIT_DIP, 21);
@@ -1048,14 +1445,74 @@ public class WriterActivity extends BaseFragment {
                     setBackground(null);
                     setHint(column != null && (column.getChildCount() == 0 || index == 0) ? LocaleController.getString(R.string.NilakWriterStart) : null);
             }
-            setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : type == WriterDoc.PHOTO ? muted() | 0xFF000000 : ink());
+            setTextColor(type == WriterDoc.QUOTE ? (dark() ? 0xFFCDBEEA : 0xFF4A3A66) : WriterDoc.isMedia(type) ? muted() | 0xFF000000
+                : type == WriterDoc.EMBED ? TigiStyle.accent() : ink());
         }
 
         private final android.graphics.Paint markPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
 
+        /** Boxes (code, table, note, link) sit inside the page margins. */
+        private android.graphics.drawable.Drawable inset(android.graphics.drawable.Drawable box) {
+            return new android.graphics.drawable.InsetDrawable(box, dp(18), dp(6), dp(18), dp(6));
+        }
+
+        private void setMedia(org.telegram.tgnet.TLRPC.Document document) {
+            if (document == null) {
+                if (media != null) {
+                    media.onDetachedFromWindow();
+                    media = null;
+                }
+                return;
+            }
+            if (media == null) {
+                media = new org.telegram.messenger.ImageReceiver(this);
+                media.setRoundRadius(type == WriterDoc.GIF ? dp(12) : 0);
+                if (attached) {
+                    media.onAttachedToWindow();
+                }
+            }
+            if (type == WriterDoc.STICKER) {
+                media.setAspectFit(true);
+            }
+            WriterMedia.bind(media, document);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            attached = true;
+            if (media != null) {
+                media.onAttachedToWindow();
+            }
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            attached = false;
+            if (media != null) {
+                media.onDetachedFromWindow();
+            }
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent event) {
+            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN && emojiPanel != null && emojiPanel.getVisibility() == View.VISIBLE) {
+                // touching the text brings the keyboard back in place of the emoji panel
+                hideEmojiPanel();
+                AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(this), 50);
+            }
+            return super.onTouchEvent(event);
+        }
+
         @Override
         protected void onDraw(android.graphics.Canvas canvas) {
             super.onDraw(canvas);
+            if (media != null) {
+                final float left = (getWidth() - mediaWidth) / 2f;
+                media.setImageCoords(left, dp(10) + getScrollY(), mediaWidth, mediaHeight);
+                media.draw(canvas);
+            }
             if (type == WriterDoc.DIVIDER) {
                 markPaint.setColor(Theme.multAlpha(TigiStyle.accent(), 0.55f));
                 markPaint.setTextSize(dp(15));

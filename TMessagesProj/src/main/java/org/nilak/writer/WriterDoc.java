@@ -27,9 +27,33 @@ public final class WriterDoc {
     public static final int DIVIDER = 5;
     /** A photo (path to the copy in the writer's folder) with its caption as the text. */
     public static final int PHOTO = 6;
+    /** Code, kept exactly as typed (monospace, its own lines). */
+    public static final int CODE = 7;
+    /** A note box (a callout). */
+    public static final int CALLOUT = 8;
+    /** A video from the gallery (path) with its caption. */
+    public static final int VIDEO = 9;
+    /** A link shown as a card; the text is the address. */
+    public static final int EMBED = 10;
+    /** A table: one row per line, cells split by |, the first row is the header. */
+    public static final int TABLE = 11;
+    /** A Telegram sticker (path = WriterMedia "tgdoc:" reference). */
+    public static final int STICKER = 12;
+    /** A Telegram GIF (path = WriterMedia reference) with its caption. */
+    public static final int GIF = 13;
 
     public static boolean isList(int type) {
         return type == BULLET || type == NUMBER;
+    }
+
+    /** Blocks that are a picture or a clip, with an optional caption as their text. */
+    public static boolean isMedia(int type) {
+        return type == PHOTO || type == VIDEO || type == STICKER || type == GIF;
+    }
+
+    /** Blocks where Enter adds a line instead of starting a new block. */
+    public static boolean isMultiline(int type) {
+        return type == CODE || type == TABLE;
     }
 
     public static final class Block {
@@ -62,7 +86,7 @@ public final class WriterDoc {
             return false;
         }
         for (Block block : blocks) {
-            if (block.type == DIVIDER || block.type == PHOTO || block.text.toString().trim().length() > 0) {
+            if (block.type == DIVIDER || isMedia(block.type) || block.text.toString().trim().length() > 0) {
                 return false;
             }
         }
@@ -149,6 +173,8 @@ public final class WriterDoc {
             mark.put("e", end);
             if (span instanceof URLSpan) {
                 mark.put("u", ((URLSpan) span).getURL());
+            } else if (span instanceof org.telegram.ui.Components.AnimatedEmojiSpan) {
+                mark.put("u", String.valueOf(((org.telegram.ui.Components.AnimatedEmojiSpan) span).getDocumentId()));
             }
             marks.put(mark);
         }
@@ -184,6 +210,9 @@ public final class WriterDoc {
         if (span instanceof URLSpan) {
             return "l";
         }
+        if (span instanceof org.telegram.ui.Components.AnimatedEmojiSpan) {
+            return "e";
+        }
         return null;
     }
 
@@ -192,6 +221,12 @@ public final class WriterDoc {
             case "b": return new StyleSpan(Typeface.BOLD);
             case "i": return new StyleSpan(Typeface.ITALIC);
             case "l": return url != null && !url.isEmpty() ? new URLSpan(url) : null;
+            case "e":
+                try {
+                    return new org.telegram.ui.Components.AnimatedEmojiSpan(Long.parseLong(url), null);
+                } catch (Exception e) {
+                    return null;
+                }
             default: return null;
         }
     }

@@ -25,11 +25,11 @@ final class WriterPreview {
             final File media = new File(dir, "media");
             String cover = null;
             for (WriterDoc.Block block : doc.blocks) {
-                if (block.type == WriterDoc.PHOTO && block.path != null && new File(block.path).exists()) {
+                if ((block.type == WriterDoc.PHOTO || block.type == WriterDoc.VIDEO) && block.path != null && new File(block.path).exists()) {
                     media.mkdirs();
                     final File source = new File(block.path);
                     copy(source, new File(media, source.getName()));
-                    if (cover == null) {
+                    if (cover == null && block.type == WriterDoc.PHOTO) {
                         cover = "media/" + source.getName();
                     }
                 }

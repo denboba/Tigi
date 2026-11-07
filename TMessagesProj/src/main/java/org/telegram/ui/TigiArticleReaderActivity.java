@@ -525,6 +525,33 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 addCaption(context, box, block.caption, gray);
                 return box;
             }
+            case TigiArticle.BLOCK_TABLE: {
+                // a grid that scrolls sideways when it is wider than the page; the first row is the header
+                final HorizontalScrollView box = new HorizontalScrollView(context);
+                box.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray)));
+                final android.widget.TableLayout table = new android.widget.TableLayout(context);
+                table.setPadding(dp(4), dp(4), dp(4), dp(4));
+                final int line = Theme.multAlpha(gray, 0.25f);
+                for (int r = 0; r < block.rows.size(); r++) {
+                    final android.widget.TableRow row = new android.widget.TableRow(context);
+                    for (CharSequence cell : block.rows.get(r)) {
+                        final TextView view = text(context, cell, 15 * s, ink);
+                        view.setPadding(dp(12), dp(8), dp(12), dp(8));
+                        if (r == 0) {
+                            view.setTypeface(TigiStyle.displayBold());
+                        }
+                        row.addView(view);
+                    }
+                    if (r >= 1) {
+                        final View rule = new View(context);
+                        rule.setBackgroundColor(line);
+                        table.addView(rule, new android.widget.TableLayout.LayoutParams(android.widget.TableLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1) / 2)));
+                    }
+                    table.addView(row);
+                }
+                box.addView(table);
+                return box;
+            }
             case TigiArticle.BLOCK_LINK: {
                 final LinearLayout card = new LinearLayout(context);
                 card.setOrientation(LinearLayout.VERTICAL);
@@ -557,6 +584,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
         if (TextUtils.isEmpty(ref)) {
             return null;
         }
+        if (org.nilak.writer.WriterMedia.isDocRef(ref)) {
+            return telegramDocumentView(context, org.nilak.writer.WriterMedia.decode(ref));
+        }
         if (TigiArticleMedia.isTelegramRef(ref)) {
             final MessageObject media = linked.get(TigiArticleMedia.key(ref));
             if (media == null) {
@@ -578,6 +608,35 @@ public class TigiArticleReaderActivity extends BaseFragment {
             return null;
         }
         return videoHint || TigiArticle.isVideoPath(ref) ? videoView(context, file) : imageView(context, file, false);
+    }
+
+    /** A Telegram sticker (centred, animated) or GIF (full width, playing) saved in the article by the Writer. */
+    private View telegramDocumentView(Context context, TLRPC.Document document) {
+        if (document == null) {
+            return null;
+        }
+        final org.telegram.ui.Components.BackupImageView image = new org.telegram.ui.Components.BackupImageView(context);
+        final FrameLayout box = new FrameLayout(context);
+        if (org.nilak.writer.WriterMedia.isSticker(document)) {
+            image.setAspectFit(true);
+            box.addView(image, LayoutHelper.createFrame(180, 180, Gravity.CENTER));
+            box.setContentDescription(LocaleController.getString(R.string.AttachSticker));
+            org.nilak.writer.WriterMedia.bind(image.getImageReceiver(), document);
+            final LinearLayout wrapper = new LinearLayout(context);
+            wrapper.setGravity(Gravity.CENTER_HORIZONTAL);
+            wrapper.addView(box, LayoutHelper.createLinear(180, 180));
+            return wrapper;
+        }
+        final int width = AndroidUtilities.displaySize.x - dp(40);
+        final int height = Math.max(dp(120), Math.min(dp(480), Math.round(width / org.nilak.writer.WriterMedia.aspect(document))));
+        image.setRoundRadius(dp(12));
+        box.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.getColor(Theme.key_windowBackgroundGray)));
+        box.addView(image, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        box.setContentDescription(LocaleController.getString(R.string.AttachGif));
+        org.nilak.writer.WriterMedia.bind(image.getImageReceiver(), document);
+        final LinearLayout wrapper = new LinearLayout(context);
+        wrapper.addView(box, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height));
+        return wrapper;
     }
 
     private View telegramMediaView(Context context, MessageObject media) {

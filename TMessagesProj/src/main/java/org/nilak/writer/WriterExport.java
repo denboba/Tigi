@@ -58,7 +58,7 @@ public final class WriterExport {
                 dir.mkdirs();
                 final File media = new File(dir, "media");
                 for (WriterDoc.Block block : doc.blocks) {
-                    if (block.type == WriterDoc.PHOTO && !TextUtils.isEmpty(block.path)) {
+                    if ((block.type == WriterDoc.PHOTO || block.type == WriterDoc.VIDEO) && !TextUtils.isEmpty(block.path)) {
                         media.mkdirs();
                         final File source = new File(block.path);
                         if (source.exists()) {
@@ -144,8 +144,10 @@ public final class WriterExport {
         int previous = -1;
         int number = 0;
         for (WriterDoc.Block block : doc.blocks) {
-            final String text = block.type == WriterDoc.DIVIDER || block.type == WriterDoc.PHOTO ? "" : inline(block.text).trim();
-            if (text.isEmpty() && block.type != WriterDoc.DIVIDER && block.type != WriterDoc.PHOTO) {
+            final boolean noText = block.type == WriterDoc.DIVIDER || WriterDoc.isMedia(block.type);
+            final String text = noText ? "" : block.type == WriterDoc.CODE || block.type == WriterDoc.TABLE || block.type == WriterDoc.EMBED
+                ? block.text.toString().replaceAll("\\s+$", "") : inline(block.text).trim();
+            if (text.trim().isEmpty() && !noText) {
                 continue;
             }
             // list items stay together; everything else is separated by an empty line
@@ -170,7 +172,8 @@ public final class WriterExport {
                 case WriterDoc.DIVIDER:
                     out.append("---");
                     break;
-                case WriterDoc.PHOTO: {
+                case WriterDoc.PHOTO:
+                case WriterDoc.VIDEO: {
                     if (TextUtils.isEmpty(block.path)) {
                         continue;
                     }
@@ -178,6 +181,35 @@ public final class WriterExport {
                     out.append("![").append(caption).append("](media/").append(new File(block.path).getName()).append(")");
                     break;
                 }
+                case WriterDoc.STICKER:
+                case WriterDoc.GIF: {
+                    if (!WriterMedia.isDocRef(block.path)) {
+                        continue;
+                    }
+                    final String caption = block.type == WriterDoc.GIF ? block.text.toString().trim().replace("]", "").replace('\n', ' ') : "";
+                    out.append("![").append(caption).append("](").append(block.path).append(")");
+                    break;
+                }
+                case WriterDoc.CODE:
+                    out.append("```\n").append(text.replace("```", "``\u200b`")).append("\n```");
+                    break;
+                case WriterDoc.CALLOUT:
+                    out.append("> [!NOTE] ").append(text.replace("\n", "\n> "));
+                    break;
+                case WriterDoc.EMBED: {
+                    String url = text.trim().replace('\n', ' ');
+                    if (url.contains(" ")) {
+                        url = url.substring(0, url.indexOf(' '));
+                    }
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        url = "https://" + url;
+                    }
+                    out.append(url);
+                    break;
+                }
+                case WriterDoc.TABLE:
+                    out.append(table(text));
+                    break;
                 default:
                     out.append(text);
             }
@@ -209,6 +241,7 @@ public final class WriterExport {
                 boolean bold = false;
                 boolean italic = false;
                 String url = null;
+                long emoji = 0;
                 for (Object span : spanned.getSpans(from, to, Object.class)) {
                     if (spanned.getSpanStart(span) > from || spanned.getSpanEnd(span) < to) {
                         continue;
@@ -220,7 +253,15 @@ public final class WriterExport {
                         italic = true;
                     } else if ("l".equals(kind)) {
                         url = ((URLSpan) span).getURL();
+                    } else if ("e".equals(kind)) {
+                        emoji = ((org.telegram.ui.Components.AnimatedEmojiSpan) span).getDocumentId();
                     }
+                }
+                if (emoji != 0) {
+                    // a Telegram animated emoji: [alt](emoji:id), the alt is the plain emoji it stands for
+                    out.append("[").append(piece.replace("]", "").replace("[", "")).append("](emoji:").append(emoji).append(")");
+                    from = to;
+                    continue;
                 }
                 final String core = piece.trim();
                 if (core.isEmpty() || !bold && !italic && url == null) {
@@ -241,6 +282,48 @@ public final class WriterExport {
                 }
             }
             from = to;
+        }
+        return out.toString();
+    }
+
+    /** Rows typed as "a | b" become a Markdown table; the first row is the header. */
+    static String table(String text) {
+        final StringBuilder out = new StringBuilder();
+        int columns = 0;
+        final java.util.ArrayList<String[]> rows = new java.util.ArrayList<>();
+        for (String line : text.split("\n")) {
+            String row = line.trim();
+            if (row.isEmpty()) {
+                continue;
+            }
+            if (row.startsWith("|")) {
+                row = row.substring(1);
+            }
+            if (row.endsWith("|")) {
+                row = row.substring(0, row.length() - 1);
+            }
+            final String[] cells = row.split("\\|", -1);
+            for (int i = 0; i < cells.length; i++) {
+                cells[i] = cells[i].trim();
+            }
+            columns = Math.max(columns, cells.length);
+            rows.add(cells);
+        }
+        for (int r = 0; r < rows.size(); r++) {
+            if (r > 0) {
+                out.append('\n');
+            }
+            out.append('|');
+            for (int c = 0; c < columns; c++) {
+                final String[] cells = rows.get(r);
+                out.append(' ').append(c < cells.length ? cells[c] : "").append(" |");
+            }
+            if (r == 0) {
+                out.append("\n|");
+                for (int c = 0; c < columns; c++) {
+                    out.append(" --- |");
+                }
+            }
         }
         return out.toString();
     }

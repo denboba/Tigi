@@ -379,6 +379,7 @@ public final class TigiArticle {
     public static final int BLOCK_IMAGE = 8;
     public static final int BLOCK_VIDEO = 9;
     public static final int BLOCK_LINK = 10;
+    public static final int BLOCK_TABLE = 11;
 
     public static class Block {
         public final int type;
@@ -389,6 +390,8 @@ public final class TigiArticle {
         public String url;
         public String kind;
         public final ArrayList<CharSequence> items = new ArrayList<>();
+        /** BLOCK_TABLE: the rows (the first one is the header), each a list of cells. */
+        public final ArrayList<ArrayList<CharSequence>> rows = new ArrayList<>();
 
         Block(int type) {
             this.type = type;
@@ -398,6 +401,7 @@ public final class TigiArticle {
     private static final Pattern HEADING = Pattern.compile("^(#{1,3})\\s+(.+)$");
     private static final Pattern NUMBERED = Pattern.compile("^\\d{1,3}[.)]\\s+(.+)$");
     private static final Pattern MEDIA = Pattern.compile("^!\\[([^\\]]*)]\\(\\s*([^)\\s]+)\\s*\\)$");
+    private static final Pattern TABLE_RULE = Pattern.compile("^[\\s|:\\-]*-{3,}[\\s|:\\-]*$");
     private static final Pattern BARE_URL = Pattern.compile("^https?://\\S+$");
     private static final Pattern CALLOUT = Pattern.compile("^>\\s*\\[!(NOTE|TIP|WARNING|IMPORTANT)]\\s*(.*)$", Pattern.CASE_INSENSITIVE);
 
@@ -447,7 +451,31 @@ public final class TigiArticle {
                 continue;
             }
             Matcher m;
-            if (line.equals("---") || line.equals("***") || line.equals("___")) {
+            if (line.startsWith("|") && line.length() > 1) {
+                // a Markdown table: consecutive lines starting with |, the --- row only separates the header
+                paragraph = flush(blocks, paragraph);
+                list = null;
+                quote = null;
+                final Block table = new Block(BLOCK_TABLE);
+                while (i < lines.length && lines[i].trim().startsWith("|")) {
+                    String row = lines[i].trim().substring(1);
+                    if (row.endsWith("|")) {
+                        row = row.substring(0, row.length() - 1);
+                    }
+                    if (!TABLE_RULE.matcher(row).matches()) {
+                        final ArrayList<CharSequence> cells = new ArrayList<>();
+                        for (String cell : row.split("\\|", -1)) {
+                            cells.add(inline(cell.trim()));
+                        }
+                        table.rows.add(cells);
+                    }
+                    i++;
+                }
+                if (!table.rows.isEmpty()) {
+                    blocks.add(table);
+                }
+                continue;
+            } else if (line.equals("---") || line.equals("***") || line.equals("___")) {
                 paragraph = flush(blocks, paragraph);
                 list = null;
                 quote = null;

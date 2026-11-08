@@ -50,21 +50,11 @@ public class TigiAboutActivity extends BaseFragment {
         list.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(list);
 
-        final TextCell version = new TextCell(context);
-        version.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        version.setTextAndValue(LocaleController.getString(R.string.TigiAboutVersion), versionText(), false);
-        version.setOnLongClickListener(v -> {
-            org.telegram.messenger.AndroidUtilities.addToClipboard(versionText());
-            return true;
-        });
-        list.addView(version, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
+        // no version, source or licence rows here: the version is in Play, the source and licence are linked from the store listing
         final TextInfoPrivacyCell notice = new TextInfoPrivacyCell(context);
         notice.setText(LocaleController.getString(R.string.TigiAboutNotice));
         list.addView(notice, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-        list.addView(row(context, R.string.TigiAboutSource, R.drawable.msg_link2, true, () -> Browser.openUrl(getParentActivity(), BuildVars.TIGI_SOURCE_URL)), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        list.addView(row(context, R.string.TigiAboutLicense, R.drawable.msg_info, true, () -> Browser.openUrl(getParentActivity(), "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html")), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         if (!TextUtils.isEmpty(BuildVars.TIGI_PRIVACY_POLICY_URL)) {
             list.addView(row(context, R.string.TigiAboutPrivacy, R.drawable.msg_policy, true, () -> Browser.openUrl(getParentActivity(), BuildVars.TIGI_PRIVACY_POLICY_URL)), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }

@@ -22,6 +22,15 @@ public class TigiBranding {
         PROTECTED.add("ProfileUnofficialSecurityRisk".hashCode());
         PROTECTED.add("AuthAnotherClientInfo1".hashCode());
         PROTECTED.add("AdHidden".hashCode());
+        // Nilak's own texts that name Telegram on purpose (the API notice, Telegram's privacy policy, Premium)
+        PROTECTED.add("TigiAboutNotice".hashCode());
+        PROTECTED.add("TigiAboutTelegramPrivacy".hashCode());
+        PROTECTED.add("TigiSponsoredInfo".hashCode());
+        PROTECTED.add("TigiStoryNeedsPremium".hashCode());
+        PROTECTED.add("TigiStoryTooMany".hashCode());
+        PROTECTED.add("TigiSuggestedText".hashCode());
+        PROTECTED.add("NilakExploreTagPremium".hashCode());
+        PROTECTED.add("NilakWriterSendFailed".hashCode());
     }
 
     // The word Telegram, but not inside links, mentions or the names of Telegram's other apps.

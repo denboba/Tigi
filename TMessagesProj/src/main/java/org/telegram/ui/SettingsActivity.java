@@ -558,6 +558,8 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         subtitleView.setText(sb);
 
         versionView.setText(getVersionName());
+        // Nilak: no version line at the bottom of Settings (Play shows the version)
+        versionView.setVisibility(View.GONE);
     }
 
 

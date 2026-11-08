@@ -91,6 +91,10 @@ public class BuildVars {
     public static String TIGI_SOURCE_URL = "https://github.com/denboba/Tigi"; // GPL: where the full source lives
     public static String TIGI_PRIVACY_POLICY_URL = "https://denboba.github.io/Tigi/privacy-policy.html"; // Tigi's own policy; empty = only Telegram's is shown
     public static String TIGI_SUPPORT_EMAIL = "bitpyrus@gmail.com";      // empty = "Report a problem" opens a GitHub issue
+    // the second main tab: News, or Contacts as before them
+
+    // Nilak: log in with SIM card needs Telegram's carrier setup for this package; off until it is configured
+    public static boolean SUPPORTS_FPNV = false;
 
     static {
         if (ApplicationLoader.applicationContext != null) {

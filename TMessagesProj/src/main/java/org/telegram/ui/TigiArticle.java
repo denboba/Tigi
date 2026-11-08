@@ -433,6 +433,8 @@ public final class TigiArticle {
     public static final int BLOCK_VIDEO = 9;
     public static final int BLOCK_LINK = 10;
     public static final int BLOCK_TABLE = 11;
+    /** A quiz: text = question, items = options, level = the right one (-1 none), caption = explanation. */
+    public static final int BLOCK_QUIZ = 12;
 
     public static class Block {
         public final int type;
@@ -476,6 +478,38 @@ public final class TigiArticle {
         while (i < lines.length) {
             final String raw = lines[i];
             final String line = raw.trim();
+            // a quiz kept in the Barruu: ```quiz, the question, "+ right", "- other", "> explanation", ```
+            if (line.startsWith("```quiz")) {
+                paragraph = flush(blocks, paragraph);
+                list = null;
+                quote = null;
+                final Block quiz = new Block(BLOCK_QUIZ);
+                quiz.level = -1;
+                i++;
+                boolean first = true;
+                while (i < lines.length && !lines[i].trim().startsWith("```")) {
+                    final String row = lines[i].trim();
+                    if (!row.isEmpty()) {
+                        if (first) {
+                            quiz.text = row;
+                            first = false;
+                        } else if (row.startsWith("+ ")) {
+                            quiz.level = quiz.items.size();
+                            quiz.items.add(row.substring(2).trim());
+                        } else if (row.startsWith("- ")) {
+                            quiz.items.add(row.substring(2).trim());
+                        } else if (row.startsWith("> ")) {
+                            quiz.caption = row.substring(2).trim();
+                        }
+                    }
+                    i++;
+                }
+                if (quiz.text != null && quiz.items.size() >= 2) {
+                    blocks.add(quiz);
+                }
+                i++;
+                continue;
+            }
             // fenced code keeps its lines exactly
             if (line.startsWith("```")) {
                 paragraph = flush(blocks, paragraph);

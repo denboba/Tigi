@@ -9392,6 +9392,15 @@ public class Theme {
     ) {
         BackgroundDrawableSettings settings = new BackgroundDrawableSettings();
         settings.wallpaper = local ? null : wallpaper;
+        // Nilak Lilac at night: dark themes get the lilac night background (not Telegram's) unless a wallpaper was chosen
+        if (org.telegram.messenger.BuildVars.NILAK_LILAC && currentTheme != null && currentTheme.isDark()
+            && (overrideWallpaper == null || overrideWallpaper.isDefault() || overrideWallpaper.isTheme())) {
+            settings.wallpaper = createNilakNightWallpaper(0, 0);
+            settings.isWallpaperMotion = false;
+            settings.isPatternWallpaper = true;
+            settings.isCustomTheme = false;
+            return settings;
+        }
         boolean overrideTheme = (!hasPreviousTheme || isApplyingAccent) && overrideWallpaper != null;
         if (overrideWallpaper != null) {
             settings.isWallpaperMotion = overrideWallpaper.isMotion;
@@ -9636,6 +9645,18 @@ public class Theme {
         motionBackgroundDrawable.setPatternBitmap(lilac ? 42 : 34, SvgHelper.getBitmap(lilac ? R.raw.nilak_pattern : R.raw.default_pattern, w, h, Color.BLACK, 1f, SvgHelper.ScaleMode.ByWidth));
         motionBackgroundDrawable.setPatternColorFilter(motionBackgroundDrawable.getPatternColor());
         return motionBackgroundDrawable;
+    }
+
+    /** The lilac night background: deep violet, plum and ink with the floret pattern in soft light lilac. */
+    public static Drawable createNilakNightWallpaper(int w, int h) {
+        final MotionBackgroundDrawable night = new MotionBackgroundDrawable(0xff1C1430, 0xff3A2563, 0xff2A1B42, 0xff1E2633, w != 0);
+        if (w <= 0 || h <= 0) {
+            w = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
+            h = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
+        }
+        night.setPatternBitmap(26, SvgHelper.getBitmap(R.raw.nilak_pattern, w, h, Color.BLACK, 1f, SvgHelper.ScaleMode.ByWidth));
+        night.setPatternColorFilter(0x5CD9C6F6);
+        return night;
     }
 
     private static Bitmap loadScreenSizedBitmap(FileInputStream stream, int offset) {

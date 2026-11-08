@@ -392,7 +392,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
         }
         if (insertedCount > 0) {
-            adapter.notifyItemRangeInserted(0, insertedCount);
+            if (inlineSlot() >= 0) {
+                // the suggestions row sits between posts: its place moves too
+                adapter.notifyDataSetChanged();
+            } else {
+                adapter.notifyItemRangeInserted(0, insertedCount);
+            }
             if (atTop && listView != null) {
                 listView.scrollToPosition(0);
             }
@@ -1635,10 +1640,30 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /* adapter */
 
+    /** A row placed between posts (Home: "Suggested for you"); null for none. */
+    protected View inlineRow;
+    /** It comes after this many posts, or at the end when there are fewer. */
+    protected static final int INLINE_ROW_AFTER = 4;
+    private static final int VIEW_TYPE_POST = 0;
+    private static final int VIEW_TYPE_INLINE = 1;
+
+    /** The adapter position of the inline row, or -1. */
+    protected int inlineSlot() {
+        if (inlineRow == null || inlineRow.getVisibility() != View.VISIBLE || posts.isEmpty()) {
+            return -1;
+        }
+        return Math.min(INLINE_ROW_AFTER, posts.size());
+    }
+
     protected class FeedAdapter extends RecyclerListView.SelectionAdapter {
         @Override
         public int getItemCount() {
-            return posts.size();
+            return posts.size() + (inlineSlot() >= 0 ? 1 : 0);
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return position == inlineSlot() ? VIEW_TYPE_INLINE : VIEW_TYPE_POST;
         }
 
         @Override
@@ -1648,6 +1673,15 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            if (viewType == VIEW_TYPE_INLINE && inlineRow != null) {
+                if (inlineRow.getParent() instanceof ViewGroup) {
+                    ((ViewGroup) inlineRow.getParent()).removeView(inlineRow);
+                }
+                final FrameLayout holder = new FrameLayout(parent.getContext());
+                holder.addView(inlineRow, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                holder.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                return new RecyclerListView.Holder(holder);
+            }
             final FeedCell cell = new FeedCell(parent.getContext());
             final RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             if (TigiLilac.on()) {
@@ -1661,7 +1695,14 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
-            ((FeedCell) holder.itemView).bind(posts.get(position));
+            if (!(holder.itemView instanceof FeedCell)) {
+                return;
+            }
+            final int slot = inlineSlot();
+            final int index = slot >= 0 && position > slot ? position - 1 : position;
+            if (index >= 0 && index < posts.size()) {
+                ((FeedCell) holder.itemView).bind(posts.get(index));
+            }
         }
     }
 

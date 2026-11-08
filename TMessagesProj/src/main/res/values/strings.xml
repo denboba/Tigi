@@ -10711,6 +10711,17 @@
     <string name="NilakWriterNote">Note</string>
     <string name="NilakWriterMention">Mention</string>
     <string name="NilakBarruu">Barruu</string>
+    <string name="NilakWriterQuiz">Quiz</string>
+    <string name="NilakQuizQuestionHint">Ask a question</string>
+    <string name="NilakQuizOptionHint">Answer</string>
+    <string name="NilakQuizAddOption">Add an answer</string>
+    <string name="NilakQuizHint">Tap the circle next to the right answer. Readers pick one and see at once if they got it right.</string>
+    <string name="NilakQuizMarkCorrect">Mark as the right answer</string>
+    <string name="NilakQuizExplanationHint">Explanation (optional), shown after answering</string>
+    <string name="NilakQuizRemove">Remove quiz</string>
+    <string name="NilakQuizRight">Right!</string>
+    <string name="NilakQuizWrong">Not quite. The right answer is marked.</string>
+    <string name="NilakQuizThanks">Thanks for answering.</string>
     <string name="NilakWriterPoll">Poll</string>
     <string name="NilakPollLive">Live poll</string>
     <string name="NilakPollQuestionHint">Ask a question</string>

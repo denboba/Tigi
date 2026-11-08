@@ -598,6 +598,9 @@ public class TigiArticleReaderActivity extends BaseFragment {
                 }
                 return box;
             }
+            case TigiArticle.BLOCK_QUIZ:
+                return org.nilak.writer.WriterQuiz.readerView(context, block.text != null ? block.text.toString() : "", block.items, block.level,
+                    block.caption, ink, gray);
             case TigiArticle.BLOCK_TABLE: {
                 // a real table: a tinted header, soft stripes, a thin border; wide tables scroll sideways
                 final boolean darkTheme = Theme.isCurrentThemeDark();

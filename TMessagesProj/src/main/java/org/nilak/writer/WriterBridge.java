@@ -296,6 +296,15 @@ public final class WriterBridge {
                         }
                     }
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.TABLE, rows.toString()));
+                } else if (block.type == TigiArticle.BLOCK_QUIZ) {
+                    final WriterQuiz quiz = new WriterQuiz();
+                    quiz.question = block.text != null ? block.text.toString() : "";
+                    for (CharSequence option : block.items) {
+                        quiz.options.add(option.toString());
+                    }
+                    quiz.correct = block.level;
+                    quiz.explanation = block.caption != null ? block.caption : "";
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.POLL, quiz.format()));
                 } else if (block.type == TigiArticle.BLOCK_IMAGE && WriterPoll.isRef(block.path)) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.POLL, block.caption != null ? block.caption : "", block.path));
                 } else if (block.type == TigiArticle.BLOCK_IMAGE && WriterMedia.isDocRef(block.path)) {

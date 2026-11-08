@@ -50,8 +50,7 @@ public final class WriterExport {
     /** Publishes into any chat: a channel, a group or a private chat (dialogId as Telegram counts it). */
     public static void publish(int account, long dialogId, WriterDoc doc, String topic, boolean showInRead, boolean notify,
                                MessageObject editing, Result result) {
-        // polls first: each new one is posted in the chat, and the Barruu links to it
-        WriterPoll.postPolls(account, dialogId, doc, () -> publishPacked(account, dialogId, doc, topic, showInRead, notify, editing, result));
+        publishPacked(account, dialogId, doc, topic, showInRead, notify, editing, result);
     }
 
     private static void publishPacked(int account, long dialogId, WriterDoc doc, String topic, boolean showInRead, boolean notify,
@@ -293,11 +292,12 @@ public final class WriterExport {
                     out.append(table(text));
                     break;
                 case WriterDoc.POLL: {
-                    // a posted poll: its question as the caption, the link to the live Telegram poll
-                    if (!WriterPoll.isRef(block.path)) {
+                    // a quiz, kept in the Barruu itself: question, "+ right", "- other", "> explanation"
+                    final WriterQuiz quiz = WriterQuiz.parse(block.text.toString());
+                    if (!quiz.isComplete()) {
                         continue;
                     }
-                    out.append("![").append(WriterPoll.question(block.text.toString()).replace("]", "")).append("](").append(block.path).append(")");
+                    out.append("```quiz\n").append(quiz.format()).append("\n```");
                     break;
                 }
                 default:

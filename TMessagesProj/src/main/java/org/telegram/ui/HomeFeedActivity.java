@@ -79,8 +79,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         scrollingPart.setOrientation(LinearLayout.VERTICAL);
         storiesRow = new TigiStoriesRow(context, this);
         scrollingPart.addView(storiesRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        // "Suggested for you" sits between posts (after the 4th, or at the end), not on top of the feed
         suggestedRow = new TigiSuggestedRow(context, this, () -> followedSinceLoad = true);
-        scrollingPart.addView(suggestedRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        inlineRow = suggestedRow;
         header.addView(scrollingPart, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
 
         final FrameLayout bar = new FrameLayout(context);
@@ -413,11 +414,17 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     private void setDiscover(boolean on) {
         discover = on;
         if (suggestedRow != null) {
-            if (on) {
-                TigiPosting.loadSuggestedChannels(currentAccount, suggestedRow::setChannels);
-            } else {
-                suggestedRow.setChannels(null);
-            }
+            // suggestions show in every feed now (between posts); following no one makes them the main thing
+            TigiPosting.loadSuggestedChannels(currentAccount, channels -> {
+                if (suggestedRow == null || isDead()) {
+                    return;
+                }
+                final boolean wasShown = suggestedRow.getVisibility() == View.VISIBLE;
+                suggestedRow.setChannels(channels);
+                if (wasShown != (suggestedRow.getVisibility() == View.VISIBLE) && adapter != null) {
+                    adapter.notifyDataSetChanged();
+                }
+            });
         }
         if (on) {
             followedSinceLoad = false;

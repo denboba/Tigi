@@ -1390,7 +1390,7 @@ public class WriterActivity extends BaseFragment {
             {R.string.NilakWriterHeading, WriterDoc.HEADING, R.drawable.iv_h}, {R.string.NilakWriterQuote, WriterDoc.QUOTE, R.drawable.iv_quote},
             {R.string.NilakWriterList, WriterDoc.BULLET, R.drawable.iv_list}, {R.string.NilakWriterNumbers, WriterDoc.NUMBER, R.drawable.iv_ordered_list},
             {R.string.NilakWriterPhoto, WriterDoc.PHOTO, R.drawable.iv_media}, {R.string.NilakWriterVideo, WriterDoc.VIDEO, R.drawable.input_video},
-            {R.string.NilakWriterPoll, WriterDoc.POLL, R.drawable.filled_chatlist_poll}, {R.string.NilakWriterTable, WriterDoc.TABLE, R.drawable.iv_table},
+            {R.string.NilakWriterQuiz, WriterDoc.POLL, R.drawable.filled_chatlist_poll}, {R.string.NilakWriterTable, WriterDoc.TABLE, R.drawable.iv_table},
             {R.string.NilakWriterCode, WriterDoc.CODE, R.drawable.iv_code}, {R.string.NilakWriterNote, WriterDoc.CALLOUT, R.drawable.menu_lightbulb},
             {R.string.NilakWriterEmbed, WriterDoc.EMBED, R.drawable.msg_link}, {R.string.NilakWriterMention, MENTION, R.drawable.filled_chatlist_mention},
             {R.string.NilakWriterDivider, WriterDoc.DIVIDER, R.drawable.iv_divider}
@@ -1493,12 +1493,12 @@ public class WriterActivity extends BaseFragment {
         return view;
     }
 
-    /** The poll editor: a question and its options; a published poll can only be removed. */
+    /** The quiz editor: a question, its options, the right answer and an explanation. */
     private void openPoll(BlockEdit edit) {
         hideEmojiPanel();
         hideMentions();
         AndroidUtilities.hideKeyboard(root);
-        WriterPoll.edit(this, edit.getText().toString(), WriterPoll.isRef(edit.path), text -> {
+        WriterQuiz.edit(this, edit.getText().toString(), text -> {
             if (column == null || column.indexOfChild(edit) < 0) {
                 return;
             }
@@ -1705,7 +1705,7 @@ public class WriterActivity extends BaseFragment {
                     setLongClickable(false);
                     setBackground(null);
                     setPadding(dp(18), dp(10), dp(18), dp(10));
-                    setContentDescription(LocaleController.getString(R.string.NilakWriterPoll));
+                    setContentDescription(LocaleController.getString(R.string.NilakWriterQuiz));
                     setOnClickListener(v -> openPoll(BlockEdit.this));
                     break;
                 case WriterDoc.TABLE:
@@ -1895,16 +1895,16 @@ public class WriterActivity extends BaseFragment {
         }
 
         private WriterTable.Grid tableGrid;
-        private WriterPoll.Card pollCard;
+        private WriterQuiz.Card pollCard;
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             if (type == WriterDoc.POLL) {
                 final int width = View.MeasureSpec.getSize(widthMeasureSpec);
                 if (pollCard == null) {
-                    pollCard = new WriterPoll.Card();
+                    pollCard = new WriterQuiz.Card();
                 }
-                pollCard.layout(getText().toString(), WriterPoll.isRef(path), width - dp(44), ink());
+                pollCard.layout(getText().toString(), width - dp(44), ink());
                 setMeasuredDimension(width, dp(10) + pollCard.height + dp(12));
                 return;
             }

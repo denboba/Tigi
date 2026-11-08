@@ -6875,7 +6875,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 if (plainTextEnabled && MessagesController.getInstance(currentAccount).richEditorAvailable()) {
                     richButton = buttonsCount++;
                 }
-                if (BuildVars.NILAK_BARRUU && plainTextEnabled && editingMessageObject == null && baseFragment instanceof ChatActivity
+                if (org.telegram.messenger.BuildVars.NILAK_BARRUU && plainTextEnabled && editingMessageObject == null && baseFragment instanceof ChatActivity
                     && ((ChatActivity) baseFragment).getChatMode() == ChatActivity.MODE_DEFAULT && !((ChatActivity) baseFragment).isSecretChat()) {
                     barruuButton = buttonsCount++;
                 }

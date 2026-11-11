@@ -114,7 +114,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             userId = arguments != null ? arguments.getLong("user_id", 0) : 0;
             chat = getMessagesController().getChat(chatId);
             user = userId != 0 ? getMessagesController().getUser(userId) : null;
-            if (chat == null) {
+            // Communities keep Telegram's screens; the posts grid only knows broadcast channels
+            if (chat == null || ChatObject.isCommunity(chat)) {
                 return false;
             }
         }

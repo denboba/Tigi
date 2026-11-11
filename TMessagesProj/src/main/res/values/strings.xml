@@ -10761,6 +10761,8 @@
     <string name="NilakCreateLiveHint">Stream to your followers</string>
     <string name="NilakCreateArticles">Your Barruu</string>
     <string name="NilakCreateArticlesHint">Drafts, published, edit</string>
+    <string name="NilakCreateCommunity">Community</string>
+    <string name="NilakCreateCommunityHint">Bring your channels and groups together</string>
     <string name="NilakMentionChannel">channel</string>
     <string name="NilakMentionGroup">group</string>
     <string name="NilakTableColumn">Column</string>

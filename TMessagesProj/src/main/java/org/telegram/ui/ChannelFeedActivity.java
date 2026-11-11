@@ -75,7 +75,8 @@ public class ChannelFeedActivity extends TigiFeedBase {
             }
         }
         chat = getMessagesController().getChat(chatId);
-        if (chat == null || !super.onFragmentCreate()) {
+        // Communities, forums and groups keep Telegram's screens; the feed only knows broadcast channels
+        if (chat == null || ChatObject.isCommunity(chat) || !super.onFragmentCreate()) {
             return false;
         }
         getNotificationCenter().addObserver(this, NotificationCenter.groupCallUpdated);

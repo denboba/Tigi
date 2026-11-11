@@ -80,7 +80,7 @@ public class TigiNavigation {
         if (chat == null) {
             return false;
         }
-        if (BuildVars.TIGI_HOME && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.forum && !chat.monoforum && !chat.restricted) {
+        if (BuildVars.TIGI_HOME && isFeedChannel(chat)) {
             final Bundle args = new Bundle();
             args.putLong("chat_id", chat.id);
             if (fragment.presentFragment(new TigiProfileActivity(args))) {
@@ -88,6 +88,16 @@ public class TigiNavigation {
             }
         }
         return openChatInfo(fragment, chat.id);
+    }
+
+    /**
+     * A plain broadcast channel, which Nilak shows as a feed and a profile grid. Everything else keeps Telegram's own
+     * screens: groups, forums, monoforums, restricted channels and Communities (which only Telegram's screens
+     * understand; the feed's channel requests fail for them with COMMUNITY_ID_INVALID).
+     */
+    public static boolean isFeedChannel(TLRPC.Chat chat) {
+        return chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.forum && !chat.monoforum
+            && !chat.restricted && !ChatObject.isCommunity(chat);
     }
 
     /** Telegram's own info screen of a chat or channel (members, admin tools, notifications, shared media). */

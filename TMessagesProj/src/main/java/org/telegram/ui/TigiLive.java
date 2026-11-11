@@ -33,7 +33,7 @@ public class TigiLive {
                 continue;
             }
             final TLRPC.Chat chat = controller.getChat(-dialog.id);
-            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isNotInChat(chat) && ChatObject.canManageCalls(chat) && !out.contains(chat)) {
+            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !ChatObject.isNotInChat(chat) && ChatObject.canManageCalls(chat) && !out.contains(chat)) {
                 out.add(chat);
             }
         }

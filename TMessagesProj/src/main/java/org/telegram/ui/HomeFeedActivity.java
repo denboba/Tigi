@@ -592,7 +592,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 continue;
             }
             final TLRPC.Chat chat = getMessagesController().getChat(-dialog.id);
-            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.left && !ChatObject.isNotInChat(chat)) {
+            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !chat.left && !ChatObject.isNotInChat(chat)) {
                 channels.add(chat);
             }
         }

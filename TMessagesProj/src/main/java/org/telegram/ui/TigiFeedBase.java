@@ -588,7 +588,19 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     protected static int cardRadius() {
-        return TigiLilac.on() ? 22 : 18;
+        return TigiLilac.on() ? 20 : 18;
+    }
+
+    /** A card: its colour with a thin edge on the Nilak page, so it reads as a card without a heavy shadow. */
+    protected static android.graphics.drawable.Drawable cardBackground() {
+        if (!TigiLilac.on()) {
+            return Theme.createRoundRectDrawable(dp(cardRadius()), cardColor());
+        }
+        final android.graphics.drawable.GradientDrawable card = new android.graphics.drawable.GradientDrawable();
+        card.setColor(cardColor());
+        card.setCornerRadius(dp(cardRadius()));
+        card.setStroke(Math.max(1, dp(0.66f)), TigiLilac.hairline());
+        return card;
     }
 
     protected static int inkColor() {
@@ -1747,7 +1759,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         FeedCell(Context context) {
             super(context);
             setOrientation(VERTICAL);
-            setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
+            setBackground(cardBackground());
             setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
@@ -2049,7 +2061,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
 
         void updateColors() {
-            setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
+            setBackground(cardBackground());
             final int text = inkColor();
             final int gray = metaColor();
             nameView.setTextColor(text);

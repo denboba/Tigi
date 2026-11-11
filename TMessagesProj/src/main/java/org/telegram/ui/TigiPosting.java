@@ -80,7 +80,7 @@ public class TigiPosting {
                 continue;
             }
             final TLRPC.Chat chat = controller.getChat(-dialog.id);
-            if (chat != null && chat.id != ownId && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isNotInChat(chat) && !chat.monoforum && !out.contains(chat)) {
+            if (chat != null && chat.id != ownId && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !ChatObject.isNotInChat(chat) && !chat.monoforum && !out.contains(chat)) {
                 out.add(chat);
             }
         }
@@ -113,7 +113,7 @@ public class TigiPosting {
                 MessagesController.getInstance(account).putChats(chats, false);
                 for (int i = 0; i < chats.size(); i++) {
                     final TLRPC.Chat chat = chats.get(i);
-                    if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.restricted) {
+                    if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !chat.restricted) {
                         out.add(chat);
                     }
                 }
@@ -143,7 +143,7 @@ public class TigiPosting {
         final Utilities.Callback<ArrayList<TLRPC.Chat>> add = chats -> {
             for (int i = 0; i < chats.size(); i++) {
                 final TLRPC.Chat chat = chats.get(i);
-                if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.restricted && ChatObject.isNotInChat(chat) && ids.add(chat.id)) {
+                if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !chat.restricted && ChatObject.isNotInChat(chat) && ids.add(chat.id)) {
                     out.add(chat);
                 }
             }
@@ -215,7 +215,7 @@ public class TigiPosting {
     }
 
     public static boolean canPostTo(TLRPC.Chat chat) {
-        return chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !chat.left && !chat.kicked
+        return chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !chat.left && !chat.kicked
             && !ChatObject.isNotInChat(chat) && ChatObject.canPost(chat) && !chat.monoforum;
     }
 

@@ -403,7 +403,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
                 continue;
             }
             final TLRPC.Chat chat = getMessagesController().getChat(-dialog.id);
-            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isNotInChat(chat) && !filter.hidesChannel(chat.id)) {
+            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !ChatObject.isNotInChat(chat) && !filter.hidesChannel(chat.id)) {
                 cursors.add(new ChannelCursor(chat));
             }
         }

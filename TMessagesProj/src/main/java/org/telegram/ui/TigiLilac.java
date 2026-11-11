@@ -62,14 +62,9 @@ public final class TigiLilac {
         return Theme.isCurrentThemeDark();
     }
 
-    /** Cards: white on the calm page, graphite at night. */
+    /** Cards: white on the lilac page, deep violet at night. */
     public static int card() {
-        return dark() ? 0xFF1D1C23 : 0xFFFFFFFF;
-    }
-
-    /** The thin edge around cards, so they stand apart from the page without heavy shadows. */
-    public static int hairline() {
-        return dark() ? 0xFF2C2A34 : 0xFFE6E4EC;
+        return dark() ? 0xFF2A1F3C : 0xFFFFFFFF;
     }
 
     /** Blocks inside a card (poll options, music, files): a shade of the card, never the window colour. */
@@ -77,52 +72,46 @@ public final class TigiLilac {
         if (!on()) {
             return Theme.getColor(Theme.key_windowBackgroundGray);
         }
-        return dark() ? 0xFF27252F : 0xFFF4F3F7;
+        return dark() ? 0xFF372A4D : 0xFFF2ECFA;
     }
 
     /** Icons and strong text on cards and the page. */
     public static int ink() {
-        return dark() ? 0xFFECEAF2 : 0xFF1E1C24;
+        return dark() ? 0xFFE9DFF8 : 0xFF2A1D40;
     }
 
     /** Small grey text (times, views, "View all comments"): 4.5:1 or better on both the card and the page. */
     public static int meta() {
-        return dark() ? 0xFFA6A2B2 : 0xFF6A6775;
+        return dark() ? 0xFFB3A6C9 : 0xFF6A5E80;
     }
 
     /** Behind small round buttons on the page (search, bell). */
     public static int chip() {
-        return dark() ? 0xF2262430 : 0xF5FFFFFF;
+        return dark() ? 0xF2322646 : 0xF5FFFFFF;
     }
 
     /** The page colour at the top, for bars that sit over the scrolling list. */
     public static int pageTop() {
-        return dark() ? PAGE_TOP_DARK : PAGE_TOP_LIGHT;
+        return dark() ? 0xFF1A1326 : 0xFFF5EFFD;
     }
 
-    // A calm, nearly neutral page: soft grey-white by day, graphite at night, with only a hint of violet at the top
-    private static final int PAGE_TOP_LIGHT = 0xFFF7F6FA;
-    private static final int PAGE_BOTTOM_LIGHT = 0xFFF3F2F6;
-    private static final int PAGE_TOP_DARK = 0xFF131217;
-    private static final int PAGE_BOTTOM_DARK = 0xFF15141A;
-
     /**
-     * Nilak night for Telegram's own dark themes: graphite surfaces, violet outgoing bubbles, and the blue or
+     * Lilac night for Telegram's own dark themes: deep violet surfaces, violet outgoing bubbles, and the blue or
      * green accents inside your messages turned lilac. Text colours stay as the theme made them (they are light).
      */
     public static void tintNight(android.util.SparseIntArray colors) {
         final android.util.SparseIntArray fixed = new android.util.SparseIntArray();
-        fixed.put(Theme.key_windowBackgroundWhite, 0xFF17161C);
-        fixed.put(Theme.key_windowBackgroundGray, 0xFF111015);
-        fixed.put(Theme.key_actionBarDefault, 0xFF17161C);
-        fixed.put(Theme.key_actionBarDefaultSubmenuBackground, 0xFF201F27);
-        fixed.put(Theme.key_dialogBackground, 0xFF1E1D24);
-        fixed.put(Theme.key_dialogBackgroundGray, 0xFF17161C);
-        fixed.put(Theme.key_windowBackgroundWhiteGrayText, 0xFFA09CAB);
-        fixed.put(Theme.key_chat_inBubble, 0xFF23222A);
-        fixed.put(Theme.key_chat_inBubbleSelected, 0xFF2C2A34);
-        fixed.put(Theme.key_chat_outBubble, 0xFF46387A);
-        fixed.put(Theme.key_chat_outBubbleSelected, 0xFF51428A);
+        fixed.put(Theme.key_windowBackgroundWhite, 0xFF1B1428);
+        fixed.put(Theme.key_windowBackgroundGray, 0xFF120D1B);
+        fixed.put(Theme.key_actionBarDefault, 0xFF1B1428);
+        fixed.put(Theme.key_actionBarDefaultSubmenuBackground, 0xFF241B34);
+        fixed.put(Theme.key_dialogBackground, 0xFF221A31);
+        fixed.put(Theme.key_dialogBackgroundGray, 0xFF1B1428);
+        fixed.put(Theme.key_windowBackgroundWhiteGrayText, 0xFFA99BBF);
+        fixed.put(Theme.key_chat_inBubble, 0xFF2A1F3C);
+        fixed.put(Theme.key_chat_inBubbleSelected, 0xFF34274A);
+        fixed.put(Theme.key_chat_outBubble, 0xFF4E3388);
+        fixed.put(Theme.key_chat_outBubbleSelected, 0xFF5A3D99);
         final float[] hsv = new float[3];
         for (int i = 0; i < colors.size(); i++) {
             final int key = colors.keyAt(i);
@@ -149,7 +138,7 @@ public final class TigiLilac {
         }
     }
 
-    /** The page: a calm, nearly neutral gradient with one faint violet glow at the top. */
+    /** The lilac page: a gentle vertical gradient with soft glows and the faint flower pattern of the chats. */
     public static Drawable page() {
         return new PageDrawable(false);
     }
@@ -200,12 +189,31 @@ public final class TigiLilac {
         return Theme.createSimpleSelectorCircleDrawable(dp(40), chip(), Theme.multAlpha(TigiStyle.accent(), 0.2f));
     }
 
+    // The pattern tile: nilak_pattern.svg is 430 × 886, drawn about as wide as a phone screen like on the web
+    private static final int PATTERN_TILE_DP = 430;
+    private static final float PATTERN_ASPECT = 886f / 430f;
+    private static final int PATTERN_DAY = 0x147138D5;
+    private static final int PATTERN_NIGHT = 0x12D9C6F6;
+    private static android.graphics.Bitmap patternTile;
+
+    private static android.graphics.Bitmap patternTile(int width) {
+        if (width <= 0) {
+            return null;
+        }
+        if (patternTile == null || patternTile.getWidth() != width) {
+            patternTile = org.telegram.messenger.SvgHelper.getBitmap(R.raw.nilak_pattern, width,
+                Math.round(width * PATTERN_ASPECT), 0xFF000000, 1f, org.telegram.messenger.SvgHelper.ScaleMode.ByWidth);
+        }
+        return patternTile;
+    }
+
     private static final class PageDrawable extends Drawable {
         private final boolean bar;
         private final Paint base = new Paint();
         private final Paint glowTop = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glowLeft = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glowBottom = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint pattern = new Paint(Paint.FILTER_BITMAP_FLAG);
         private boolean builtDark;
 
         PageDrawable(boolean bar) {
@@ -224,19 +232,28 @@ public final class TigiLilac {
                 return;
             }
             builtDark = dark();
-            final int top = builtDark ? PAGE_TOP_DARK : PAGE_TOP_LIGHT;
-            final int bottom = builtDark ? PAGE_BOTTOM_DARK : PAGE_BOTTOM_LIGHT;
+            // The flowers of the chat background (the same pattern as nilak.org), faint enough to stay calm
+            final android.graphics.Bitmap tile = patternTile(Math.min(w, dp(PATTERN_TILE_DP)));
+            if (tile != null) {
+                pattern.setShader(new android.graphics.BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT));
+                pattern.setColorFilter(new android.graphics.PorterDuffColorFilter(
+                    builtDark ? PATTERN_NIGHT : PATTERN_DAY, android.graphics.PorterDuff.Mode.SRC_IN));
+            } else {
+                pattern.setShader(null);
+            }
+            final int top = builtDark ? 0xFF1A1326 : 0xFFF5EFFD;
+            final int bottom = builtDark ? 0xFF21172F : 0xFFF1EAFA;
             // the bar uses the page's colours over the first screen height, so both meet without a seam
             base.setShader(new LinearGradient(0, b.top, 0, b.top + (bar ? Math.max(h, dp(800)) : h), top, bottom, Shader.TileMode.CLAMP));
             // top-right glow sits at a fixed distance from the top on every screen size
             final float rTop = w * 0.62f;
             glowTop.setShader(new RadialGradient(b.left + w * 0.88f, b.top + dp(40), rTop,
-                builtDark ? 0x247B5BC4 : 0x33D8C8F2, 0x00000000, Shader.TileMode.CLAMP));
+                builtDark ? 0x5C764ABE : 0xB3D6BCF6, 0x00000000, Shader.TileMode.CLAMP));
             if (!bar) {
-                // No coloured side glows: the page stays quiet so cards and photos carry the colour
-                glowLeft.setShader(null);
+                glowLeft.setShader(new RadialGradient(b.left + w * 0.08f, b.top + h * 0.55f, w * 0.7f,
+                    builtDark ? 0x223C6946 : 0x73E2F0DA, 0x00000000, Shader.TileMode.CLAMP));
                 glowBottom.setShader(new RadialGradient(b.left + w * 0.9f, b.top + h * 0.84f, w * 0.8f,
-                    builtDark ? 0x127B5BC4 : 0x1AD8C8F2, 0x00000000, Shader.TileMode.CLAMP));
+                    builtDark ? 0x2A683FA8 : 0xA6EAD6FA, 0x00000000, Shader.TileMode.CLAMP));
             }
         }
 
@@ -248,9 +265,13 @@ public final class TigiLilac {
             }
             canvas.drawRect(b, base);
             if (!bar) {
+                canvas.drawRect(b, glowLeft);
                 canvas.drawRect(b, glowBottom);
             }
             canvas.drawRect(b, glowTop);
+            if (pattern.getShader() != null) {
+                canvas.drawRect(b, pattern);
+            }
         }
 
         @Override

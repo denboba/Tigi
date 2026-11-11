@@ -940,7 +940,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
                 @Override
                 public boolean onDoubleTap(MotionEvent e) {
                     if (post != null) {
-                        if (!heartChosen(post.primary()) && !toggleHeart(post)) {
+                        if (!likeChosen(post) && !toggleHeart(post)) {
                             return true;
                         }
                         showBigHeart();
@@ -1053,7 +1053,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
                 return;
             }
             final MessageObject message = post.primary();
-            final boolean liked = heartChosen(message);
+            final boolean liked = likeChosen(post);
             heartButton.setImageResource(liked ? R.drawable.tigi_heart_filled_24 : R.drawable.tigi_heart_outline_24);
             if (liked) {
                 heartButton.clearColorFilter();
@@ -1061,7 +1061,7 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
                 heartButton.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
             }
             heartButton.setContentDescription(LocaleController.getString(liked ? R.string.TigiUnlike : R.string.TigiLike));
-            final int hearts = heartCount(message);
+            final int hearts = countOf(message, likeReaction(post));
             heartCount.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
             final int comments = message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
             commentCount.setText(comments > 0 ? LocaleController.formatShortNumber(comments, null) : "");

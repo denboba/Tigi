@@ -588,19 +588,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     protected static int cardRadius() {
-        return TigiLilac.on() ? 20 : 18;
-    }
-
-    /** A card: its colour with a thin edge on the Nilak page, so it reads as a card without a heavy shadow. */
-    protected static android.graphics.drawable.Drawable cardBackground() {
-        if (!TigiLilac.on()) {
-            return Theme.createRoundRectDrawable(dp(cardRadius()), cardColor());
-        }
-        final android.graphics.drawable.GradientDrawable card = new android.graphics.drawable.GradientDrawable();
-        card.setColor(cardColor());
-        card.setCornerRadius(dp(cardRadius()));
-        card.setStroke(Math.max(1, dp(0.66f)), TigiLilac.hairline());
-        return card;
+        return TigiLilac.on() ? 22 : 18;
     }
 
     protected static int inkColor() {
@@ -776,21 +764,21 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /** Whether the channel allows this reaction at all. Unknown (no full info yet) counts as allowed. */
     protected boolean isReactionAllowed(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction) {
+        // a reaction already on the post can always be added, whatever the list says
+        if (reaction == null || countOf(post.primary(), reaction) > 0) {
+            return true;
+        }
         final TLRPC.ChatFull full = getMessagesController().getChatFull(post.chat.id);
-        if (full == null || full.available_reactions == null || reaction == null) {
+        if (full == null || full.available_reactions == null) {
             return true;
         }
         if (full.available_reactions instanceof TLRPC.TL_chatReactionsNone) {
             return false;
         }
         if (full.available_reactions instanceof TLRPC.TL_chatReactionsSome) {
-            if (reaction.emojicon == null) {
-                return false;
-            }
             final ArrayList<TLRPC.Reaction> list = ((TLRPC.TL_chatReactionsSome) full.available_reactions).reactions;
             for (int i = 0; i < list.size(); i++) {
-                final TLRPC.Reaction r = list.get(i);
-                if (r instanceof TLRPC.TL_reactionEmoji && reaction.emojicon.equals(((TLRPC.TL_reactionEmoji) r).emoticon)) {
+                if (sameReaction(ReactionsLayoutInBubble.VisibleReaction.fromTL(list.get(i)), reaction)) {
                     return true;
                 }
             }
@@ -800,6 +788,78 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             return reaction.emojicon != null || ((TLRPC.TL_chatReactionsAll) full.available_reactions).allow_custom;
         }
         return true;
+    }
+
+    /**
+     * The reaction Like sends: the heart when the channel allows it; otherwise the post's most used reaction, else
+     * the channel's first allowed one, so Like works in channels that chose their own reactions. Null when the
+     * channel has reactions turned off.
+     */
+    protected ReactionsLayoutInBubble.VisibleReaction likeReaction(FeedPost post) {
+        final ReactionsLayoutInBubble.VisibleReaction heart = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(heartEmoji());
+        if (isReactionAllowed(post, heart)) {
+            return heart;
+        }
+        final TLRPC.TL_messageReactions reactions = post.primary().messageOwner.reactions;
+        TLRPC.ReactionCount top = null;
+        if (reactions != null) {
+            for (int i = 0; i < reactions.results.size(); i++) {
+                final TLRPC.ReactionCount count = reactions.results.get(i);
+                final boolean usable = count.reaction instanceof TLRPC.TL_reactionEmoji || count.reaction instanceof TLRPC.TL_reactionCustomEmoji;
+                if (usable && (top == null || count.count > top.count)) {
+                    top = count;
+                }
+            }
+        }
+        if (top != null) {
+            return ReactionsLayoutInBubble.VisibleReaction.fromTL(top.reaction);
+        }
+        final TLRPC.ChatFull full = getMessagesController().getChatFull(post.chat.id);
+        if (full != null && full.available_reactions instanceof TLRPC.TL_chatReactionsSome) {
+            final ArrayList<TLRPC.Reaction> list = ((TLRPC.TL_chatReactionsSome) full.available_reactions).reactions;
+            return list.isEmpty() ? null : ReactionsLayoutInBubble.VisibleReaction.fromTL(list.get(0));
+        }
+        return full != null && full.available_reactions instanceof TLRPC.TL_chatReactionsNone ? null : heart;
+    }
+
+    /** Whether the person reacted to the post with its Like reaction. */
+    protected boolean likeChosen(FeedPost post) {
+        final ReactionsLayoutInBubble.VisibleReaction like = likeReaction(post);
+        if (like == null) {
+            return false;
+        }
+        final ArrayList<ReactionsLayoutInBubble.VisibleReaction> chosen = post.primary().getChoosenReactions();
+        for (int i = 0; i < chosen.size(); i++) {
+            if (sameReaction(chosen.get(i), like)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected static int countOf(MessageObject message, ReactionsLayoutInBubble.VisibleReaction reaction) {
+        if (message == null || reaction == null || message.messageOwner.reactions == null) {
+            return 0;
+        }
+        for (int i = 0; i < message.messageOwner.reactions.results.size(); i++) {
+            final TLRPC.ReactionCount count = message.messageOwner.reactions.results.get(i);
+            if (sameReaction(ReactionsLayoutInBubble.VisibleReaction.fromTL(count.reaction), reaction)) {
+                return count.count;
+            }
+        }
+        return 0;
+    }
+
+    /** The same reaction, also when one heart is written with the emoji variation selector and the other without. */
+    protected static boolean sameReaction(ReactionsLayoutInBubble.VisibleReaction a, ReactionsLayoutInBubble.VisibleReaction b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a.documentId != 0 || b.documentId != 0) {
+            return a.documentId == b.documentId;
+        }
+        return a.emojicon != null && b.emojicon != null
+            && a.emojicon.replace("\uFE0F", "").equals(b.emojicon.replace("\uFE0F", ""));
     }
 
     protected static int heartCount(MessageObject message) {
@@ -834,7 +894,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             return false;
         }
         if (!isReactionAllowed(post, reaction)) {
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionsOff)).show();
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionNotAllowed)).show();
             return false;
         }
         final MessageObject message = post.primary();
@@ -853,7 +913,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     protected boolean toggleHeart(FeedPost post) {
-        return applyReaction(post, ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(heartEmoji()), false, false);
+        final ReactionsLayoutInBubble.VisibleReaction like = likeReaction(post);
+        if (like == null) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionsOff)).show();
+            return false;
+        }
+        return applyReaction(post, like, false, false);
     }
 
     protected void refreshPost(FeedPost post) {
@@ -1759,7 +1824,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         FeedCell(Context context) {
             super(context);
             setOrientation(VERTICAL);
-            setBackground(cardBackground());
+            setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
             setOutlineProvider(new ViewOutlineProvider() {
                 @Override
                 public void getOutline(View view, Outline outline) {
@@ -2061,7 +2126,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
 
         void updateColors() {
-            setBackground(cardBackground());
+            setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
             final int text = inkColor();
             final int gray = metaColor();
             nameView.setTextColor(text);
@@ -2322,7 +2387,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
             bindSave();
             final MessageObject message = post.primary();
-            final boolean liked = heartChosen(message);
+            final ReactionsLayoutInBubble.VisibleReaction like = likeReaction(post);
+            final boolean liked = likeChosen(post);
             heartButton.setImageResource(liked ? R.drawable.tigi_heart_filled_24 : R.drawable.tigi_heart_outline_24);
             heartButton.setContentDescription(LocaleController.getString(liked ? R.string.TigiUnlike : R.string.TigiLike));
             if (liked) {
@@ -2330,7 +2396,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             } else {
                 heartButton.setColorFilter(new PorterDuffColorFilter(inkColor(), PorterDuff.Mode.SRC_IN));
             }
-            final int hearts = heartCount(message);
+            final int hearts = countOf(message, like);
             heartCountView.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
             final int comments = message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
             commentCountView.setText(comments > 0 ? LocaleController.formatShortNumber(comments, null) : "");
@@ -2339,7 +2405,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 || post.chat != null && ChatObject.canChangeChatInfo(post.chat);
             commentButton.setAlpha(commentsOn ? 1f : 0.32f);
             commentCountView.setAlpha(commentsOn ? 1f : 0.32f);
-            final boolean reactionsOn = isReactionAllowed(post, ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(heartEmoji()));
+            final boolean reactionsOn = like != null;
             heartButton.setAlpha(reactionsOn ? 1f : 0.32f);
             heartCountView.setAlpha(reactionsOn ? 1f : 0.32f);
             if (shareCountView != null) {
@@ -2353,7 +2419,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 int added = 0;
                 for (int i = 0; i < message.messageOwner.reactions.results.size() && added < 3; i++) {
                     final TLRPC.ReactionCount count = message.messageOwner.reactions.results.get(i);
-                    if (isHeart(count.reaction) || !(count.reaction instanceof TLRPC.TL_reactionEmoji)) {
+                    // the Like reaction is counted on the Like button already
+                    if (sameReaction(ReactionsLayoutInBubble.VisibleReaction.fromTL(count.reaction), like) || !(count.reaction instanceof TLRPC.TL_reactionEmoji)) {
                         continue;
                     }
                     final TextView chip = new TextView(getContext());
@@ -2410,7 +2477,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             if (post == null) {
                 return;
             }
-            if (!heartChosen(post.primary())) {
+            if (!likeChosen(post)) {
                 if (!toggleHeart(post)) {
                     return;
                 }

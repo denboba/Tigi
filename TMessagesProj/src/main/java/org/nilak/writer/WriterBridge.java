@@ -280,7 +280,7 @@ public final class WriterBridge {
                 } else if (block.type == TigiArticle.BLOCK_QUOTE) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.QUOTE, block.text));
                 } else if (block.type == TigiArticle.BLOCK_CALLOUT) {
-                    doc.blocks.add(new WriterDoc.Block(WriterDoc.CALLOUT, block.text));
+                    doc.blocks.add(new WriterDoc.Block(WriterDoc.CALLOUT, block.text, block.kind));
                 } else if (block.type == TigiArticle.BLOCK_CODE) {
                     doc.blocks.add(new WriterDoc.Block(WriterDoc.CODE, block.text != null ? block.text.toString() : ""));
                 } else if (block.type == TigiArticle.BLOCK_LINK && block.url != null) {

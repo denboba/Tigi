@@ -4,7 +4,10 @@ import android.graphics.Typeface;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.StrikethroughSpan;
 import android.text.style.StyleSpan;
+import android.text.style.TypefaceSpan;
 import android.text.style.URLSpan;
 
 import org.json.JSONArray;
@@ -208,7 +211,20 @@ public final class WriterDoc {
         }
     }
 
+    /** The highlight colour of Nilak Markdown's ==marked== text, as the reader draws it. */
+    public static final int HIGHLIGHT_COLOR = 0x55B996F0;
+
+    /** b = bold, i = italic, l = link, e = animated emoji, s = struck, h = highlight, c = code. */
     static String kindOf(Object span) {
+        if (span instanceof StrikethroughSpan) {
+            return "s";
+        }
+        if (span instanceof BackgroundColorSpan) {
+            return ((BackgroundColorSpan) span).getBackgroundColor() == HIGHLIGHT_COLOR ? "h" : null;
+        }
+        if (span instanceof TypefaceSpan) {
+            return "monospace".equals(((TypefaceSpan) span).getFamily()) ? "c" : null;
+        }
         if (span instanceof StyleSpan) {
             final int style = ((StyleSpan) span).getStyle();
             return style == Typeface.BOLD ? "b" : style == Typeface.ITALIC ? "i" : null;
@@ -227,6 +243,9 @@ public final class WriterDoc {
             case "b": return new StyleSpan(Typeface.BOLD);
             case "i": return new StyleSpan(Typeface.ITALIC);
             case "l": return url != null && !url.isEmpty() ? new URLSpan(url) : null;
+            case "s": return new StrikethroughSpan();
+            case "h": return new BackgroundColorSpan(HIGHLIGHT_COLOR);
+            case "c": return new TypefaceSpan("monospace");
             case "e":
                 try {
                     return new org.telegram.ui.Components.AnimatedEmojiSpan(Long.parseLong(url), null);

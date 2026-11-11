@@ -275,7 +275,9 @@ public final class WriterExport {
                     out.append("```\n").append(text.replace("```", "``\u200b`")).append("\n```");
                     break;
                 case WriterDoc.CALLOUT:
-                    out.append("> [!NOTE] ").append(text.replace("\n", "\n> "));
+                    // the kind (NOTE, TIP, WARNING, IMPORTANT) is kept from a Barruu opened for editing
+                    out.append("> [!").append(block.path != null && block.path.matches("NOTE|TIP|WARNING|IMPORTANT") ? block.path : "NOTE").append("] ")
+                        .append(text.replace("\n", "\n> "));
                     break;
                 case WriterDoc.EMBED: {
                     String url = text.trim().replace('\n', ' ');
@@ -330,6 +332,9 @@ public final class WriterExport {
                 String piece = spanned.subSequence(from, to).toString();
                 boolean bold = false;
                 boolean italic = false;
+                boolean struck = false;
+                boolean highlight = false;
+                boolean code = false;
                 String url = null;
                 long emoji = 0;
                 for (Object span : spanned.getSpans(from, to, Object.class)) {
@@ -341,6 +346,12 @@ public final class WriterExport {
                         bold = true;
                     } else if ("i".equals(kind)) {
                         italic = true;
+                    } else if ("s".equals(kind)) {
+                        struck = true;
+                    } else if ("h".equals(kind)) {
+                        highlight = true;
+                    } else if ("c".equals(kind)) {
+                        code = true;
                     } else if ("l".equals(kind)) {
                         url = ((URLSpan) span).getURL();
                     } else if ("e".equals(kind)) {
@@ -354,11 +365,21 @@ public final class WriterExport {
                     continue;
                 }
                 final String core = piece.trim();
-                if (core.isEmpty() || !bold && !italic && url == null) {
+                if (url != null && core.startsWith("@") && url.startsWith("https://t.me/")) {
+                    // a mention stays [@name](https://t.me/name): readers on both apps show it bold and open the profile
+                    bold = false;
+                }
+                if (core.isEmpty() || !bold && !italic && !struck && !highlight && !code && url == null) {
                     out.append(piece);
                 } else {
                     final int lead = piece.indexOf(core);
-                    String marked = core;
+                    String marked = code ? "`" + core.replace("`", "") + "`" : core;
+                    if (highlight) {
+                        marked = "==" + marked + "==";
+                    }
+                    if (struck) {
+                        marked = "~~" + marked + "~~";
+                    }
                     if (italic) {
                         marked = "*" + marked + "*";
                     }

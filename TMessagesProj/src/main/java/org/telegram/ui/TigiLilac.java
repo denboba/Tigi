@@ -138,7 +138,7 @@ public final class TigiLilac {
         }
     }
 
-    /** The lilac page: a gentle vertical gradient with soft glows and the faint flower pattern of the chats. */
+    /** The lilac page: a gentle vertical gradient with three soft glows. */
     public static Drawable page() {
         return new PageDrawable(false);
     }
@@ -189,31 +189,12 @@ public final class TigiLilac {
         return Theme.createSimpleSelectorCircleDrawable(dp(40), chip(), Theme.multAlpha(TigiStyle.accent(), 0.2f));
     }
 
-    // The pattern tile: nilak_pattern.svg is 430 × 886, drawn about as wide as a phone screen like on the web
-    private static final int PATTERN_TILE_DP = 430;
-    private static final float PATTERN_ASPECT = 886f / 430f;
-    private static final int PATTERN_DAY = 0x147138D5;
-    private static final int PATTERN_NIGHT = 0x12D9C6F6;
-    private static android.graphics.Bitmap patternTile;
-
-    private static android.graphics.Bitmap patternTile(int width) {
-        if (width <= 0) {
-            return null;
-        }
-        if (patternTile == null || patternTile.getWidth() != width) {
-            patternTile = org.telegram.messenger.SvgHelper.getBitmap(R.raw.nilak_pattern, width,
-                Math.round(width * PATTERN_ASPECT), 0xFF000000, 1f, org.telegram.messenger.SvgHelper.ScaleMode.ByWidth);
-        }
-        return patternTile;
-    }
-
     private static final class PageDrawable extends Drawable {
         private final boolean bar;
         private final Paint base = new Paint();
         private final Paint glowTop = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glowLeft = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint glowBottom = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint pattern = new Paint(Paint.FILTER_BITMAP_FLAG);
         private boolean builtDark;
 
         PageDrawable(boolean bar) {
@@ -232,15 +213,6 @@ public final class TigiLilac {
                 return;
             }
             builtDark = dark();
-            // The flowers of the chat background (the same pattern as nilak.org), faint enough to stay calm
-            final android.graphics.Bitmap tile = patternTile(Math.min(w, dp(PATTERN_TILE_DP)));
-            if (tile != null) {
-                pattern.setShader(new android.graphics.BitmapShader(tile, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT));
-                pattern.setColorFilter(new android.graphics.PorterDuffColorFilter(
-                    builtDark ? PATTERN_NIGHT : PATTERN_DAY, android.graphics.PorterDuff.Mode.SRC_IN));
-            } else {
-                pattern.setShader(null);
-            }
             final int top = builtDark ? 0xFF1A1326 : 0xFFF5EFFD;
             final int bottom = builtDark ? 0xFF21172F : 0xFFF1EAFA;
             // the bar uses the page's colours over the first screen height, so both meet without a seam
@@ -248,12 +220,12 @@ public final class TigiLilac {
             // top-right glow sits at a fixed distance from the top on every screen size
             final float rTop = w * 0.62f;
             glowTop.setShader(new RadialGradient(b.left + w * 0.88f, b.top + dp(40), rTop,
-                builtDark ? 0x5C764ABE : 0xB3D6BCF6, 0x00000000, Shader.TileMode.CLAMP));
+                builtDark ? 0x80764ABE : 0xF2D6BCF6, 0x00000000, Shader.TileMode.CLAMP));
             if (!bar) {
                 glowLeft.setShader(new RadialGradient(b.left + w * 0.08f, b.top + h * 0.55f, w * 0.7f,
-                    builtDark ? 0x223C6946 : 0x73E2F0DA, 0x00000000, Shader.TileMode.CLAMP));
+                    builtDark ? 0x383C6946 : 0xBFE2F0DA, 0x00000000, Shader.TileMode.CLAMP));
                 glowBottom.setShader(new RadialGradient(b.left + w * 0.9f, b.top + h * 0.84f, w * 0.8f,
-                    builtDark ? 0x2A683FA8 : 0xA6EAD6FA, 0x00000000, Shader.TileMode.CLAMP));
+                    builtDark ? 0x40683FA8 : 0xF2EAD6FA, 0x00000000, Shader.TileMode.CLAMP));
             }
         }
 
@@ -269,9 +241,6 @@ public final class TigiLilac {
                 canvas.drawRect(b, glowBottom);
             }
             canvas.drawRect(b, glowTop);
-            if (pattern.getShader() != null) {
-                canvas.drawRect(b, pattern);
-            }
         }
 
         @Override

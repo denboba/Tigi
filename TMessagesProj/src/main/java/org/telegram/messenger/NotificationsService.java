@@ -19,6 +19,7 @@ public class NotificationsService extends Service {
     public void onCreate() {
         super.onCreate();
         ApplicationLoader.postInitApplication();
+        TigiPush.startForeground(this);
     }
 
     @Override

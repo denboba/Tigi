@@ -11067,6 +11067,10 @@
     <string name="TigiPageCounter">%1$d/%2$d</string>
     <string name="TigiReactionsOff">Reactions are turned off for this post.</string>
     <string name="TigiReactionNotAllowed">This channel does not allow this reaction.</string>
+    <string name="TigiAddReaction">Add a reaction</string>
+    <string name="TigiConnectionChannel">Staying connected</string>
+    <string name="TigiConnectionTitle">Nilak is connected</string>
+    <string name="TigiConnectionText">So your messages and calls arrive. You can turn this off in Settings → Notifications.</string>
     <string name="TigiReactionFailed">Could not send the reaction.</string>
     <string name="TigiSharePrivate">This channel is private, so its posts have no public link.</string>
     <string name="MainTabsProfile">Profile</string>

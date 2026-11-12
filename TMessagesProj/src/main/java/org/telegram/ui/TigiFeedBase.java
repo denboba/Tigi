@@ -58,6 +58,7 @@ import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.Reactions.ReactionsEffectOverlay;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.ReactionsContainerLayout;
 import org.telegram.ui.Components.RecyclerListView;
@@ -890,6 +891,14 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /** Returns false when the reaction could not be sent at all (not allowed in this channel). */
     protected boolean applyReaction(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction, boolean big, boolean addToRecent) {
+        return applyReaction(post, reaction, big, addToRecent, null);
+    }
+
+    /**
+     * Sends the reaction; a reaction that is added plays Telegram's own reaction animation over the view it came
+     * from (the Like button, a reaction under the post, or the post when picked from the reaction bar).
+     */
+    protected boolean applyReaction(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction, boolean big, boolean addToRecent, View animateFrom) {
         if (post == null || post.messages.isEmpty() || reaction == null) {
             return false;
         }
@@ -899,6 +908,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
         final MessageObject message = post.primary();
         final boolean added = message.selectReaction(reaction, big, false);
+        if (added && animateFrom != null && animateFrom.isAttachedToWindow()) {
+            ReactionsEffectOverlay.removeCurrent(false);
+            ReactionsEffectOverlay.show(this, null, animateFrom, null, animateFrom.getWidth() / 2f, animateFrom.getHeight() / 2f,
+                reaction, currentAccount, ReactionsEffectOverlay.LONG_ANIMATION);
+            ReactionsEffectOverlay.startAnimation();
+        }
         final ArrayList<ReactionsLayoutInBubble.VisibleReaction> chosen = new ArrayList<>(message.getChoosenReactions());
         getSendMessagesHelper().sendReaction(message, chosen, added ? reaction : null, big, addToRecent, this, null, error -> {
             // the server said no (limit, reactions turned off meanwhile, flood): undo the local change
@@ -913,12 +928,16 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     protected boolean toggleHeart(FeedPost post) {
+        return toggleHeart(post, null);
+    }
+
+    protected boolean toggleHeart(FeedPost post, View animateFrom) {
         final ReactionsLayoutInBubble.VisibleReaction like = likeReaction(post);
         if (like == null) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionsOff)).show();
             return false;
         }
-        return applyReaction(post, like, false, false);
+        return applyReaction(post, like, false, false, animateFrom);
     }
 
     protected void refreshPost(FeedPost post) {
@@ -1357,7 +1376,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         pickerLayout.setDelegate(new ReactionsContainerLayout.ReactionsContainerDelegate() {
             @Override
             public void onReactionClicked(View view, ReactionsLayoutInBubble.VisibleReaction visibleReaction, boolean longpress, boolean addToRecent) {
-                applyReaction(post, visibleReaction, longpress, addToRecent);
+                applyReaction(post, visibleReaction, longpress, addToRecent, findPostView(post));
                 AndroidUtilities.runOnUIThread(() -> hideReactionPicker());
             }
 
@@ -1391,6 +1410,20 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         overlay.addView(pickerLayout, params);
         overlay.setVisibility(View.VISIBLE);
         pickerLayout.setMessage(message, full, true);
+    }
+
+    /** The card showing this post, if it is on screen. */
+    protected View findPostView(FeedPost post) {
+        if (listView == null) {
+            return null;
+        }
+        for (int i = 0; i < listView.getChildCount(); i++) {
+            final View child = listView.getChildAt(i);
+            if (child instanceof FeedCell && ((FeedCell) child).post == post) {
+                return child;
+            }
+        }
+        return null;
     }
 
     protected void hideReactionPicker() {
@@ -1804,6 +1837,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private TextView shareCountView;
         private ImageView saveButton;
         private final LinearLayout chipsRow;
+        private final android.widget.HorizontalScrollView chipsScroll;
         private final TextView captionView;
         private LinearLayout captionBox;
         private boolean textFirst;
@@ -2014,7 +2048,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 if (post == null) {
                     return;
                 }
-                if (toggleHeart(post)) {
+                if (toggleHeart(post, v)) {
                     popHeart();
                 }
             });
@@ -2076,6 +2110,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             chipsRow = new LinearLayout(context);
             chipsRow.setOrientation(HORIZONTAL);
             chipsRow.setPadding(dp(12), 0, dp(12), dp(12));
+            // every reaction of the post, like under a channel post; scrolls sideways when there are many
+            chipsScroll = new android.widget.HorizontalScrollView(context);
+            chipsScroll.setHorizontalScrollBarEnabled(false);
+            chipsScroll.setOverScrollMode(OVER_SCROLL_NEVER);
+            chipsScroll.addView(chipsRow, new android.widget.FrameLayout.LayoutParams(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
 
             captionBox = new LinearLayout(context);
             captionBox.setOrientation(VERTICAL);
@@ -2122,7 +2161,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             captionBox.addView(moreView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
             addView(captionBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
             // emoji reaction chips sit under the caption
-            addView(chipsRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            addView(chipsScroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         }
 
         void updateColors() {
@@ -2283,7 +2322,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 captionBox.setPadding(dp(14), 0, dp(14), dp(6));
                 captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
             } else {
-                addView(captionBox, indexOfChild(chipsRow), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                addView(captionBox, indexOfChild(chipsScroll), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
                 captionBox.setPadding(dp(12), dp(2), dp(12), dp(12));
                 captionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             }
@@ -2413,35 +2452,64 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 shareCountView.setText(shares > 0 ? LocaleController.formatShortNumber(shares, null) : "");
             }
 
-            // other emoji under the caption, at most three
+            // the post's other reactions under the caption (the Like reaction is counted on the Like button), then
+            // a button for the full reaction bar
             chipsRow.removeAllViews();
             if (message.messageOwner.reactions != null) {
-                int added = 0;
-                for (int i = 0; i < message.messageOwner.reactions.results.size() && added < 3; i++) {
+                for (int i = 0; i < message.messageOwner.reactions.results.size(); i++) {
                     final TLRPC.ReactionCount count = message.messageOwner.reactions.results.get(i);
-                    // the Like reaction is counted on the Like button already
-                    if (sameReaction(ReactionsLayoutInBubble.VisibleReaction.fromTL(count.reaction), like) || !(count.reaction instanceof TLRPC.TL_reactionEmoji)) {
+                    final ReactionsLayoutInBubble.VisibleReaction visible = ReactionsLayoutInBubble.VisibleReaction.fromTL(count.reaction);
+                    final boolean isPaid = count.reaction instanceof TLRPC.TL_reactionPaid;
+                    if (count.count <= 0 || sameReaction(visible, like) || (!isPaid && visible.emojicon == null && visible.documentId == 0)) {
                         continue;
                     }
-                    final TextView chip = new TextView(getContext());
-                    chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-                    chip.setTypeface(TigiStyle.displayBold());
-                    chip.setTextColor(inkColor());
-                    chip.setGravity(Gravity.CENTER);
-                    chip.setPadding(dp(10), 0, dp(10), 0);
-                    chip.setBackground(Theme.createRoundRectDrawable(dp(15), count.chosen ? Theme.multAlpha(Theme.getColor(Theme.key_featuredStickers_addButton), 0.18f) : Theme.getColor(Theme.key_windowBackgroundGray)));
-                    chip.setText(((TLRPC.TL_reactionEmoji) count.reaction).emoticon + " " + LocaleController.formatShortNumber(count.count, null));
-                    final TLRPC.Reaction reaction = count.reaction;
-                    chip.setOnClickListener(v -> {
-                        if (post != null) {
-                            applyReaction(post, ReactionsLayoutInBubble.VisibleReaction.fromTL(reaction), false, false);
-                        }
-                    });
-                    chipsRow.addView(chip, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 26, 0, 0, 6, 0));
-                    added++;
+                    final TigiEmojiTextView chip = reactionChip(count.chosen);
+                    final CharSequence count_ = " " + LocaleController.formatShortNumber(count.count, null);
+                    if (visible.documentId != 0) {
+                        final android.text.SpannableStringBuilder text = new android.text.SpannableStringBuilder("😀");
+                        text.setSpan(new org.telegram.ui.Components.AnimatedEmojiSpan(visible.documentId, chip.getPaint().getFontMetricsInt()),
+                            0, text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        text.append(count_);
+                        chip.setText(text);
+                    } else {
+                        chip.setText((isPaid ? "⭐" : visible.emojicon) + count_);
+                    }
+                    if (!isPaid) {
+                        chip.setOnClickListener(v -> {
+                            if (post != null) {
+                                applyReaction(post, visible, false, false, v);
+                            }
+                        });
+                    }
+                    chipsRow.addView(chip, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30, 0, 0, 6, 0));
                 }
             }
+            if (like != null) {
+                final TigiEmojiTextView add = reactionChip(false);
+                add.setText("🙂＋");
+                add.setContentDescription(LocaleController.getString(R.string.TigiAddReaction));
+                add.setOnClickListener(v -> {
+                    if (post != null) {
+                        final int[] location = new int[2];
+                        v.getLocationOnScreen(location);
+                        showReactionPicker(post, location[0] + v.getWidth() / 2f, location[1], v);
+                    }
+                });
+                chipsRow.addView(add, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30, 0, 0, 6, 0));
+            }
             chipsRow.setVisibility(chipsRow.getChildCount() > 0 ? VISIBLE : GONE);
+        }
+
+        private TigiEmojiTextView reactionChip(boolean chosen) {
+            final TigiEmojiTextView chip = new TigiEmojiTextView(getContext());
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            chip.setTypeface(TigiStyle.displayBold());
+            chip.setTextColor(chosen ? TigiStyle.accent() : inkColor());
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(11), 0, dp(11), 0);
+            chip.setBackground(Theme.createRoundRectDrawable(dp(15), chosen
+                ? Theme.multAlpha(TigiStyle.accent(), 0.18f) : Theme.getColor(Theme.key_windowBackgroundGray)));
+            return chip;
         }
 
         void bindSave() {

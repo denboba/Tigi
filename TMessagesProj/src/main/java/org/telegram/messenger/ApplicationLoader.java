@@ -372,11 +372,13 @@ public class ApplicationLoader extends Application {
         if (preferences.contains("pushService")) {
             enabled = preferences.getBoolean("pushService", true);
         } else {
-            enabled = MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false);
+            // Nilak: a build without Firebase keeps itself connected, or it would get no notifications at all
+            enabled = MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false)
+                || TigiPush.needsConnection();
         }
         if (enabled) {
             try {
-                applicationContext.startService(new Intent(applicationContext, NotificationsService.class));
+                TigiPush.startService(applicationContext);
             } catch (Throwable ignore) {
 
             }

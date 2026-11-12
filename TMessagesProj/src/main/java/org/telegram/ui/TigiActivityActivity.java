@@ -22,6 +22,7 @@ import android.widget.TextView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLoader;
@@ -67,7 +68,9 @@ public class TigiActivityActivity extends BaseFragment {
     private static final int KIND_MESSAGE_REACTION = 6;
     private static final int KIND_STORY = 7;
     private static final int KIND_JOINED = 8;
-    private static final int DIALOGS_TO_ASK = 6;
+    private static final int KIND_MESSAGE = 9;
+    private static final int DIALOGS_TO_ASK = 15;
+    private static final int UNREAD_CHATS = 20;
 
     private static class Item {
         int kind;
@@ -132,6 +135,7 @@ public class TigiActivityActivity extends BaseFragment {
     private void load() {
         // the sources that do not need the user's posts, then their posts' ones
         pending = 1;
+        addUnreadChats();
         loadReplies();
         loadChatActivity();
         loadStoryViews();
@@ -339,6 +343,61 @@ public class TigiActivityActivity extends BaseFragment {
                 loadMessageReactions(dialog.id);
             }
         }
+    }
+
+    /**
+     * New messages in the chats that notify (people and groups that are not muted), what the phone notifications
+     * show, in one place. Channels' new posts are already in the feeds.
+     */
+    private void addUnreadChats() {
+        final ArrayList<TLRPC.Dialog> dialogs = getMessagesController().getAllDialogs();
+        int added = 0;
+        for (int i = 0; i < dialogs.size() && added < UNREAD_CHATS; i++) {
+            final TLRPC.Dialog dialog = dialogs.get(i);
+            if (dialog.unread_count <= 0 || getMessagesController().isDialogMuted(dialog.id, 0)) {
+                continue;
+            }
+            if (dialog.id < 0 && ChatObject.isChannelAndNotMegaGroup(getMessagesController().getChat(-dialog.id))) {
+                continue;
+            }
+            final ArrayList<MessageObject> last = getMessagesController().dialogMessage.get(dialog.id);
+            final MessageObject message = last != null && !last.isEmpty() ? last.get(0) : null;
+            if (message == null || message.isOut()) {
+                continue;
+            }
+            final Item item = new Item();
+            item.kind = KIND_MESSAGE;
+            item.date = message.messageOwner.date;
+            item.who = getMessagesController().getUserOrChat(dialog.id > 0 ? dialog.id : message.getFromChatId());
+            item.dialogId = dialog.id;
+            final SpannableStringBuilder text = new SpannableStringBuilder(bold(chatTitle(dialog.id)));
+            text.append(' ').append(dialog.unread_count > 1
+                ? LocaleController.formatPluralString("NilakActivityNewMessages", dialog.unread_count)
+                : LocaleController.getString(R.string.NilakActivityNewMessage));
+            final String preview = message.messageText != null ? message.messageText.toString() : "";
+            if (!TextUtils.isEmpty(preview)) {
+                text.append(": ").append(excerpt(preview));
+            }
+            item.text = text;
+            items.add(item);
+            added++;
+        }
+    }
+
+    /** What is new for the bell's count: mentions, reactions to the person's messages and chats with new messages. */
+    public static int newCount(int account) {
+        final org.telegram.messenger.MessagesController controller = org.telegram.messenger.MessagesController.getInstance(account);
+        final ArrayList<TLRPC.Dialog> dialogs = controller.getAllDialogs();
+        int count = 0;
+        for (int i = 0; i < dialogs.size() && i < 300; i++) {
+            final TLRPC.Dialog dialog = dialogs.get(i);
+            count += dialog.unread_mentions_count + dialog.unread_reactions_count;
+            if (dialog.unread_count > 0 && !controller.isDialogMuted(dialog.id, 0)
+                && !(dialog.id < 0 && ChatObject.isChannelAndNotMegaGroup(controller.getChat(-dialog.id)))) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private String chatTitle(long dialogId) {

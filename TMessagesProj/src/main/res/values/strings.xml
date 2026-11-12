@@ -11068,6 +11068,9 @@
     <string name="TigiReactionsOff">Reactions are turned off for this post.</string>
     <string name="TigiReactionNotAllowed">This channel does not allow this reaction.</string>
     <string name="TigiAddReaction">Add a reaction</string>
+    <string name="NilakActivityNewMessage">sent you a new message</string>
+    <string name="NilakActivityNewMessages_one">%1$d new message</string>
+    <string name="NilakActivityNewMessages_other">%1$d new messages</string>
     <string name="TigiConnectionChannel">Staying connected</string>
     <string name="TigiConnectionTitle">Nilak is connected</string>
     <string name="TigiConnectionText">So your messages and calls arrive. You can turn this off in Settings → Notifications.</string>

@@ -168,6 +168,18 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         activityButton.setOnClickListener(v -> presentFragment(new TigiActivityActivity()));
         activityButton.setVisibility(BuildVars.TIGI_ACTIVITY ? View.VISIBLE : View.GONE);
         bar.addView(activityButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), LocaleController.isRTL ? 54 : 6, 4, LocaleController.isRTL ? 6 : 54, 0));
+        // how much is new in Activity: mentions, reactions to the person's messages and chats with new messages
+        activityBadge = new TextView(context);
+        activityBadge.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 10);
+        activityBadge.setTypeface(AndroidUtilities.bold());
+        activityBadge.setTextColor(0xFFFFFFFF);
+        activityBadge.setGravity(Gravity.CENTER);
+        activityBadge.setMinWidth(dp(18));
+        activityBadge.setPadding(dp(4), 0, dp(4), 0);
+        activityBadge.setBackground(Theme.createRoundRectDrawable(dp(9), TigiStyle.accent()));
+        activityBadge.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        activityBadge.setVisibility(View.GONE);
+        bar.addView(activityBadge, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 18, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), LocaleController.isRTL ? 58 : 0, 6, LocaleController.isRTL ? 0 : 58, 0));
         header.addView(bar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
         // the stories row sits right under the bar, whose height includes the status bar
         bar.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -213,6 +225,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
     }
     private ImageView searchButton;
     private ImageView activityButton;
+    private TextView activityBadge;
     private ImageView createButton;
     private TextView modeLabel;
 
@@ -457,6 +470,9 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         searchButton.setEnabled(shown > 0.5f);
         activityButton.setAlpha(shown);
         activityButton.setEnabled(shown > 0.5f);
+        if (activityBadge != null) {
+            activityBadge.setAlpha(shown);
+        }
     }
 
     @Override
@@ -528,6 +544,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             storiesRow.update();
         }
         updateBriefCard();
+        updateActivityBadge();
         org.telegram.messenger.TigiBriefReminder.schedule(getParentActivity());
         if (org.telegram.messenger.TigiBriefReminder.pendingOpen) {
             org.telegram.messenger.TigiBriefReminder.pendingOpen = false;
@@ -795,6 +812,18 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         super.onFragmentDestroy();
     }
 
+    private void updateActivityBadge() {
+        if (activityBadge == null) {
+            return;
+        }
+        final int count = BuildVars.TIGI_ACTIVITY ? TigiActivityActivity.newCount(currentAccount) : 0;
+        activityBadge.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
+        activityBadge.setText(count > 99 ? "99+" : String.valueOf(count));
+        activityButton.setContentDescription(count > 0
+            ? LocaleController.getString(R.string.NilakActivity) + ", " + count
+            : LocaleController.getString(R.string.NilakActivity));
+    }
+
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.storiesUpdated) {
@@ -808,6 +837,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
                 TigiPosting.archiveOwnChannelOnce(currentAccount);
             }
             updateBriefCard();
+            updateActivityBadge();
             // on a cold start the chat list arrives after this tab was created
             if (posts.isEmpty() && lastLoadTime == 0 && !loading && !isDead()) {
                 loadFeed();

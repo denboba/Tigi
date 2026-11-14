@@ -674,7 +674,7 @@ public class NilakCommunityActivity extends TigiFeedBase {
         if (question.category != null) {
             line.append('#').append(question.category).append("  ·  ");
         }
-        line.append(LocaleController.stringForMessageListDate(question.topic.date));
+        line.append(LocaleController.stringForMessageListDate(NilakAsk.dateOf(question.topic)));
         if (question.answers >= 0) {
             line.append("  ·  ").append(LocaleController.formatPluralString("NilakAskAnswers", question.answers));
         }

@@ -67,9 +67,20 @@ public final class NilakAsk {
         }
 
         public double hot(int now) {
-            final double hours = Math.max(0, now - topic.date) / (double) HOUR;
+            final double hours = Math.max(0, now - dateOf(topic)) / (double) HOUR;
             return (votes() + Math.max(0, answers) * HOT_ANSWER_WEIGHT + 1) / Math.pow(hours + 2, HOT_GRAVITY);
         }
+    }
+
+    /** When a question was asked: Telegram leaves some topics without a date, their first message has one. */
+    public static int dateOf(TLRPC.TL_forumTopic topic) {
+        if (topic.date > 0) {
+            return topic.date;
+        }
+        if (topic.topicStartMessage != null && topic.topicStartMessage.date > 0) {
+            return topic.topicStartMessage.date;
+        }
+        return topic.topMessage != null ? topic.topMessage.date : 0;
     }
 
     /** The community's Ask board: its group with topics, preferring one the person is in. */
@@ -96,7 +107,7 @@ public final class NilakAsk {
             return result;
         }
         final ArrayList<TLRPC.TL_forumTopic> sorted = new ArrayList<>(topics);
-        Collections.sort(sorted, (a, b) -> Integer.compare(b.date, a.date));
+        Collections.sort(sorted, (a, b) -> Integer.compare(dateOf(b), dateOf(a)));
         for (TLRPC.TL_forumTopic topic : sorted) {
             if (topic.id == GENERAL_TOPIC_ID || topic.hidden || result.size() >= MAX_QUESTIONS) {
                 continue;
@@ -218,14 +229,6 @@ public final class NilakAsk {
         // as Telegram does for a topic's first message, so the reply is marked as written in the topic
         object.isTopicMainMessage = true;
         return object;
-    }
-
-    /** Sends an answer (replyTo null) or a reply to an answer into the question's topic. */
-    public static void send(BaseFragment fragment, long boardId, int topicId, MessageObject replyTo, String text) {
-        final MessageObject start = topicStart(fragment.getCurrentAccount(), boardId, topicId);
-        final SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(text, -boardId,
-            replyTo != null ? replyTo : start, start, null, true, null, null, null, true, 0, 0, null, false);
-        fragment.getSendMessagesHelper().sendMessage(params);
     }
 
     /**

@@ -296,9 +296,11 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
             return;
         }
         final ArrayList<Object[]> found = new ArrayList<>();
+        // a board linked to several communities is listed once
+        final java.util.HashSet<Long> boards = new java.util.HashSet<>();
         for (TLRPC.Chat community : communities) {
             final TLRPC.Chat board = NilakAsk.findBoard(currentAccount, community.id);
-            if (board == null) {
+            if (board == null || !boards.add(board.id)) {
                 continue;
             }
             if (load && getMessagesController().getTopicsController().getTopics(board.id) == null) {
@@ -308,7 +310,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
                 found.add(new Object[]{question, board, community});
             }
         }
-        Collections.sort(found, (a, b) -> Integer.compare(((NilakAsk.Question) b[0]).topic.date, ((NilakAsk.Question) a[0]).topic.date));
+        Collections.sort(found, (a, b) -> Integer.compare(NilakAsk.dateOf(((NilakAsk.Question) b[0]).topic), NilakAsk.dateOf(((NilakAsk.Question) a[0]).topic)));
         questionsCard.removeAllViews();
         questionsCard.setVisibility(found.isEmpty() ? View.GONE : View.VISIBLE);
         if (found.isEmpty()) {
@@ -339,7 +341,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
             title.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(title);
             final TextView meta = new TextView(questionsCard.getContext());
-            meta.setText(community.title + "  ·  " + LocaleController.stringForMessageListDate(question.topic.date));
+            meta.setText(community.title + "  ·  " + LocaleController.stringForMessageListDate(NilakAsk.dateOf(question.topic)));
             meta.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
             meta.setTextColor(metaColor());
             meta.setSingleLine(true);

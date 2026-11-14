@@ -31,7 +31,7 @@ Resolve the conflicts (see below), keep `APP_PACKAGE=com.nilak.app` in `gradle.p
 | --- | --- |
 | `ChatMessageCell` | smart fold (`nilakFold`), Barruu card (`nilakBarruu`), album card (`isTigiCardMedia`) |
 | `MessageObject` | `nilakSmartFold`, `tigiStack` albums |
-| `ChatActivity` | compose screen background (`nilakFeedLook`), `tigi_action`, Barruu tap opens the reader |
+| `ChatActivity` | compose screen background (`nilakFeedLook`), `tigi_action`, Barruu tap opens the reader, `setNilakReplyMessage` (Ask: reply to an answer) |
 | `ChatAttachAlert` | Barruu button next to Article (`LAYOUT_TYPE_BARRUU`) |
 | `Theme`, `ThemeColors`, `darkblue.attheme` | lilac colours, lilac night (`TigiLilac.tintNight`, `createNilakNightWallpaper`) |
 | `SettingsActivity` | lilac page, hidden version line |

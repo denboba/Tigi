@@ -11081,6 +11081,14 @@
     <string name="NilakCommunitiesEmptyTitle">Bring people together</string>
     <string name="NilakCommunitiesEmptyText">A community keeps a class, school, university or club in one place: its channels, groups and bots.</string>
     <string name="NilakCommunityNew">New community</string>
+    <string name="NilakCommunityFeed">Feed</string>
+    <string name="NilakCommunityChats">Chats</string>
+    <string name="NilakCommunityAbout">About</string>
+    <string name="NilakCommunityNoPosts">No posts yet. Posts from this community\'s channels will show up here.</string>
+    <string name="NilakCommunityRequest">Request</string>
+    <string name="NilakCommunityBot">Bot</string>
+    <string name="NilakCommunityAdmins_one">%1$d administrator</string>
+    <string name="NilakCommunityAdmins_other">%1$d administrators</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>
     <string name="SwitchThemeToDay">Day Mode</string>

@@ -4163,10 +4163,14 @@ public class ChatActivity extends BaseFragment implements
             @Override
             protected boolean onAvatarClick() {
                 if (currentUser != null && currentUser.linked_community_id != 0) {
-                    showDialog(new CommunitySheet(ChatActivity.this, currentUser.linked_community_id));
+                    if (!NilakCommunityActivity.open(ChatActivity.this, currentUser.linked_community_id)) { // Nilak
+                        showDialog(new CommunitySheet(ChatActivity.this, currentUser.linked_community_id));
+                    }
                     return true;
                 } else if (currentChat != null && currentChat.linked_community_id != 0) {
-                    showDialog(new CommunitySheet(ChatActivity.this, currentChat.linked_community_id));
+                    if (!NilakCommunityActivity.open(ChatActivity.this, currentChat.linked_community_id)) { // Nilak
+                        showDialog(new CommunitySheet(ChatActivity.this, currentChat.linked_community_id));
+                    }
                     return true;
                 }
                 return false;

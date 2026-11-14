@@ -4471,10 +4471,12 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 processOnClickOrPress(position, view, x, y);
             } else if (position == linkedCommunityRow) {
                 if (currentChat != null) {
-                    showDialog(new CommunitySheet(this, currentChat.linked_community_id));
+                    if (!NilakCommunityActivity.open(this, currentChat.linked_community_id)) { // Nilak
+                        showDialog(new CommunitySheet(this, currentChat.linked_community_id));
+                    }
                 } else if (userId != 0) {
                     final TLRPC.User user = getMessagesController().getUser(userId);
-                    if (user != null) {
+                    if (user != null && !NilakCommunityActivity.open(this, user.linked_community_id)) { // Nilak
                         showDialog(new CommunitySheet(this, user.linked_community_id));
                     }
                 }

@@ -8129,6 +8129,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 }
                             }
                         }
+                    } else if (ChatObject.isCommunity(chat) && NilakCommunityActivity.open(this, chat.id)) {
+                        // Nilak: the community page
                     } else if (ChatObject.isCommunity(chat)) {
                         args = new Bundle();
                         args.putLong("community_id", chat.id);

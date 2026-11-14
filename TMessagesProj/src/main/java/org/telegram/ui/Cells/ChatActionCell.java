@@ -1478,7 +1478,8 @@ public class ChatActionCell extends BaseCell implements DownloadController.FileD
                             if (messageObject.type == MessageObject.TYPE_COMMUNITY_CHANGED) {
                                 playSoundEffect(SoundEffectConstants.CLICK);
                                 final BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
-                                if (lastFragment != null) {
+                                final long nilakCommunityId = ((TLRPC.TL_messageActionChangeCommunity) messageObject.messageOwner.action).community_id;
+                                if (lastFragment != null && !org.telegram.ui.NilakCommunityActivity.open(lastFragment, nilakCommunityId)) { // Nilak
                                     new CommunitySheet(lastFragment, ((TLRPC.TL_messageActionChangeCommunity) messageObject.messageOwner.action).community_id)
                                         .show();
                                 }

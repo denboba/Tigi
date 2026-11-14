@@ -438,8 +438,9 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
     }
 
     private void openCommunity(long communityId) {
-        // Telegram's community screen, until Nilak's community page replaces it
-        showDialog(new CommunitySheet(this, communityId));
+        if (!NilakCommunityActivity.open(this, communityId)) {
+            showDialog(new CommunitySheet(this, communityId));
+        }
     }
 
     /* loading */

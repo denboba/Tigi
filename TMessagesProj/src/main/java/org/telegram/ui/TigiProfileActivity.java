@@ -824,6 +824,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         private final TextView reelsTab;
         private final TextView savedTab;
         private final HighlightsRow highlights;
+        private NilakProfileCommunitiesRow communitiesRow;
 
         HeaderView(Context context) {
             super(context);
@@ -965,6 +966,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             // highlights: stories pinned to the profile
             highlights = new HighlightsRow(context);
             addView(highlights, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, -16, 0, -16, 6));
+            if (self && org.telegram.messenger.BuildVars.TIGI_COMMUNITIES_TAB) {
+                // the communities the person belongs to (Telegram tells only them)
+                communitiesRow = new NilakProfileCommunitiesRow(context, TigiProfileActivity.this);
+                addView(communitiesRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, -16, 0, -16, 8));
+                communitiesRow.update();
+            }
 
             final LinearLayout tabs = new LinearLayout(context);
             tabs.setOrientation(HORIZONTAL);

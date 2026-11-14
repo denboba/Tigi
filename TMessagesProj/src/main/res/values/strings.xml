@@ -11089,6 +11089,15 @@
     <string name="NilakCommunityBot">Bot</string>
     <string name="NilakCommunityAdmins_one">%1$d administrator</string>
     <string name="NilakCommunityAdmins_other">%1$d administrators</string>
+    <string name="NilakCommunityFromChat">From a chat I already have</string>
+    <string name="NilakCommunityFromChatHint">One of your groups or channels becomes its first chat</string>
+    <string name="NilakCommunityFromChannel">From my Nilak channel</string>
+    <string name="NilakCommunityNewGroup">Start with a new group</string>
+    <string name="NilakCommunityNewGroupHint">Create the group, then make it a community from its info</string>
+    <string name="NilakCommunityPostTo">Post to…</string>
+    <string name="NilakCommunityPostToHint">Chats in this community where you can post</string>
+    <string name="NilakCommunityShare">Share something…</string>
+    <string name="NilakCommunityTopics">Group with topics</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>
     <string name="SwitchThemeToDay">Day Mode</string>

@@ -166,7 +166,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         emptyButton.setTypeface(TigiStyle.displayBold());
         emptyButton.setGravity(Gravity.CENTER);
         emptyButton.setPadding(dp(24), 0, dp(24), 0);
-        emptyButton.setOnClickListener(v -> TigiCreateSheet.openCommunity(this));
+        emptyButton.setOnClickListener(v -> NilakCommunitySheets.showNewCommunity(this));
         emptyCard.addView(emptyButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, 0, 16, 0, 0));
         scrollingPart.addView(emptyCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 0));
 
@@ -192,7 +192,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         bar.addView(titleView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 18, 0, 18, 0));
 
         createButton = headerButton(context, R.drawable.tigi_add_24, R.string.NilakCommunityNew);
-        createButton.setOnClickListener(v -> TigiCreateSheet.openCommunity(this));
+        createButton.setOnClickListener(v -> NilakCommunitySheets.showNewCommunity(this));
         bar.addView(createButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), 6, 4, 6, 0));
         searchButton = headerButton(context, R.drawable.outline_header_search, R.string.Search);
         searchButton.setOnClickListener(v -> {

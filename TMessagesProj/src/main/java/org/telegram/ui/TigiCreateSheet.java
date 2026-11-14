@@ -77,21 +77,6 @@ public class TigiCreateSheet {
      * Nilak Create: one sheet with every way to post, so nothing is hidden behind the channel screen.
      * Post and the tools open the user's channel (made quietly on first use); Article opens Nilak Writer.
      */
-    /**
-     * Telegram's own Community screen for the person's channel: create a new Community around it or add it to one
-     * they belong to. Without a channel, Telegram's new group comes first; a group can become a Community too.
-     */
-    static void openCommunity(BaseFragment fragment) {
-        final TLRPC.Chat mine = TigiPosting.defaultChannel(fragment.getCurrentAccount());
-        if (mine == null) {
-            fragment.presentFragment(new GroupCreateActivity(new Bundle()));
-            return;
-        }
-        final Bundle args = new Bundle();
-        args.putLong("dialog_id", -mine.id);
-        fragment.presentFragment(new org.telegram.ui.community.CommunityCreateActivity(args));
-    }
-
     public static void show(BaseFragment fragment) {
         final Context context = fragment != null ? fragment.getParentActivity() : null;
         if (context == null) {
@@ -127,7 +112,7 @@ public class TigiCreateSheet {
             items.add(new Object[]{"🔴", R.string.NilakCreateLive, R.string.NilakCreateLiveHint, (Runnable) () -> TigiLive.start(fragment)});
         }
         items.add(new Object[]{"🗂", R.string.NilakCreateArticles, R.string.NilakCreateArticlesHint, (Runnable) () -> fragment.presentFragment(new org.nilak.writer.WriterHomeActivity())});
-        items.add(new Object[]{"🏘", R.string.NilakCreateCommunity, R.string.NilakCreateCommunityHint, (Runnable) () -> openCommunity(fragment)});
+        items.add(new Object[]{"🏘", R.string.NilakCreateCommunity, R.string.NilakCreateCommunityHint, (Runnable) () -> NilakCommunitySheets.showNewCommunity(fragment)});
 
         LinearLayout row = null;
         for (int i = 0; i < items.size(); i++) {

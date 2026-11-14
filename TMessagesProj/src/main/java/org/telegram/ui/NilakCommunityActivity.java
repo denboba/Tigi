@@ -81,6 +81,8 @@ public class NilakCommunityActivity extends TigiFeedBase {
     private TextView joinButton;
     private final TextView[] tabViews = new TextView[3];
     private View tabsLine;
+    private LinearLayout shareBar;
+    private TextView shareText;
     private ScrollView pageScroll;
     private LinearLayout pageContent;
 
@@ -236,6 +238,25 @@ public class NilakCommunityActivity extends TigiFeedBase {
         tabsLine = new View(context);
         header.addView(tabsLine, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
 
+        // Feed: write in one of the community's chats (Telegram's compose screen opens there)
+        shareBar = new LinearLayout(context);
+        shareBar.setOrientation(LinearLayout.HORIZONTAL);
+        shareBar.setGravity(Gravity.CENTER_VERTICAL);
+        shareBar.setPadding(dp(16), 0, dp(12), 0);
+        shareBar.setOnClickListener(v -> NilakCommunitySheets.showPostTo(this, communityId));
+        shareText = new TextView(context);
+        shareText.setText(LocaleController.getString(R.string.NilakCommunityShare));
+        shareText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.5f);
+        shareText.setSingleLine(true);
+        shareBar.addView(shareText, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL));
+        final ImageView sharePhoto = new ImageView(context);
+        sharePhoto.setImageResource(R.drawable.msg_photos);
+        sharePhoto.setScaleType(ImageView.ScaleType.CENTER);
+        sharePhoto.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        shareBar.addView(sharePhoto, LayoutHelper.createLinear(32, 32, Gravity.CENTER_VERTICAL));
+        shareBar.setContentDescription(shareText.getText());
+        header.addView(shareBar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44, 12, 10, 12, 4));
+
         updateHeaderColors();
         bindHeader();
         return header;
@@ -258,6 +279,9 @@ public class NilakCommunityActivity extends TigiFeedBase {
         subtitleView.setTextColor(metaColor());
         joinButton.setBackground(TigiStyle.primaryPill(18));
         tabsLine.setBackgroundColor(TigiLilac.on() ? TigiLilac.inset() : Theme.getColor(Theme.key_divider));
+        shareBar.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(22), cardColor(), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
+        shareText.setTextColor(metaColor());
+        ((ImageView) shareBar.getChildAt(1)).setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
         bindTabs();
         if (pageContent != null) {
             bindPage();
@@ -275,6 +299,7 @@ public class NilakCommunityActivity extends TigiFeedBase {
         final MessagesController.CommunityPeersDialog peers = getMessagesController().buildCommunityPeers(communityId);
         final boolean isIn = peers != null && !peers.chatsYouAreIn.isEmpty();
         joinButton.setVisibility(info != null && !isIn && tab != TAB_CHATS ? View.VISIBLE : View.GONE);
+        shareBar.setVisibility(tab == TAB_FEED && NilakCommunitySheets.hasChatsToPostIn(currentAccount, communityId) ? View.VISIBLE : View.GONE);
     }
 
     private void bindTabs() {

@@ -166,6 +166,10 @@ public class NilakCommunityActivity extends TigiFeedBase {
             final TLRPC.ChatFull info = (TLRPC.ChatFull) args[0];
             if (info != null && info.id == communityId) {
                 bindHeader();
+                if (tab == TAB_ASK) {
+                    // a board may have been added or removed
+                    refreshAsk();
+                }
                 bindPage();
                 if (collectSources() || !postsLoaded) {
                     loadPosts();
@@ -480,6 +484,25 @@ public class NilakCommunityActivity extends TigiFeedBase {
             text.setTextColor(metaColor());
             text.setGravity(Gravity.CENTER);
             card.addView(text, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+            if (ChatObject.canAddChatToCommunity(community)) {
+                // admins add the board in one tap: a group with topics, linked to this community
+                final TextView add = new TextView(context);
+                add.setText(LocaleController.getString(R.string.NilakAskAddBoard));
+                add.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+                add.setTypeface(TigiStyle.displayBold());
+                add.setTextColor(0xFFFFFFFF);
+                add.setGravity(Gravity.CENTER);
+                add.setPadding(dp(24), 0, dp(24), 0);
+                add.setBackground(TigiStyle.primaryPill(22));
+                add.setOnClickListener(v -> createAskBoard(add));
+                card.addView(add, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, 0, 16, 0, 0));
+                final TextView hint = new TextView(context);
+                hint.setText(LocaleController.getString(R.string.NilakAskAddBoardHint));
+                hint.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+                hint.setTextColor(metaColor());
+                hint.setGravity(Gravity.CENTER);
+                card.addView(hint, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
+            }
             pageContent.addView(card, cardParams());
             return;
         }
@@ -550,6 +573,24 @@ public class NilakCommunityActivity extends TigiFeedBase {
             pageContent.addView(note(LocaleController.getString(getMessagesController().getTopicsController().getTopics(askBoard.id) == null
                 ? R.string.Loading : R.string.NilakAskNoQuestions)), cardParams());
         }
+    }
+
+    private void createAskBoard(View button) {
+        button.setEnabled(false);
+        button.setAlpha(0.6f);
+        final String title = LocaleController.formatString(R.string.NilakAskBoardTitle, community.title);
+        NilakAsk.createBoard(this, community, title, board -> {
+            if (isDead()) {
+                return;
+            }
+            if (board == null) {
+                button.setEnabled(true);
+                button.setAlpha(1f);
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakAskBoardFailed)).show();
+                return;
+            }
+            refreshAsk();
+        });
     }
 
     private void askQuestion() {

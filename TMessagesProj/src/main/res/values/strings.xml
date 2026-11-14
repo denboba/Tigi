@@ -11126,6 +11126,10 @@
     <string name="NilakAskChoose">Choose</string>
     <string name="NilakAskChosen">Chosen by the asker</string>
     <string name="NilakAskSend">Send</string>
+    <string name="NilakAskAddBoard">Add Ask board</string>
+    <string name="NilakAskAddBoardHint">Creates a group with topics in this community. Each question is a topic; people on any Telegram app can ask and answer.</string>
+    <string name="NilakAskBoardTitle">Ask · %1$s</string>
+    <string name="NilakAskBoardFailed">Couldn\'t create the Ask board. Try again.</string>
     <string name="NilakAskEmptyText">Questions and answers live in a group with topics in this community. An admin can add one.</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>

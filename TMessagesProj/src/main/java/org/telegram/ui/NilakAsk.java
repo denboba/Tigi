@@ -437,4 +437,39 @@ public final class NilakAsk {
         edit.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         return edit;
     }
+
+    /**
+     * Admin: a new Ask board for the community. A group with topics named after it, where members may create topics
+     * (ask) but group info and pins stay with admins, linked to the community. onDone gets the new board, or null.
+     */
+    public static void createBoard(BaseFragment fragment, TLRPC.Chat community, String title, Utilities.Callback<TLRPC.Chat> onDone) {
+        final int account = fragment.getCurrentAccount();
+        final MessagesController controller = MessagesController.getInstance(account);
+        final TLRPC.TL_channels_createChannel request = new TLRPC.TL_channels_createChannel();
+        request.title = title;
+        request.about = "";
+        request.megagroup = true;
+        request.forum = true;
+        ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> {
+            if (!(response instanceof TLRPC.Updates) || ((TLRPC.Updates) response).chats.isEmpty()) {
+                AndroidUtilities.runOnUIThread(() -> onDone.run(null));
+                return;
+            }
+            final TLRPC.Updates updates = (TLRPC.Updates) response;
+            controller.processUpdates(updates, false);
+            AndroidUtilities.runOnUIThread(() -> {
+                final TLRPC.Chat board = updates.chats.get(0);
+                controller.putChat(board, false);
+                final TLRPC.TL_chatBannedRights rights = new TLRPC.TL_chatBannedRights();
+                rights.change_info = true;
+                rights.pin_messages = true;
+                rights.manage_topics = false;
+                controller.setDefaultBannedRole(board.id, rights, true, fragment);
+                controller.linkCommunity(-board.id, community.id, false, (res, linkError) -> AndroidUtilities.runOnUIThread(() -> {
+                    controller.loadFullChat(community.id, 0, true);
+                    onDone.run(linkError == null ? board : null);
+                }));
+            });
+        }, ConnectionsManager.RequestFlagFailOnServerErrors);
+    }
 }

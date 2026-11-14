@@ -11134,6 +11134,7 @@
     <string name="NilakAskAnonymousHint">@NilakAppBot posts it for you; your name stays hidden</string>
     <string name="NilakAskAnonymousSent">Sent. Your question appears on the board in a moment.</string>
     <string name="NilakAskAnonymousName">Anonymous</string>
+    <string name="NilakAskNewQuestions">New questions</string>
     <string name="NilakAskEmptyText">Questions and answers live in a group with topics in this community. An admin can add one.</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>

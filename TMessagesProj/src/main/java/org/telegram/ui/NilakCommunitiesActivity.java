@@ -72,6 +72,9 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
     private TextView emptyText;
     private TextView emptyButton;
     private TextView latestLabel;
+    // newest questions from the communities' Ask boards
+    private LinearLayout questionsCard;
+    private final java.util.HashMap<Long, NilakAsk.Question> askKnown = new java.util.HashMap<>();
     private int titleOffset;
 
     public NilakCommunitiesActivity(Bundle args) {
@@ -84,6 +87,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
             return false;
         }
         getNotificationCenter().addObserver(this, NotificationCenter.chatInfoDidLoad);
+        getNotificationCenter().addObserver(this, NotificationCenter.topicsDidLoaded);
         getNotificationCenter().addObserver(this, NotificationCenter.dialogsNeedReload);
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
         communities.addAll(getMessagesController().getJoinedCommunities());
@@ -93,6 +97,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
     @Override
     public void onFragmentDestroy() {
         getNotificationCenter().removeObserver(this, NotificationCenter.chatInfoDidLoad);
+        getNotificationCenter().removeObserver(this, NotificationCenter.topicsDidLoaded);
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogsNeedReload);
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
         super.onFragmentDestroy();
@@ -100,11 +105,16 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.topicsDidLoaded) {
+            bindQuestions(false);
+            return;
+        }
         if (id == NotificationCenter.chatInfoDidLoad) {
             final TLRPC.ChatFull info = (TLRPC.ChatFull) args[0];
             if (info != null && isJoined(info.id)) {
-                // linked chats arrived: their newest messages and channels
+                // linked chats arrived: their newest messages, channels and Ask board
                 bindCommunities();
+                bindQuestions(true);
                 if (collectSources()) {
                     loadPosts();
                 }
@@ -169,6 +179,12 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         emptyButton.setOnClickListener(v -> NilakCommunitySheets.showNewCommunity(this));
         emptyCard.addView(emptyButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, 0, 16, 0, 0));
         scrollingPart.addView(emptyCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 0));
+
+        questionsCard = new LinearLayout(context);
+        questionsCard.setOrientation(LinearLayout.VERTICAL);
+        questionsCard.setPadding(dp(4), dp(8), dp(4), dp(6));
+        questionsCard.setVisibility(View.GONE);
+        scrollingPart.addView(questionsCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 12, 12, 0));
 
         latestLabel = new TextView(context);
         latestLabel.setText(LocaleController.getString(R.string.NilakCommunitiesLatest));
@@ -257,6 +273,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         emptyButton.setTextColor(0xFFFFFFFF);
         emptyButton.setBackground(TigiStyle.primaryPill(22));
         latestLabel.setTextColor(ink);
+        questionsCard.setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
         bindCommunities();
     }
 
@@ -269,6 +286,67 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
             }
         }
         return false;
+    }
+
+    private static final int QUESTIONS_SHOWN = 3;
+
+    /** The newest questions across the communities' Ask boards; a tap opens the question. */
+    private void bindQuestions(boolean load) {
+        if (questionsCard == null) {
+            return;
+        }
+        final ArrayList<Object[]> found = new ArrayList<>();
+        for (TLRPC.Chat community : communities) {
+            final TLRPC.Chat board = NilakAsk.findBoard(currentAccount, community.id);
+            if (board == null) {
+                continue;
+            }
+            if (load && getMessagesController().getTopicsController().getTopics(board.id) == null) {
+                getMessagesController().getTopicsController().loadTopics(board.id);
+            }
+            for (NilakAsk.Question question : NilakAsk.questionsOf(currentAccount, board, askKnown)) {
+                found.add(new Object[]{question, board, community});
+            }
+        }
+        Collections.sort(found, (a, b) -> Integer.compare(((NilakAsk.Question) b[0]).topic.date, ((NilakAsk.Question) a[0]).topic.date));
+        questionsCard.removeAllViews();
+        questionsCard.setVisibility(found.isEmpty() ? View.GONE : View.VISIBLE);
+        if (found.isEmpty()) {
+            return;
+        }
+        final TextView header = new TextView(questionsCard.getContext());
+        header.setText(LocaleController.getString(R.string.NilakAskNewQuestions));
+        header.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
+        header.setTypeface(TigiStyle.displayBold());
+        header.setTextColor(TigiStyle.accent());
+        header.setPadding(dp(10), 0, dp(10), dp(4));
+        questionsCard.addView(header);
+        for (int i = 0; i < found.size() && i < QUESTIONS_SHOWN; i++) {
+            final NilakAsk.Question question = (NilakAsk.Question) found.get(i)[0];
+            final TLRPC.Chat board = (TLRPC.Chat) found.get(i)[1];
+            final TLRPC.Chat community = (TLRPC.Chat) found.get(i)[2];
+            final LinearLayout row = new LinearLayout(questionsCard.getContext());
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(dp(10), dp(8), dp(10), dp(8));
+            row.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(14), dp(14)));
+            row.setOnClickListener(v -> NilakQuestionActivity.open(this, board.id, question.topic.id));
+            final TextView title = new TextView(questionsCard.getContext());
+            title.setText(question.topic.title);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            title.setTypeface(TigiStyle.displayBold());
+            title.setTextColor(inkColor());
+            title.setMaxLines(2);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            row.addView(title);
+            final TextView meta = new TextView(questionsCard.getContext());
+            meta.setText(community.title + "  ·  " + LocaleController.stringForMessageListDate(question.topic.date));
+            meta.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+            meta.setTextColor(metaColor());
+            meta.setSingleLine(true);
+            meta.setEllipsize(TextUtils.TruncateAt.END);
+            row.addView(meta, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+            questionsCard.addView(row);
+        }
     }
 
     private void bindCommunities() {
@@ -466,6 +544,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
                 communitiesLoaded = true;
             }
             bindCommunities();
+            bindQuestions(true);
             if (collectSources() || posts.isEmpty()) {
                 loadPosts();
             }

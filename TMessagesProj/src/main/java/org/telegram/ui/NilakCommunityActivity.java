@@ -56,6 +56,8 @@ import java.util.HashSet;
  */
 public class NilakCommunityActivity extends TigiFeedBase {
 
+    // how far the content scrolls before the large header folds
+    private static final int HERO_FOLD_DP = 48;
     private static final int TAB_FEED = 0;
     private static final int TAB_ASK = 1;
     private static final int TAB_CHATS = 2;
@@ -93,6 +95,16 @@ public class NilakCommunityActivity extends TigiFeedBase {
     private String askCategory;
     private View tabsLine;
     private LinearLayout shareBar;
+    // the large header (photo, name, actions) that folds away while scrolling down, leaving the compact bar
+    private LinearLayout hero;
+    private TextView heroName;
+    private TextView heroSubtitle;
+    private TextView heroJoin;
+    private TextView heroAdd;
+    private TextView heroSettings;
+    private View compactAvatar;
+    private View compactNames;
+    private boolean heroShown = true;
     private TextView shareText;
     private ScrollView pageScroll;
     private LinearLayout pageContent;
@@ -258,6 +270,9 @@ public class NilakCommunityActivity extends TigiFeedBase {
         moreButton.setOnClickListener(v -> showMenu());
         row.addView(moreButton, LayoutHelper.createLinear(48, 56));
         header.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56));
+        compactAvatar = avatar;
+        compactNames = names;
+        header.addView(createHero(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         final LinearLayout tabs = new LinearLayout(context);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
@@ -301,6 +316,91 @@ public class NilakCommunityActivity extends TigiFeedBase {
         return header;
     }
 
+    private View createHero(Context context) {
+        hero = new LinearLayout(context);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setGravity(Gravity.CENTER_HORIZONTAL);
+        hero.setPadding(dp(16), 0, dp(16), dp(10));
+
+        // the photo inside the Nilak ring, as on profiles
+        final FrameLayout ring = new FrameLayout(context);
+        final android.graphics.drawable.GradientDrawable ringDrawable = new android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.BL_TR, new int[]{TigiStyle.RING_START, TigiStyle.RING_END});
+        ringDrawable.setCornerRadius(dp(28));
+        ring.setBackground(ringDrawable);
+        ring.setPadding(dp(3), dp(3), dp(3), dp(3));
+        final FrameLayout inner = new FrameLayout(context);
+        final android.graphics.drawable.GradientDrawable innerDrawable = new android.graphics.drawable.GradientDrawable();
+        innerDrawable.setCornerRadius(dp(25));
+        innerDrawable.setColor(TigiLilac.on() ? TigiLilac.pageTop() : Theme.getColor(Theme.key_windowBackgroundWhite));
+        inner.setBackground(innerDrawable);
+        inner.setPadding(dp(3), dp(3), dp(3), dp(3));
+        final BackupImageView photo = new BackupImageView(context);
+        photo.setRoundRadius(dp(22));
+        final AvatarDrawable photoDrawable = new AvatarDrawable();
+        photoDrawable.setInfo(currentAccount, community);
+        photo.setForUserOrChat(community, photoDrawable);
+        photo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        inner.addView(photo, LayoutHelper.createFrame(76, 76));
+        ring.addView(inner);
+        ring.setOnClickListener(v -> selectTab(TAB_ABOUT));
+        hero.addView(ring, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+
+        heroName = new TextView(context);
+        heroName.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
+        heroName.setTypeface(TigiStyle.displayExtraBold());
+        heroName.setGravity(Gravity.CENTER);
+        heroName.setMaxLines(2);
+        heroName.setEllipsize(TextUtils.TruncateAt.END);
+        hero.addView(heroName, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
+        heroSubtitle = new TextView(context);
+        heroSubtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
+        heroSubtitle.setGravity(Gravity.CENTER);
+        hero.addView(heroSubtitle, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+
+        final LinearLayout actions = new LinearLayout(context);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER);
+        heroJoin = heroAction(context, R.string.TigiJoin, true, () -> selectTab(TAB_CHATS));
+        actions.addView(heroJoin, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 36, 4, 0, 4, 0));
+        heroAdd = heroAction(context, R.string.CommunityMenuAddChat, false, this::addChat);
+        actions.addView(heroAdd, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 36, 4, 0, 4, 0));
+        heroSettings = heroAction(context, R.string.CommunityMenuSettings, false, this::openSettings);
+        actions.addView(heroSettings, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 36, 4, 0, 4, 0));
+        hero.addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
+        return hero;
+    }
+
+    private TextView heroAction(Context context, int text, boolean primary, Runnable action) {
+        final TextView view = new TextView(context);
+        view.setText(LocaleController.getString(text));
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        view.setTypeface(TigiStyle.displayBold());
+        view.setGravity(Gravity.CENTER);
+        view.setPadding(dp(16), 0, dp(16), 0);
+        view.setSingleLine(true);
+        view.setTextColor(primary ? 0xFFFFFFFF : TigiStyle.accent());
+        view.setBackground(primary ? TigiStyle.primaryPill(18) : TigiStyle.tintedPill(18));
+        view.setOnClickListener(v -> action.run());
+        return view;
+    }
+
+    /** The large header shows at the top of each tab; scrolled down, the compact bar's photo and name take over. */
+    private void setHeroShown(boolean shown) {
+        if (hero == null || heroShown == shown) {
+            return;
+        }
+        heroShown = shown;
+        hero.setVisibility(shown ? View.VISIBLE : View.GONE);
+        compactAvatar.animate().alpha(shown ? 0f : 1f).setDuration(150).start();
+        compactNames.animate().alpha(shown ? 0f : 1f).setDuration(150).start();
+    }
+
+    @Override
+    protected void onListScrolled(int dy) {
+        setHeroShown(listScrollFromTop() < dp(HERO_FOLD_DP));
+    }
+
     @Override
     protected void updateHeaderColors() {
         if (headerView == null) {
@@ -337,7 +437,18 @@ public class NilakCommunityActivity extends TigiFeedBase {
         subtitleView.setText(chats > 0 ? LocaleController.formatPluralString("CommunityWithChats", chats) : LocaleController.getString(R.string.Community));
         final MessagesController.CommunityPeersDialog peers = getMessagesController().buildCommunityPeers(communityId);
         final boolean isIn = peers != null && !peers.chatsYouAreIn.isEmpty();
-        joinButton.setVisibility(info != null && !isIn && tab != TAB_CHATS ? View.VISIBLE : View.GONE);
+        joinButton.setVisibility(info != null && !isIn && tab != TAB_CHATS && !heroShown ? View.VISIBLE : View.GONE);
+        if (hero != null) {
+            heroName.setText(community.title);
+            heroName.setTextColor(inkColor());
+            heroSubtitle.setText(subtitleView.getText());
+            heroSubtitle.setTextColor(metaColor());
+            heroJoin.setVisibility(info != null && !isIn ? View.VISIBLE : View.GONE);
+            heroAdd.setVisibility(ChatObject.canAddChatToCommunity(community) ? View.VISIBLE : View.GONE);
+            heroSettings.setVisibility(ChatObject.hasAdminRights(community) ? View.VISIBLE : View.GONE);
+            compactAvatar.setAlpha(heroShown ? 0f : 1f);
+            compactNames.setAlpha(heroShown ? 0f : 1f);
+        }
         shareBar.setVisibility(tab == TAB_FEED && NilakCommunitySheets.hasChatsToPostIn(currentAccount, communityId) ? View.VISIBLE : View.GONE);
     }
 
@@ -359,6 +470,7 @@ public class NilakCommunityActivity extends TigiFeedBase {
             return;
         }
         tab = index;
+        setHeroShown(true);
         if (tab == TAB_ASK) {
             refreshAsk();
         }
@@ -421,6 +533,7 @@ public class NilakCommunityActivity extends TigiFeedBase {
         pageScroll.setClipToPadding(false);
         pageScroll.setPadding(0, dp(12), 0, dp(24) + AndroidUtilities.navigationBarHeight);
         pageScroll.setVisibility(View.GONE);
+        pageScroll.setOnScrollChangeListener((v, x, y, oldX, oldY) -> setHeroShown(y < dp(HERO_FOLD_DP)));
         pageContent = new LinearLayout(context);
         pageContent.setOrientation(LinearLayout.VERTICAL);
         pageScroll.addView(pageContent, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -759,126 +872,55 @@ public class NilakCommunityActivity extends TigiFeedBase {
         pageContent.addView(card, cardParams());
     }
 
+    /** One of the community's chats as Telegram's own chat row: last message, typing, unread and muted badges. */
     private View chatRow(MessagesController.CommunityPeerDialog peer) {
-        final Context context = pageContent.getContext();
-        final LinearLayout row = new LinearLayout(context);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10), dp(8), dp(10), dp(8));
-        row.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(14), dp(14)));
-        row.setOnClickListener(v -> openPeer(peer));
-
-        final BackupImageView avatar = new BackupImageView(context);
-        avatar.setRoundRadius(dp(22));
-        final AvatarDrawable avatarDrawable = new AvatarDrawable();
-        if (peer.chat != null) {
-            avatarDrawable.setInfo(currentAccount, peer.chat);
-            avatar.setForUserOrChat(peer.chat, avatarDrawable);
+        final org.telegram.ui.Cells.DialogCell cell = new org.telegram.ui.Cells.DialogCell(null, pageContent.getContext(), false, false,
+            currentAccount, getResourceProvider());
+        cell.insideCommunityList = true;
+        final TLRPC.Dialog dialog = getMessagesController().getDialog(peer.dialogId);
+        cell.isHiddenInCommunity = peer.chat != null ? ChatObject.isHiddenInCommunity(currentAccount, peer.chat)
+            : ChatObject.isHiddenInCommunity(currentAccount, peer.user);
+        cell.insideCommunityListNoDialog = dialog == null;
+        if (dialog != null) {
+            cell.setCustomMessageWithoutRebuild(null);
+            cell.setDialog(dialog, DialogsActivity.DIALOGS_TYPE_DEFAULT, 0);
         } else {
-            avatarDrawable.setInfo(currentAccount, peer.user);
-            avatar.setForUserOrChat(peer.user, avatarDrawable);
+            cell.setCustomMessageWithoutRebuild(peer.user != null ? LocaleController.getString(R.string.Bot)
+                : LocaleController.formatPluralString(ChatObject.isChannelAndNotMegaGroup(peer.chat) ? "Subscribers" : "Members",
+                peer.chat.participants_count));
+            cell.setDialog(peer.dialogId, null, 0, false, false);
         }
-        avatar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        row.addView(avatar, LayoutHelper.createLinear(44, 44));
-
-        final LinearLayout texts = new LinearLayout(context);
-        texts.setOrientation(LinearLayout.VERTICAL);
-        final TextView name = new TextView(context);
-        name.setText(DialogObject.getName(peer.chat != null ? peer.chat : peer.user));
-        name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15.5f);
-        name.setTypeface(TigiStyle.displayBold());
-        name.setTextColor(inkColor());
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        texts.addView(name);
-        final TextView sub = new TextView(context);
-        sub.setText(peerSubtitle(peer));
-        sub.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-        sub.setTextColor(metaColor());
-        sub.setSingleLine(true);
-        sub.setEllipsize(TextUtils.TruncateAt.END);
-        texts.addView(sub, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
-        row.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 12, 0, 8, 0));
-
-        final CommunityChatType type = CommunityUtils.getCommunityChatType(peer.chat, peer.user, peer.dialog, peer.peer);
-        final View end;
-        if (type == CommunityChatType.YouAreIn) {
-            final int unread = peer.dialog != null ? getMessagesController().getDialogUnreadCount(peer.dialog) : 0;
-            final TextView badge = new TextView(context);
-            if (unread > 0) {
-                badge.setText(LocaleController.formatShortNumber(unread, null));
-                badge.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-                badge.setTypeface(AndroidUtilities.bold());
-                badge.setTextColor(0xFFFFFFFF);
-                badge.setGravity(Gravity.CENTER);
-                badge.setMinWidth(dp(22));
-                badge.setPadding(dp(6), 0, dp(6), 0);
-                final boolean muted = getMessagesController().isDialogMuted(peer.dialogId, 0);
-                badge.setBackground(Theme.createRoundRectDrawable(dp(11), muted ? Theme.multAlpha(metaColor(), 0.55f) : TigiStyle.accent()));
-            }
-            end = badge;
-        } else if (type == CommunityChatType.HiddenUnavailable) {
-            end = null;
-        } else {
-            final TextView action = new TextView(context);
-            action.setText(LocaleController.getString(type == CommunityChatType.YouCanSendJoinRequest ? R.string.NilakCommunityRequest
-                : peer.user != null ? R.string.Open : R.string.TigiJoin));
-            action.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-            action.setTypeface(TigiStyle.displayBold());
-            action.setTextColor(TigiStyle.accent());
-            action.setGravity(Gravity.CENTER);
-            action.setPadding(dp(14), 0, dp(14), 0);
-            action.setBackground(TigiStyle.tintedPill(16));
-            action.setOnClickListener(v -> openPeer(peer));
-            end = action;
-        }
-        if (end != null) {
-            row.addView(end, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, end instanceof TextView && type == CommunityChatType.YouAreIn ? 22 : 32, Gravity.CENTER_VERTICAL));
-        }
-        row.setContentDescription(name.getText() + ", " + sub.getText());
-        return row;
+        cell.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(14), dp(14)));
+        cell.setOnClickListener(v -> openPeer(peer));
+        cell.setOnLongClickListener(v -> showPeerOptions(peer, v));
+        return cell;
     }
 
-    private CharSequence peerSubtitle(MessagesController.CommunityPeerDialog peer) {
-        final CommunityChatType type = CommunityUtils.getCommunityChatType(peer.chat, peer.user, peer.dialog, peer.peer);
-        if (type == CommunityChatType.YouAreIn && peer.dialog != null) {
-            final CharSequence last = lastMessage(peer.dialogId);
-            if (!TextUtils.isEmpty(last)) {
-                return last;
-            }
+    /** Admins remove a chat from the community, with Telegram's own wording; anyone can view it. */
+    private boolean showPeerOptions(MessagesController.CommunityPeerDialog peer, View anchor) {
+        final boolean canRemove = peer.chat != null ? ChatObject.canRemoveChatFromCommunity(peer.chat, community)
+            : ChatObject.canRemoveBotFromCommunity(peer.user, community);
+        final boolean isChannel = ChatObject.isChannelAndNotMegaGroup(peer.chat);
+        final boolean isBot = peer.user != null;
+        final org.telegram.ui.Components.ItemOptions options = org.telegram.ui.Components.ItemOptions.makeOptions(this, anchor);
+        options.add(R.drawable.msg_openin, LocaleController.getString(isBot ? R.string.CommunityMenuViewBot
+            : isChannel ? R.string.CommunityMenuViewChannel : R.string.CommunityMenuViewGroup), () -> openPeer(peer));
+        if (canRemove) {
+            options.add(R.drawable.msg_cancel, LocaleController.getString(R.string.CommunityMenuRemoveFromCommunity), true, () ->
+                org.telegram.ui.Components.AlertsCreator.showSimpleConfirmAlert(getParentActivity(), getResourceProvider(),
+                    LocaleController.getString(R.string.CommunityMenuRemoveFromCommunity),
+                    LocaleController.getString(isBot ? R.string.CommunityMenuRemoveBotFromCommunityConfirm : isChannel
+                        ? R.string.CommunityMenuRemoveChannelFromCommunityConfirm : R.string.CommunityMenuRemoveGroupFromCommunityConfirm),
+                    LocaleController.getString(R.string.Remove), true, () ->
+                        getMessagesController().unlinkCommunity(peer.dialogId, communityId, (res, err) -> AndroidUtilities.runOnUIThread(() -> {
+                            if (err != null) {
+                                BulletinFactory.of(this).showForError(err);
+                            }
+                            getMessagesController().loadFullChat(communityId, classGuid, true);
+                        }))));
         }
-        if (peer.user != null) {
-            return LocaleController.getString(R.string.NilakCommunityBot);
-        }
-        final boolean channel = ChatObject.isChannelAndNotMegaGroup(peer.chat);
-        final String kind = LocaleController.getString(channel ? R.string.AccDescrChannel : R.string.AccDescrGroup);
-        if (peer.chat != null && peer.chat.participants_count > 0) {
-            return kind + " · " + LocaleController.formatPluralString(channel ? "Subscribers" : "Members", peer.chat.participants_count);
-        }
-        return kind;
-    }
-
-    private CharSequence lastMessage(long dialogId) {
-        final ArrayList<MessageObject> last = getMessagesController().dialogMessage.get(dialogId);
-        final MessageObject message = last != null && !last.isEmpty() ? last.get(0) : null;
-        if (message == null || message.messageText == null) {
-            return null;
-        }
-        String text = message.messageText.toString().replace('\n', ' ');
-        if (text.length() > PREVIEW_LENGTH) {
-            text = text.substring(0, PREVIEW_LENGTH) + "…";
-        }
-        if (message.isOut()) {
-            return LocaleController.getString(R.string.FromYou) + ": " + text;
-        }
-        final TLRPC.Chat chat = dialogId < 0 ? getMessagesController().getChat(-dialogId) : null;
-        if (chat != null && !ChatObject.isChannelAndNotMegaGroup(chat)) {
-            final TLRPC.User user = getMessagesController().getUser(message.getFromChatId());
-            if (user != null) {
-                return UserObject.getFirstName(user) + ": " + text;
-            }
-        }
-        return text;
+        options.show();
+        return true;
     }
 
     /** The same as Telegram's community screen: open the chat, ask to join, or explain that it is hidden. */

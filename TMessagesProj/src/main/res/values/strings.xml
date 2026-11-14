@@ -11115,6 +11115,17 @@
     <string name="NilakAskUnanswered">Unanswered</string>
     <string name="NilakAskAll">All</string>
     <string name="NilakAskEmptyTitle">No Ask board yet</string>
+    <string name="NilakAskSheetTitle">Ask the community</string>
+    <string name="NilakAskQuestionHint">Your question</string>
+    <string name="NilakAskDetailsHint">Details (optional)</string>
+    <string name="NilakAskCategory">Category</string>
+    <string name="NilakAskPost">Post question</string>
+    <string name="NilakAskFailed">Couldn\'t post the question. Try again.</string>
+    <string name="NilakAskReply">Reply</string>
+    <string name="NilakAskReplyingTo">Replying to %1$s</string>
+    <string name="NilakAskChoose">Choose</string>
+    <string name="NilakAskChosen">Chosen by the asker</string>
+    <string name="NilakAskSend">Send</string>
     <string name="NilakAskEmptyText">Questions and answers live in a group with topics in this community. An admin can add one.</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>

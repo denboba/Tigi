@@ -563,7 +563,14 @@ public class NilakCommunityActivity extends TigiFeedBase {
             presentFragment(new ChatActivity(args));
             return;
         }
-        presentFragment(TopicCreateFragment.create(askBoard.id, 0));
+        final java.util.LinkedHashSet<String> categories = new java.util.LinkedHashSet<>();
+        for (NilakAsk.Question question : askQuestions) {
+            if (question.category != null) {
+                categories.add(question.category);
+            }
+        }
+        final TLRPC.Chat board = askBoard;
+        NilakAsk.showAskSheet(this, board, categories, topicId -> NilakQuestionActivity.open(this, board.id, topicId));
     }
 
     private View questionRow(NilakAsk.Question question) {

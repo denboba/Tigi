@@ -17,6 +17,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.NotificationCenter;
@@ -41,6 +42,7 @@ import java.util.HashMap;
 public class NilakQuestionActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
     private static final int MAX_MESSAGES = 100;
+    private static final int CHOSEN_COLOR = 0xFF2E9E62;
 
     private long chatId;
     private int topicId;
@@ -50,6 +52,11 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
     private final ArrayList<MessageObject> answers = new ArrayList<>();
     private final HashMap<Integer, Integer> repliesCount = new HashMap<>();
     private boolean loading;
+    // answers the asker chose with their ✅
+    private final java.util.HashSet<Integer> chosen = new java.util.HashSet<>();
+    private MessageObject replyTo;
+    private android.widget.EditText answerField;
+    private TextView replyChip;
 
     private LinearLayout content;
     private TextView statusView;
@@ -71,11 +78,20 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         topicId = arguments.getInt("topic_id");
         board = getMessagesController().getChat(chatId);
         topic = getMessagesController().getTopicsController().findTopic(chatId, topicId);
-        if (board == null || topic == null) {
+        if (topic == null && board != null) {
+            // just asked: Telegram's topic list catches up a moment later
+            topic = new TLRPC.TL_forumTopic();
+            topic.id = topicId;
+            topic.title = "";
+            topic.date = getConnectionsManager().getCurrentTime();
+            topic.from_id = getMessagesController().getPeer(getUserConfig().getClientUserId());
+        }
+        if (board == null) {
             return false;
         }
         getNotificationCenter().addObserver(this, NotificationCenter.didUpdateReactions);
         getNotificationCenter().addObserver(this, NotificationCenter.didReceiveNewMessages);
+        getNotificationCenter().addObserver(this, NotificationCenter.topicsDidLoaded);
         return super.onFragmentCreate();
     }
 
@@ -83,6 +99,7 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
     public void onFragmentDestroy() {
         getNotificationCenter().removeObserver(this, NotificationCenter.didUpdateReactions);
         getNotificationCenter().removeObserver(this, NotificationCenter.didReceiveNewMessages);
+        getNotificationCenter().removeObserver(this, NotificationCenter.topicsDidLoaded);
         super.onFragmentDestroy();
     }
 
@@ -98,6 +115,12 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
                     MessageObject.updateReactions(message.messageOwner, (TLRPC.TL_messageReactions) args[2]);
                     bind();
                 }
+            }
+        } else if (id == NotificationCenter.topicsDidLoaded) {
+            final TLRPC.TL_forumTopic loaded = getMessagesController().getTopicsController().findTopic(chatId, topicId);
+            if ((Long) args[0] == chatId && loaded != null) {
+                topic = loaded;
+                bind();
             }
         } else if (id == NotificationCenter.didReceiveNewMessages) {
             // a new answer in this topic: load again so it shows in its place
@@ -154,17 +177,44 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         column.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0, 1f));
         root.addView(column, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
-        // the answer box: Telegram's chat for the topic, with the keyboard open
-        final TextView answerBox = new TextView(context);
-        answerBox.setText(LocaleController.getString(R.string.NilakAskWriteAnswer));
-        answerBox.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-        answerBox.setTextColor(TigiFeedBase.metaColor());
-        answerBox.setGravity(Gravity.CENTER_VERTICAL);
-        answerBox.setPadding(dp(18), 0, dp(18), 0);
-        answerBox.setBackground(Theme.createRoundRectDrawable(dp(24), TigiFeedBase.cardColor()));
-        answerBox.setElevation(dp(2));
-        answerBox.setOnClickListener(v -> ForumUtilities.openTopic(this, chatId, topic, 0));
-        root.addView(answerBox, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.BOTTOM, 12, 0, 12, 12 + AndroidUtilities.navigationBarHeight / AndroidUtilities.density));
+        // the answer box: an answer, or a reply to the answer picked with Reply; sent into the question's topic
+        final LinearLayout composer = new LinearLayout(context);
+        composer.setOrientation(LinearLayout.VERTICAL);
+        composer.setPadding(dp(14), dp(6), dp(8), dp(6));
+        composer.setBackground(Theme.createRoundRectDrawable(dp(24), TigiFeedBase.cardColor()));
+        composer.setElevation(dp(2));
+        replyChip = new TextView(context);
+        replyChip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+        replyChip.setTypeface(TigiStyle.displayBold());
+        replyChip.setTextColor(TigiStyle.accent());
+        replyChip.setPadding(dp(4), dp(4), dp(4), 0);
+        replyChip.setVisibility(View.GONE);
+        // tapping the chip goes back to answering the question itself
+        replyChip.setOnClickListener(v -> setReplyTo(null));
+        composer.addView(replyChip);
+        final LinearLayout inputRow = new LinearLayout(context);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
+        answerField = new android.widget.EditText(context);
+        answerField.setHint(LocaleController.getString(R.string.NilakAskWriteAnswer));
+        answerField.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15.5f);
+        answerField.setTextColor(TigiFeedBase.inkColor());
+        answerField.setHintTextColor(TigiFeedBase.metaColor());
+        answerField.setBackground(null);
+        answerField.setMaxLines(5);
+        answerField.setPadding(dp(4), dp(8), dp(4), dp(8));
+        answerField.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        inputRow.addView(answerField, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+        final ImageView send = new ImageView(context);
+        send.setImageResource(R.drawable.ic_send);
+        send.setScaleType(ImageView.ScaleType.CENTER);
+        send.setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
+        send.setContentDescription(LocaleController.getString(R.string.NilakAskSend));
+        send.setBackground(Theme.createSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.15f), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        send.setOnClickListener(v -> sendAnswer());
+        inputRow.addView(send, LayoutHelper.createLinear(44, 44));
+        composer.addView(inputRow);
+        root.addView(composer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM, 12, 0, 12, 12 + AndroidUtilities.navigationBarHeight / AndroidUtilities.density));
 
         statusView = new TextView(context);
         statusView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -176,6 +226,37 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         bind();
         load();
         return root;
+    }
+
+    private void setReplyTo(MessageObject answer) {
+        replyTo = answer;
+        if (answer == null) {
+            replyChip.setVisibility(View.GONE);
+            answerField.setHint(LocaleController.getString(R.string.NilakAskWriteAnswer));
+            return;
+        }
+        final TLRPC.User user = getMessagesController().getUser(answer.getFromChatId());
+        replyChip.setText(LocaleController.formatString(R.string.NilakAskReplyingTo, user != null ? UserObject.getFirstName(user) : "") + "   ✕");
+        replyChip.setVisibility(View.VISIBLE);
+        answerField.requestFocus();
+        AndroidUtilities.showKeyboard(answerField);
+    }
+
+    private void sendAnswer() {
+        final String text = answerField.getText().toString().trim();
+        if (text.isEmpty()) {
+            AndroidUtilities.shakeView(answerField);
+            return;
+        }
+        if (ChatObject.isNotInChat(board)) {
+            // only members write in a group: join it in its chat first
+            ForumUtilities.openTopic(this, chatId, topic, 0);
+            return;
+        }
+        NilakAsk.send(this, chatId, topicId, replyTo, text);
+        answerField.setText("");
+        setReplyTo(null);
+        AndroidUtilities.hideKeyboard(answerField);
     }
 
     private void load() {
@@ -225,6 +306,15 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
             }
         }
         bind();
+        // the asker's ✅ marks the chosen answer
+        chosen.clear();
+        final long askerId = topic.from_id != null ? MessageObject.getPeerId(topic.from_id) : 0;
+        if (askerId != 0) {
+            NilakAsk.loadChosen(this, chatId, askerId, answers, answerId -> {
+                chosen.add(answerId);
+                bind();
+            });
+        }
     }
 
     private void bind() {
@@ -236,6 +326,10 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         // the most 👍 first; ties: the earlier answer
         final ArrayList<MessageObject> sorted = new ArrayList<>(answers);
         Collections.sort(sorted, (a, b) -> {
+            final int byChosen = Boolean.compare(chosen.contains(b.getId()), chosen.contains(a.getId()));
+            if (byChosen != 0) {
+                return byChosen;
+            }
             final int byVotes = Integer.compare(NilakAsk.count(b, NilakAsk.VOTE), NilakAsk.count(a, NilakAsk.VOTE));
             return byVotes != 0 ? byVotes : Integer.compare(a.getId(), b.getId());
         });
@@ -298,7 +392,22 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         final LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(Theme.createRoundRectDrawable(dp(20), TigiFeedBase.cardColor()));
+        final boolean isChosen = chosen.contains(answer.getId());
+        if (isChosen) {
+            final android.graphics.drawable.GradientDrawable outline = new android.graphics.drawable.GradientDrawable();
+            outline.setColor(TigiFeedBase.cardColor());
+            outline.setCornerRadius(dp(20));
+            outline.setStroke(dp(2), CHOSEN_COLOR);
+            card.setBackground(outline);
+            final TextView label = new TextView(context);
+            label.setText("✓ " + LocaleController.getString(R.string.NilakAskChosen));
+            label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+            label.setTypeface(TigiStyle.displayBold());
+            label.setTextColor(CHOSEN_COLOR);
+            card.addView(label, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 6));
+        } else {
+            card.setBackground(Theme.createRoundRectDrawable(dp(20), TigiFeedBase.cardColor()));
+        }
         card.addView(authorRow(answer.messageOwner, answer.messageOwner.from_id, answer.messageOwner.date));
         final TextView text = new TextView(context);
         text.setText(TextUtils.isEmpty(answer.messageText) ? LocaleController.getString(R.string.AttachPhoto) : answer.messageText);
@@ -311,6 +420,19 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         actions.addView(votePill(answer), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32));
+        actions.addView(textAction(context, LocaleController.getString(R.string.NilakAskReply), () -> setReplyTo(answer)),
+            LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32));
+        if (NilakAsk.isMine(currentAccount, topic.from_id) && !NilakAsk.isMine(currentAccount, answer.messageOwner.from_id)) {
+            // the asker picks the answer that helped; their ✅ reaction, visible in every Telegram app
+            actions.addView(textAction(context, isChosen ? "✓ " + LocaleController.getString(R.string.NilakAskChosen)
+                : LocaleController.getString(R.string.NilakAskChoose), () -> {
+                NilakAsk.toggleChosen(this, answer);
+                if (!chosen.remove(answer.getId())) {
+                    chosen.add(answer.getId());
+                }
+                bind();
+            }), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32));
+        }
         final Integer counted = repliesCount.get(answer.getId());
         final int replies = counted != null ? counted : 0;
         if (replies > 0) {
@@ -366,6 +488,18 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
             name.setOnClickListener(v -> TigiNavigation.openProfile(this, userId));
         }
         return row;
+    }
+
+    private TextView textAction(Context context, String text, Runnable action) {
+        final TextView view = new TextView(context);
+        view.setText(text);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        view.setTypeface(TigiStyle.displayBold());
+        view.setTextColor(TigiFeedBase.metaColor());
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setPadding(dp(12), 0, dp(12), 0);
+        view.setOnClickListener(v -> action.run());
+        return view;
     }
 
     /** ▲ and the 👍 count; a tap votes or takes the vote back. */

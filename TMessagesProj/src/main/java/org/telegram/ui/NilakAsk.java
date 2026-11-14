@@ -33,6 +33,11 @@ public final class NilakAsk {
 
     public static final String VOTE = "👍";
     public static final String CHOSEN = "✅";
+    // Nilak's bot posts anonymous questions on the boards it helps run
+    public static final String BOT_USERNAME = "NilakAppBot";
+    // the Bot API's ID for a supergroup: -100 followed by its ID
+    private static final long BOT_API_CHANNEL_SHIFT = 1000000000000L;
+    private static final int TOPICS_RELOAD_DELAY = 2500;
     // the topics Ask reads at a time, newest first
     private static final int MAX_QUESTIONS = 40;
     private static final int GENERAL_TOPIC_ID = 1;
@@ -389,6 +394,34 @@ public final class NilakAsk {
         chipScroll.addView(chips);
         column.addView(chipScroll, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2));
 
+        final boolean[] anonymous = {false};
+        final android.widget.LinearLayout anonRow = new android.widget.LinearLayout(context);
+        anonRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        anonRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        final android.widget.LinearLayout anonTexts = new android.widget.LinearLayout(context);
+        anonTexts.setOrientation(android.widget.LinearLayout.VERTICAL);
+        final android.widget.TextView anonTitle = new android.widget.TextView(context);
+        anonTitle.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymous));
+        anonTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
+        anonTitle.setTypeface(TigiStyle.displayBold());
+        anonTitle.setTextColor(ink);
+        anonTexts.addView(anonTitle);
+        final android.widget.TextView anonHint = new android.widget.TextView(context);
+        anonHint.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymousHint));
+        anonHint.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+        anonHint.setTextColor(gray);
+        anonTexts.addView(anonHint);
+        anonRow.addView(anonTexts, org.telegram.ui.Components.LayoutHelper.createLinear(0, -2, 1f));
+        final org.telegram.ui.Components.Switch anonSwitch = new org.telegram.ui.Components.Switch(context);
+        anonSwitch.setColors(org.telegram.ui.ActionBar.Theme.key_switchTrack, org.telegram.ui.ActionBar.Theme.key_switchTrackChecked,
+            org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite, org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite);
+        anonRow.addView(anonSwitch, org.telegram.ui.Components.LayoutHelper.createLinear(37, 20, android.view.Gravity.CENTER_VERTICAL, 12, 0, 4, 0));
+        anonRow.setOnClickListener(v -> {
+            anonymous[0] = !anonymous[0];
+            anonSwitch.setChecked(anonymous[0], true);
+        });
+        column.addView(anonRow, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2, 0, 16, 0, 0));
+
         final android.widget.TextView post = new android.widget.TextView(context);
         post.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskPost));
         post.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
@@ -411,6 +444,14 @@ public final class NilakAsk {
             }
             post.setEnabled(false);
             post.setAlpha(0.6f);
+            if (anonymous[0]) {
+                askAnonymously(fragment, board, text, details.getText().toString(), picked[0], () -> {
+                    sheet.dismiss();
+                    org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.contact_check,
+                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymousSent)).show();
+                });
+                return;
+            }
             createQuestion(fragment, board, text, details.getText().toString(), picked[0], topicId -> {
                 sheet.dismiss();
                 onCreated.run(topicId);
@@ -465,11 +506,59 @@ public final class NilakAsk {
                 rights.pin_messages = true;
                 rights.manage_topics = false;
                 controller.setDefaultBannedRole(board.id, rights, true, fragment);
+                // the bot posts anonymous questions as a topic admin
+                addBotToBoard(fragment, board.id);
                 controller.linkCommunity(-board.id, community.id, false, (res, linkError) -> AndroidUtilities.runOnUIThread(() -> {
                     controller.loadFullChat(community.id, 0, true);
                     onDone.run(linkError == null ? board : null);
                 }));
             });
         }, ConnectionsManager.RequestFlagFailOnServerErrors);
+    }
+
+    /** The bot as a user the app knows, resolved by its username once. */
+    public static void withBot(int account, Utilities.Callback<TLRPC.User> onBot) {
+        MessagesController.getInstance(account).getUserNameResolver().resolve(BOT_USERNAME, id -> {
+            final TLRPC.User bot = id != null ? MessagesController.getInstance(account).getUser(id) : null;
+            if (bot != null) {
+                onBot.run(bot);
+            }
+        });
+    }
+
+    public static boolean isBot(TLRPC.User user) {
+        return user != null && user.bot && BOT_USERNAME.equalsIgnoreCase(org.telegram.messenger.UserObject.getPublicUsername(user));
+    }
+
+    /** Makes the bot a board admin that may create topics, so it can post anonymous questions. */
+    public static void addBotToBoard(BaseFragment fragment, long boardId) {
+        withBot(fragment.getCurrentAccount(), bot -> {
+            final TLRPC.TL_chatAdminRights rights = new TLRPC.TL_chatAdminRights();
+            rights.manage_topics = true;
+            rights.delete_messages = true;
+            MessagesController.getInstance(fragment.getCurrentAccount()).setUserAdminRole(boardId, bot, rights, "Nilak", false,
+                fragment, true, false, null, null);
+        });
+    }
+
+    /** Asks through the bot: it creates the topic under its own name, so members do not see who asked. */
+    public static void askAnonymously(BaseFragment fragment, TLRPC.Chat board, String title, String details, String category, Runnable onSent) {
+        final int account = fragment.getCurrentAccount();
+        withBot(account, bot -> {
+            final StringBuilder text = new StringBuilder("/askanon ").append(-(BOT_API_CHANNEL_SHIFT + board.id))
+                .append('\n').append(title.replace('\n', ' '));
+            final String body = details == null ? "" : details.trim();
+            if (!body.isEmpty() || !TextUtils.isEmpty(category)) {
+                text.append('\n').append(body);
+                if (!TextUtils.isEmpty(category) && !body.contains("#" + category)) {
+                    text.append(body.isEmpty() ? "" : "\n\n").append('#').append(category);
+                }
+            }
+            fragment.getSendMessagesHelper().sendMessage(SendMessagesHelper.SendMessageParams.of(text.toString(), bot.id));
+            // the bot's new topic arrives with the next topics load
+            AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).getTopicsController()
+                .loadTopics(board.id, false, org.telegram.messenger.TopicsController.LOAD_TYPE_PRELOAD), TOPICS_RELOAD_DELAY);
+            onSent.run();
+        });
     }
 }

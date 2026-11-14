@@ -471,7 +471,14 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         avatar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         row.addView(avatar, LayoutHelper.createLinear(28, 28));
         final TextView name = new TextView(context);
-        name.setText(user != null ? UserObject.getUserName(user) : chat != null ? chat.title : "");
+        // questions the bot posted for someone are anonymous
+        final boolean anonymous = NilakAsk.isBot(user);
+        if (anonymous) {
+            avatar.setImageDrawable(null);
+            avatar.setBackground(Theme.createCircleDrawable(dp(28), Theme.multAlpha(TigiStyle.accent(), 0.15f)));
+        }
+        name.setText(anonymous ? LocaleController.getString(R.string.NilakAskAnonymousName)
+            : user != null ? UserObject.getUserName(user) : chat != null ? chat.title : "");
         name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         name.setTypeface(TigiStyle.displayBold());
         name.setTextColor(TigiFeedBase.inkColor());
@@ -482,7 +489,7 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         time.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
         time.setTextColor(TigiFeedBase.metaColor());
         row.addView(time, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
-        if (user != null) {
+        if (user != null && !anonymous) {
             final long userId = user.id;
             avatar.setOnClickListener(v -> TigiNavigation.openProfile(this, userId));
             name.setOnClickListener(v -> TigiNavigation.openProfile(this, userId));

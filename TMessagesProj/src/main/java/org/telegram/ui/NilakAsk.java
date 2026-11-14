@@ -1,5 +1,6 @@
 package org.telegram.ui;
 
+import android.os.Bundle;
 import android.text.TextUtils;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -433,6 +434,15 @@ public final class NilakAsk {
         post.setGravity(android.view.Gravity.CENTER);
         post.setBackground(TigiStyle.primaryPill(23));
         column.addView(post, org.telegram.ui.Components.LayoutHelper.createLinear(-1, 46, 0, 16, 0, 0));
+        // anything Telegram can send (photos, videos, files, a poll, a voice note) goes in through its own composer
+        final android.widget.TextView attach = new android.widget.TextView(context);
+        attach.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAddMedia));
+        attach.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 14.5f);
+        attach.setTypeface(TigiStyle.displayBold());
+        attach.setTextColor(TigiStyle.accent());
+        attach.setGravity(android.view.Gravity.CENTER);
+        attach.setBackground(TigiStyle.tintedPill(23));
+        column.addView(attach, org.telegram.ui.Components.LayoutHelper.createLinear(-1, 44, 0, 8, 0, 0));
 
         final android.widget.ScrollView scroll = new android.widget.ScrollView(context);
         scroll.addView(column);
@@ -461,6 +471,36 @@ public final class NilakAsk {
             }, () -> {
                 post.setEnabled(true);
                 post.setAlpha(1f);
+                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.error,
+                    org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskFailed)).show();
+            });
+        });
+        attach.setOnClickListener(v -> {
+            final String text = question.getText().toString().trim();
+            if (text.isEmpty()) {
+                AndroidUtilities.shakeView(question);
+                return;
+            }
+            if (anonymous[0]) {
+                // the bot can only post text for someone; attachments come with the person's name
+                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.chats_infotip,
+                    org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymousTextOnly)).show();
+                return;
+            }
+            attach.setEnabled(false);
+            attach.setAlpha(0.6f);
+            createQuestion(fragment, board, text, details.getText().toString(), picked[0], topicId -> {
+                sheet.dismiss();
+                final Bundle args = new Bundle();
+                args.putInt("tigi_action", ChatActivity.TIGI_ACTION_ATTACH);
+                final ChatActivity chat = org.telegram.ui.Components.Forum.ForumUtilities.getChatActivityForTopic(fragment, board.id,
+                    newTopic(fragment.getCurrentAccount(), board.id, topicId, text), 0, args);
+                if (chat != null) {
+                    fragment.presentFragment(chat);
+                }
+            }, () -> {
+                attach.setEnabled(true);
+                attach.setAlpha(1f);
                 org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.error,
                     org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskFailed)).show();
             });
@@ -563,5 +603,25 @@ public final class NilakAsk {
                 .loadTopics(board.id, false, org.telegram.messenger.TopicsController.LOAD_TYPE_PRELOAD), TOPICS_RELOAD_DELAY);
             onSent.run();
         });
+    }
+
+    /** The topic just created, as Telegram builds it after its own New Topic screen, until its topic list catches up. */
+    public static TLRPC.TL_forumTopic newTopic(int account, long boardId, int topicId, String title) {
+        final TLRPC.TL_forumTopic known = MessagesController.getInstance(account).getTopicsController().findTopic(boardId, topicId);
+        if (known != null) {
+            return known;
+        }
+        final MessageObject start = topicStart(account, boardId, topicId);
+        final TLRPC.TL_forumTopic topic = new TLRPC.TL_forumTopic();
+        topic.id = topicId;
+        topic.title = title;
+        topic.my = true;
+        topic.topicStartMessage = start.messageOwner;
+        topic.topMessage = start.messageOwner;
+        topic.top_message = topicId;
+        topic.from_id = MessagesController.getInstance(account).getPeer(UserConfig.getInstance(account).getClientUserId());
+        topic.notify_settings = new TLRPC.TL_peerNotifySettings();
+        topic.date = ConnectionsManager.getInstance(account).getCurrentTime();
+        return topic;
     }
 }

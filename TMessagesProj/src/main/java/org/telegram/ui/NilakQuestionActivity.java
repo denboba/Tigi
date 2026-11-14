@@ -5,15 +5,20 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.Typeface;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -22,41 +27,46 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.AvatarDrawable;
-import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.Forum.ForumUtilities;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 
 /**
- * One Ask question: the topic's title and first message, then its answers sorted by 👍, each with its replies count.
- * Writing an answer opens the topic in Telegram's chat, where the person's message becomes the answer.
+ * One Ask question as Nilak cards: the question (its title over the first message of the topic, with any photos,
+ * files, polls or voice it has), then the answers, sorted by votes (👍) or newest. Cards render every kind of message
+ * the way the feeds do; writing opens Telegram's own composer in the question's topic.
  */
-public class NilakQuestionActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
+public class NilakQuestionActivity extends TigiFeedBase {
 
     private static final int MAX_MESSAGES = 100;
     private static final int CHOSEN_COLOR = 0xFF2E9E62;
+    private static final float TITLE_SIZE = 1.3f;
 
     private long chatId;
     private int topicId;
     private TLRPC.Chat board;
     private TLRPC.TL_forumTopic topic;
-    private MessageObject details;
-    private final ArrayList<MessageObject> answers = new ArrayList<>();
     private final HashMap<Integer, Integer> repliesCount = new HashMap<>();
-    private boolean loading;
     // answers the asker chose with their ✅
-    private final java.util.HashSet<Integer> chosen = new java.util.HashSet<>();
-
-    private LinearLayout content;
-    private TextView statusView;
+    private final HashSet<Integer> chosen = new HashSet<>();
+    private final ArrayList<FeedPost> answers = new ArrayList<>();
+    private FeedPost question;
+    // each card's own text, before the title or the chosen label is put on it
+    private final HashMap<FeedPost, CharSequence> originalText = new HashMap<>();
+    private boolean loading;
+    private boolean loaded;
+    private boolean sortNew;
+    private TextView answersTitle;
+    private TextView sortTop;
+    private TextView sortNewView;
 
     public static void open(BaseFragment fragment, long chatId, int topicId) {
         final Bundle args = new Bundle();
@@ -74,113 +84,152 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         chatId = arguments.getLong("chat_id");
         topicId = arguments.getInt("topic_id");
         board = getMessagesController().getChat(chatId);
-        topic = getMessagesController().getTopicsController().findTopic(chatId, topicId);
-        if (topic == null && board != null) {
-            // just asked: Telegram's topic list catches up a moment later
-            topic = new TLRPC.TL_forumTopic();
-            topic.id = topicId;
-            topic.title = "";
-            topic.date = getConnectionsManager().getCurrentTime();
-            topic.from_id = getMessagesController().getPeer(getUserConfig().getClientUserId());
-        }
         if (board == null) {
             return false;
         }
-        getNotificationCenter().addObserver(this, NotificationCenter.didUpdateReactions);
-        getNotificationCenter().addObserver(this, NotificationCenter.didReceiveNewMessages);
+        // just asked: Telegram's topic list catches up a moment later
+        topic = NilakAsk.newTopic(currentAccount, chatId, topicId, "");
         getNotificationCenter().addObserver(this, NotificationCenter.topicsDidLoaded);
         return super.onFragmentCreate();
     }
 
     @Override
     public void onFragmentDestroy() {
-        getNotificationCenter().removeObserver(this, NotificationCenter.didUpdateReactions);
-        getNotificationCenter().removeObserver(this, NotificationCenter.didReceiveNewMessages);
         getNotificationCenter().removeObserver(this, NotificationCenter.topicsDidLoaded);
         super.onFragmentDestroy();
     }
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.didUpdateReactions) {
-            if ((Long) args[0] != -chatId || !(args[2] instanceof TLRPC.TL_messageReactions)) {
-                return;
+        if (id == NotificationCenter.topicsDidLoaded) {
+            final TLRPC.TL_forumTopic found = getMessagesController().getTopicsController().findTopic(chatId, topicId);
+            if ((Long) args[0] == chatId && found != null) {
+                topic = found;
+                rebuild();
             }
-            final int msgId = (Integer) args[1];
-            for (MessageObject message : allMessages()) {
-                if (message.getId() == msgId) {
-                    MessageObject.updateReactions(message.messageOwner, (TLRPC.TL_messageReactions) args[2]);
-                    bind();
-                }
-            }
-        } else if (id == NotificationCenter.topicsDidLoaded) {
-            final TLRPC.TL_forumTopic loaded = getMessagesController().getTopicsController().findTopic(chatId, topicId);
-            if ((Long) args[0] == chatId && loaded != null) {
-                topic = loaded;
-                bind();
-            }
-        } else if (id == NotificationCenter.didReceiveNewMessages) {
-            // a new answer in this topic: load again so it shows in its place
-            if ((Long) args[0] == -chatId) {
-                load();
-            }
+            return;
         }
+        if (id == NotificationCenter.didReceiveNewMessages && (Long) args[0] == -chatId) {
+            // a new answer or reply: load again so it shows in its place
+            load();
+            return;
+        }
+        super.didReceivedNotification(id, account, args);
     }
 
-    private ArrayList<MessageObject> allMessages() {
-        final ArrayList<MessageObject> all = new ArrayList<>(answers);
-        if (details != null) {
-            all.add(details);
-        }
-        return all;
-    }
+    /* header, answers bar and composer */
 
     @Override
-    public View createView(Context context) {
-        actionBar.setAddToContainer(false);
-        final FrameLayout root = new FrameLayout(context);
-        TigiFeedBase.applyPageBackground(root);
-
-        final LinearLayout column = new LinearLayout(context);
-        column.setOrientation(LinearLayout.VERTICAL);
-        final FrameLayout bar = new FrameLayout(context);
-        bar.setPadding(0, AndroidUtilities.statusBarHeight, 0, 0);
+    protected View createHeaderView(Context context) {
+        final LinearLayout header = new LinearLayout(context);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        if (TigiLilac.on()) {
+            header.setBackground(TigiLilac.pageBar());
+        } else {
+            header.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
+        applyTopInset(header);
         final ImageView back = new ImageView(context);
-        back.setImageResource(R.drawable.ic_ab_back);
         back.setScaleType(ImageView.ScaleType.CENTER);
+        back.setImageResource(R.drawable.ic_ab_back);
+        back.setColorFilter(new PorterDuffColorFilter(inkColor(), PorterDuff.Mode.SRC_IN));
         back.setContentDescription(LocaleController.getString(R.string.AccDescrGoBack));
-        back.setColorFilter(new PorterDuffColorFilter(TigiFeedBase.inkColor(), PorterDuff.Mode.SRC_IN));
         back.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
         back.setOnClickListener(v -> finishFragment());
         if (LocaleController.isRTL) {
             back.setScaleX(-1f);
         }
-        bar.addView(back, LayoutHelper.createFrame(48, 56, Gravity.CENTER_VERTICAL | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT)));
+        header.addView(back, LayoutHelper.createLinear(48, 56));
+        final LinearLayout names = new LinearLayout(context);
+        names.setOrientation(LinearLayout.VERTICAL);
         final TextView title = new TextView(context);
         title.setText(LocaleController.getString(R.string.NilakAskQuestion));
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
         title.setTypeface(TigiStyle.displayBold());
-        title.setTextColor(TigiFeedBase.inkColor());
-        title.setGravity(Gravity.CENTER_VERTICAL);
-        bar.addView(title, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), 60, 0, 60, 0));
-        column.addView(bar, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        title.setTextColor(inkColor());
+        names.addView(title);
+        final TextView where = new TextView(context);
+        where.setText(board.title);
+        where.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+        where.setTextColor(metaColor());
+        where.setSingleLine(true);
+        where.setEllipsize(TextUtils.TruncateAt.END);
+        names.addView(where);
+        header.addView(names, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 4, 0, 16, 0));
 
-        final ScrollView scroll = new ScrollView(context);
-        scroll.setClipToPadding(false);
-        scroll.setPadding(0, dp(6), 0, dp(90) + AndroidUtilities.navigationBarHeight);
-        content = new LinearLayout(context);
-        content.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(content);
-        column.addView(scroll, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 0, 1f));
-        root.addView(column, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        // between the question and its answers: how many, and the order
+        inlineRow = answersBar(context);
+        return header;
+    }
 
+    private View answersBar(Context context) {
+        final LinearLayout bar = new LinearLayout(context);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(20), dp(4), dp(14), dp(8));
+        answersTitle = new TextView(context);
+        answersTitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        answersTitle.setTypeface(TigiStyle.displayBold());
+        answersTitle.setTextColor(inkColor());
+        bar.addView(answersTitle, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+        sortTop = sortChip(context, LocaleController.getString(R.string.NilakAskTop), () -> setSortNew(false));
+        bar.addView(sortTop, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30, 0, 0, 6, 0));
+        sortNewView = sortChip(context, LocaleController.getString(R.string.NilakAskNew), () -> setSortNew(true));
+        bar.addView(sortNewView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30));
+        bindAnswersBar();
+        return bar;
+    }
+
+    private TextView sortChip(Context context, String text, Runnable action) {
+        final TextView chip = new TextView(context);
+        chip.setText(text);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        chip.setTypeface(TigiStyle.displayBold());
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(12), 0, dp(12), 0);
+        chip.setOnClickListener(v -> action.run());
+        return chip;
+    }
+
+    private void setSortNew(boolean value) {
+        if (sortNew != value) {
+            sortNew = value;
+            rebuild();
+        }
+    }
+
+    private void bindAnswersBar() {
+        if (answersTitle == null) {
+            return;
+        }
+        answersTitle.setText(LocaleController.formatPluralString("NilakAskAnswers", answers.size()));
+        sortTop.setTextColor(!sortNew ? 0xFFFFFFFF : TigiStyle.accent());
+        sortTop.setBackground(!sortNew ? TigiStyle.primaryPill(15) : TigiStyle.tintedPill(15));
+        sortNewView.setTextColor(sortNew ? 0xFFFFFFFF : TigiStyle.accent());
+        sortNewView.setBackground(sortNew ? TigiStyle.primaryPill(15) : TigiStyle.tintedPill(15));
+    }
+
+    @Override
+    protected int inlineRowAfter() {
+        return 1;
+    }
+
+    @Override
+    protected int bottomPadding() {
+        return dp(96) + AndroidUtilities.navigationBarHeight;
+    }
+
+    @Override
+    public View createView(Context context) {
+        final View view = super.createView(context);
         // the answer bar: Telegram's own composer in the question's topic (keyboard, emoji, stickers, GIFs, voice,
-        // attachments, mentions), opened ready to type
+        // attachments, polls, mentions), opened ready to type
         final LinearLayout composer = new LinearLayout(context);
         composer.setOrientation(LinearLayout.HORIZONTAL);
         composer.setGravity(Gravity.CENTER_VERTICAL);
         composer.setPadding(dp(6), 0, dp(6), 0);
-        composer.setBackground(Theme.createRoundRectDrawable(dp(24), TigiFeedBase.cardColor()));
+        composer.setBackground(Theme.createRoundRectDrawable(dp(24), cardColor()));
         composer.setElevation(dp(2));
         composer.setOnClickListener(v -> openComposer(null, ChatActivity.TIGI_COMPOSE_TEXT, 0));
         composer.addView(barIcon(context, R.drawable.input_smile, () -> openComposer(null, ChatActivity.TIGI_COMPOSE_TEXT, 0)),
@@ -188,7 +237,7 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         final TextView hint = new TextView(context);
         hint.setText(LocaleController.getString(R.string.NilakAskWriteAnswer));
         hint.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15.5f);
-        hint.setTextColor(TigiFeedBase.metaColor());
+        hint.setTextColor(metaColor());
         hint.setSingleLine(true);
         composer.addView(hint, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 4, 0, 4, 0));
         composer.addView(barIcon(context, R.drawable.input_attach, () -> openComposer(null, 0, ChatActivity.TIGI_ACTION_ATTACH)),
@@ -196,18 +245,22 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         composer.addView(barIcon(context, R.drawable.input_mic, () -> openComposer(null, ChatActivity.TIGI_COMPOSE_TEXT, 0)),
             LayoutHelper.createLinear(44, 44));
         composer.setContentDescription(hint.getText());
-        root.addView(composer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50, Gravity.BOTTOM, 12, 0, 12, 12 + AndroidUtilities.navigationBarHeight / AndroidUtilities.density));
-
-        statusView = new TextView(context);
-        statusView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        statusView.setTextColor(TigiFeedBase.metaColor());
-        statusView.setGravity(Gravity.CENTER);
-        statusView.setPadding(dp(24), dp(24), dp(24), dp(24));
-
-        fragmentView = root;
-        bind();
+        final FrameLayout root = getRootLayout();
+        root.addView(composer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50, Gravity.BOTTOM, 12, 0, 12,
+            12 + AndroidUtilities.navigationBarHeight / AndroidUtilities.density));
         load();
-        return root;
+        return view;
+    }
+
+    private ImageView barIcon(Context context, int icon, Runnable action) {
+        final ImageView view = new ImageView(context);
+        view.setImageResource(icon);
+        view.setScaleType(ImageView.ScaleType.CENTER);
+        view.setColorFilter(new PorterDuffColorFilter(metaColor(), PorterDuff.Mode.SRC_IN));
+        view.setBackground(Theme.createSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.15f), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        view.setOnClickListener(v -> action.run());
+        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return view;
     }
 
     /**
@@ -232,32 +285,29 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
         presentFragment(chat);
     }
 
-    private ImageView barIcon(Context context, int icon, Runnable action) {
-        final ImageView view = new ImageView(context);
-        view.setImageResource(icon);
-        view.setScaleType(ImageView.ScaleType.CENTER);
-        view.setColorFilter(new PorterDuffColorFilter(TigiFeedBase.metaColor(), PorterDuff.Mode.SRC_IN));
-        view.setBackground(Theme.createSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.15f), Theme.RIPPLE_MASK_CIRCLE_20DP));
-        view.setOnClickListener(v -> action.run());
-        view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        return view;
-    }
+    /* loading */
 
     private void load() {
         if (loading) {
             return;
         }
         loading = true;
+        updateEmptyView();
         final TLRPC.TL_messages_getReplies request = new TLRPC.TL_messages_getReplies();
         request.peer = getMessagesController().getInputPeer(-chatId);
         request.msg_id = topicId;
         request.limit = MAX_MESSAGES;
         final int requestId = getConnectionsManager().sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
             loading = false;
-            if (!(response instanceof TLRPC.messages_Messages) || fragmentView == null) {
+            loaded = true;
+            if (isDead()) {
                 return;
             }
-            onLoaded((TLRPC.messages_Messages) response);
+            if (response instanceof TLRPC.messages_Messages) {
+                onLoaded((TLRPC.messages_Messages) response);
+            } else {
+                updateEmptyView();
+            }
         }));
         getConnectionsManager().bindRequestToGuid(requestId, classGuid);
     }
@@ -265,253 +315,228 @@ public class NilakQuestionActivity extends BaseFragment implements NotificationC
     private void onLoaded(TLRPC.messages_Messages res) {
         getMessagesController().putUsers(res.users, false);
         getMessagesController().putChats(res.chats, false);
-        details = null;
-        answers.clear();
-        repliesCount.clear();
         int firstId = Integer.MAX_VALUE;
         for (TLRPC.Message message : res.messages) {
             if (message instanceof TLRPC.TL_message && message.id < firstId) {
                 firstId = message.id;
             }
         }
+        // the oldest message is the question's details; messages answering the topic or the details are answers,
+        // the rest are replies to answers
+        final ArrayList<TLRPC.Message> details = new ArrayList<>();
+        final ArrayList<TLRPC.Message> answerMessages = new ArrayList<>();
+        repliesCount.clear();
+        TLRPC.Message first = null;
+        for (TLRPC.Message message : res.messages) {
+            if (message.id == firstId) {
+                first = message;
+            }
+        }
         for (TLRPC.Message message : res.messages) {
             if (!(message instanceof TLRPC.TL_message)) {
                 continue;
             }
-            final MessageObject object = new MessageObject(currentAccount, message, false, false);
             final int replyTo = message.reply_to != null ? message.reply_to.reply_to_msg_id : 0;
-            if (message.id == firstId) {
-                details = object;
+            final boolean sameAlbumAsFirst = first != null && first.grouped_id != 0 && message.grouped_id == first.grouped_id;
+            if (message.id == firstId || sameAlbumAsFirst) {
+                details.add(message);
             } else if (replyTo == 0 || replyTo == topicId || replyTo == firstId) {
-                answers.add(object);
+                answerMessages.add(message);
             } else {
                 final Integer counted = repliesCount.get(replyTo);
                 repliesCount.put(replyTo, counted != null ? counted + 1 : 1);
             }
         }
-        bind();
+        final ArrayList<FeedPost> questionPosts = buildPosts(board, details);
+        question = questionPosts.isEmpty() ? null : questionPosts.get(0);
+        answers.clear();
+        answers.addAll(buildPosts(board, answerMessages));
+        originalText.clear();
+        if (question != null) {
+            originalText.put(question, question.text);
+        }
+        for (FeedPost answer : answers) {
+            originalText.put(answer, answer.text);
+        }
+        rebuild();
         // the asker's ✅ marks the chosen answer
         chosen.clear();
         final long askerId = topic.from_id != null ? MessageObject.getPeerId(topic.from_id) : 0;
         if (askerId != 0) {
-            NilakAsk.loadChosen(this, chatId, askerId, answers, answerId -> {
+            final ArrayList<MessageObject> answerObjects = new ArrayList<>();
+            for (FeedPost answer : answers) {
+                answerObjects.add(answer.primary());
+            }
+            NilakAsk.loadChosen(this, chatId, askerId, answerObjects, answerId -> {
                 chosen.add(answerId);
-                bind();
+                rebuild();
             });
         }
     }
 
-    private void bind() {
-        if (content == null) {
-            return;
+    /** The question card (title over its details), then the answers in the chosen order. */
+    private void rebuild() {
+        posts.clear();
+        final FeedPost questionCard = question != null ? question : titleOnlyQuestion();
+        if (questionCard != null) {
+            questionCard.text = questionText(question != null ? originalText.get(question) : null);
+            posts.add(questionCard);
         }
-        content.removeAllViews();
-        content.addView(questionCard(), cardParams());
-        // the most 👍 first; ties: the earlier answer
-        final ArrayList<MessageObject> sorted = new ArrayList<>(answers);
+        final ArrayList<FeedPost> sorted = new ArrayList<>(answers);
         Collections.sort(sorted, (a, b) -> {
-            final int byChosen = Boolean.compare(chosen.contains(b.getId()), chosen.contains(a.getId()));
+            final int byChosen = Boolean.compare(chosen.contains(b.primary().getId()), chosen.contains(a.primary().getId()));
             if (byChosen != 0) {
                 return byChosen;
             }
-            final int byVotes = Integer.compare(NilakAsk.count(b, NilakAsk.VOTE), NilakAsk.count(a, NilakAsk.VOTE));
-            return byVotes != 0 ? byVotes : Integer.compare(a.getId(), b.getId());
-        });
-        final TextView header = new TextView(content.getContext());
-        header.setText(LocaleController.formatPluralString("NilakAskAnswers", sorted.size()));
-        header.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        header.setTypeface(TigiStyle.displayBold());
-        header.setTextColor(TigiFeedBase.inkColor());
-        header.setPadding(dp(20), dp(6), dp(20), dp(8));
-        content.addView(header);
-        for (MessageObject answer : sorted) {
-            content.addView(answerCard(answer), cardParams());
-        }
-        if (sorted.isEmpty()) {
-            if (statusView.getParent() != null) {
-                ((android.view.ViewGroup) statusView.getParent()).removeView(statusView);
+            if (sortNew) {
+                return Integer.compare(b.date, a.date);
             }
-            statusView.setText(LocaleController.getString(loading ? R.string.Loading : R.string.NilakAskNoAnswers));
-            content.addView(statusView);
-        }
-    }
-
-    private LinearLayout.LayoutParams cardParams() {
-        return LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 10);
-    }
-
-    private View questionCard() {
-        final Context context = content.getContext();
-        final LinearLayout card = new LinearLayout(context);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackground(Theme.createRoundRectDrawable(dp(TigiFeedBase.cardRadius()), TigiFeedBase.cardColor()));
-        card.addView(authorRow(details != null ? details.messageOwner : null, topic.from_id,
-            details != null ? details.messageOwner.date : NilakAsk.dateOf(topic)));
-        final TextView title = new TextView(context);
-        title.setText(topic.title);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 19);
-        title.setTypeface(TigiStyle.displayBold());
-        title.setTextColor(TigiFeedBase.inkColor());
-        card.addView(title, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
-        if (details != null && !TextUtils.isEmpty(details.messageText)) {
-            final TextView text = new TextView(context);
-            text.setText(details.messageText);
-            text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            text.setTextColor(TigiFeedBase.inkColor());
-            text.setLineSpacing(dp(2), 1f);
-            text.setTextIsSelectable(true);
-            card.addView(text, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
-        }
-        if (details != null) {
-            final LinearLayout actions = new LinearLayout(context);
-            actions.setOrientation(LinearLayout.HORIZONTAL);
-            actions.addView(votePill(details), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 34));
-            card.addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
-        }
-        return card;
-    }
-
-    private View answerCard(MessageObject answer) {
-        final Context context = content.getContext();
-        final LinearLayout card = new LinearLayout(context);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        final boolean isChosen = chosen.contains(answer.getId());
-        if (isChosen) {
-            final android.graphics.drawable.GradientDrawable outline = new android.graphics.drawable.GradientDrawable();
-            outline.setColor(TigiFeedBase.cardColor());
-            outline.setCornerRadius(dp(20));
-            outline.setStroke(dp(2), CHOSEN_COLOR);
-            card.setBackground(outline);
-            final TextView label = new TextView(context);
-            label.setText("✓ " + LocaleController.getString(R.string.NilakAskChosen));
-            label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
-            label.setTypeface(TigiStyle.displayBold());
-            label.setTextColor(CHOSEN_COLOR);
-            card.addView(label, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 6));
-        } else {
-            card.setBackground(Theme.createRoundRectDrawable(dp(20), TigiFeedBase.cardColor()));
-        }
-        card.addView(authorRow(answer.messageOwner, answer.messageOwner.from_id, answer.messageOwner.date));
-        // the answer in the topic, as Telegram shows it (photos, stickers, voice, its replies)
-        card.setOnClickListener(v -> ForumUtilities.openTopic(this, chatId, topic, answer.getId()));
-        final TextView text = new TextView(context);
-        text.setText(TextUtils.isEmpty(answer.messageText) ? LocaleController.getString(R.string.AttachPhoto) : answer.messageText);
-        text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-        text.setTextColor(TigiFeedBase.inkColor());
-        text.setLineSpacing(dp(2), 1f);
-        text.setTextIsSelectable(true);
-        card.addView(text, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
-        final LinearLayout actions = new LinearLayout(context);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        actions.addView(votePill(answer), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32));
-        actions.addView(textAction(context, LocaleController.getString(R.string.NilakAskReply), () -> openComposer(answer, 0, 0)),
-            LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32));
-        if (NilakAsk.isMine(currentAccount, topic.from_id) && !NilakAsk.isMine(currentAccount, answer.messageOwner.from_id)) {
-            // the asker picks the answer that helped; their ✅ reaction, visible in every Telegram app
-            actions.addView(textAction(context, isChosen ? "✓ " + LocaleController.getString(R.string.NilakAskChosen)
-                : LocaleController.getString(R.string.NilakAskChoose), () -> {
-                NilakAsk.toggleChosen(this, answer);
-                if (!chosen.remove(answer.getId())) {
-                    chosen.add(answer.getId());
-                }
-                bind();
-            }), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32));
-        }
-        final Integer counted = repliesCount.get(answer.getId());
-        final int replies = counted != null ? counted : 0;
-        if (replies > 0) {
-            final TextView more = new TextView(context);
-            more.setText(LocaleController.formatPluralString("NilakAskReplies", replies));
-            more.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-            more.setTypeface(TigiStyle.displayBold());
-            more.setTextColor(TigiStyle.accent());
-            more.setPadding(dp(12), 0, dp(12), 0);
-            more.setGravity(Gravity.CENTER_VERTICAL);
-            more.setOnClickListener(v -> ForumUtilities.openTopic(this, chatId, topic, answer.getId()));
-            actions.addView(more, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32));
-        }
-        card.addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 0));
-        return card;
-    }
-
-    private View authorRow(TLRPC.Message message, TLRPC.Peer from, int date) {
-        final Context context = content.getContext();
-        final LinearLayout row = new LinearLayout(context);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        final long fromId = from != null ? org.telegram.messenger.MessageObject.getPeerId(from) : 0;
-        final TLRPC.User user = fromId > 0 ? getMessagesController().getUser(fromId) : null;
-        final TLRPC.Chat chat = fromId < 0 ? getMessagesController().getChat(-fromId) : null;
-        final BackupImageView avatar = new BackupImageView(context);
-        avatar.setRoundRadius(dp(14));
-        final AvatarDrawable avatarDrawable = new AvatarDrawable();
-        if (user != null) {
-            avatarDrawable.setInfo(currentAccount, user);
-            avatar.setForUserOrChat(user, avatarDrawable);
-        } else if (chat != null) {
-            avatarDrawable.setInfo(currentAccount, chat);
-            avatar.setForUserOrChat(chat, avatarDrawable);
-        }
-        avatar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        row.addView(avatar, LayoutHelper.createLinear(28, 28));
-        final TextView name = new TextView(context);
-        // questions the bot posted for someone are anonymous
-        final boolean anonymous = NilakAsk.isBot(user);
-        if (anonymous) {
-            avatar.setImageDrawable(null);
-            avatar.setBackground(Theme.createCircleDrawable(dp(28), Theme.multAlpha(TigiStyle.accent(), 0.15f)));
-        }
-        name.setText(anonymous ? LocaleController.getString(R.string.NilakAskAnonymousName)
-            : user != null ? UserObject.getUserName(user) : chat != null ? chat.title : "");
-        name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-        name.setTypeface(TigiStyle.displayBold());
-        name.setTextColor(TigiFeedBase.inkColor());
-        name.setSingleLine(true);
-        row.addView(name, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 8, 0, 6, 0));
-        final TextView time = new TextView(context);
-        time.setText(LocaleController.stringForMessageListDate(date));
-        time.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
-        time.setTextColor(TigiFeedBase.metaColor());
-        row.addView(time, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
-        if (user != null && !anonymous) {
-            final long userId = user.id;
-            avatar.setOnClickListener(v -> TigiNavigation.openProfile(this, userId));
-            name.setOnClickListener(v -> TigiNavigation.openProfile(this, userId));
-        }
-        return row;
-    }
-
-    private TextView textAction(Context context, String text, Runnable action) {
-        final TextView view = new TextView(context);
-        view.setText(text);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-        view.setTypeface(TigiStyle.displayBold());
-        view.setTextColor(TigiFeedBase.metaColor());
-        view.setGravity(Gravity.CENTER_VERTICAL);
-        view.setPadding(dp(12), 0, dp(12), 0);
-        view.setOnClickListener(v -> action.run());
-        return view;
-    }
-
-    /** ▲ and the 👍 count; a tap votes or takes the vote back. */
-    private View votePill(MessageObject message) {
-        final TextView pill = new TextView(content.getContext());
-        final boolean voted = NilakAsk.chosenByMe(message, NilakAsk.VOTE);
-        pill.setText("▲  " + LocaleController.formatShortNumber(NilakAsk.count(message, NilakAsk.VOTE), null));
-        pill.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
-        pill.setTypeface(TigiStyle.displayBold());
-        pill.setTextColor(voted ? 0xFFFFFFFF : TigiStyle.accent());
-        pill.setGravity(Gravity.CENTER);
-        pill.setPadding(dp(14), 0, dp(14), 0);
-        pill.setBackground(voted ? TigiStyle.primaryPill(17) : TigiStyle.tintedPill(17));
-        pill.setContentDescription(LocaleController.getString(R.string.NilakAskVote));
-        pill.setOnClickListener(v -> {
-            NilakAsk.toggleVote(this, message);
-            bind();
+            final int byVotes = Integer.compare(NilakAsk.count(b.primary(), NilakAsk.VOTE), NilakAsk.count(a.primary(), NilakAsk.VOTE));
+            return byVotes != 0 ? byVotes : Integer.compare(a.date, b.date);
         });
-        return pill;
+        for (FeedPost answer : sorted) {
+            answer.text = answerText(answer);
+            posts.add(answer);
+        }
+        bindAnswersBar();
+        notifyPostsChanged();
+    }
+
+    /** A question asked with a title only: a card from the topic's first message, so it can still be shown and answered. */
+    private FeedPost titleOnlyQuestion() {
+        if (!loaded) {
+            return null;
+        }
+        final FeedPost post = new FeedPost();
+        post.chat = board;
+        post.date = NilakAsk.dateOf(topic);
+        if (topic.from_id instanceof TLRPC.TL_peerUser) {
+            post.author = getMessagesController().getUser(topic.from_id.user_id);
+        }
+        post.messages.add(NilakAsk.topicStart(currentAccount, chatId, topicId));
+        return post;
+    }
+
+    private CharSequence questionText(CharSequence details) {
+        final SpannableStringBuilder text = new SpannableStringBuilder();
+        if (!TextUtils.isEmpty(topic.title)) {
+            text.append(topic.title);
+            text.setSpan(new StyleSpan(Typeface.BOLD), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            text.setSpan(new RelativeSizeSpan(TITLE_SIZE), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (!TextUtils.isEmpty(details)) {
+            if (text.length() > 0) {
+                text.append("\n\n");
+            }
+            text.append(details);
+        }
+        return text;
+    }
+
+    private CharSequence answerText(FeedPost answer) {
+        final CharSequence body = originalText.get(answer);
+        final String label = "✓ " + LocaleController.getString(R.string.NilakAskChosen);
+        if (!chosen.contains(answer.primary().getId())) {
+            return body;
+        }
+        final SpannableStringBuilder text = new SpannableStringBuilder(label);
+        text.setSpan(new ForegroundColorSpan(CHOSEN_COLOR), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new StyleSpan(Typeface.BOLD), 0, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (!TextUtils.isEmpty(body)) {
+            text.append('\n').append(body);
+        }
+        return text;
+    }
+
+    /* cards: 👍 is the vote, the comment button replies, a tap opens the message in the topic */
+
+    @Override
+    protected ReactionsLayoutInBubble.VisibleReaction likeReaction(FeedPost post) {
+        final MessageObject message = post.primary();
+        if (message.messageOwner instanceof TLRPC.TL_messageService) {
+            return null;
+        }
+        return ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(NilakAsk.VOTE);
+    }
+
+    @Override
+    protected int likeIcon(boolean liked) {
+        return liked ? R.drawable.nilak_vote_filled_24 : R.drawable.nilak_vote_24;
+    }
+
+    @Override
+    protected int commentCount(FeedPost post) {
+        if (!posts.isEmpty() && post == posts.get(0)) {
+            return answers.size();
+        }
+        final Integer counted = repliesCount.get(post.primary().getId());
+        return counted != null ? counted : 0;
+    }
+
+    @Override
+    protected boolean commentsOn(FeedPost post) {
+        return true;
+    }
+
+    @Override
+    protected void openComments(FeedPost post) {
+        // on the question: answer it; on an answer: reply to it
+        final boolean isQuestion = !posts.isEmpty() && post == posts.get(0);
+        openComposer(isQuestion ? null : post.primary(), isQuestion ? ChatActivity.TIGI_COMPOSE_TEXT : 0, 0);
+    }
+
+    @Override
+    protected void onPostTapped(FeedPost post, int mediaIndex) {
+        if (mediaIndex >= 0) {
+            openMediaViewer(post, mediaIndex);
+            return;
+        }
+        ForumUtilities.openTopic(this, chatId, topic, post.primary().getId() > 0 ? post.primary().getId() : 0);
+    }
+
+    @Override
+    protected boolean expandsCaptions() {
+        return true;
+    }
+
+    @Override
+    protected boolean dropsLowValue() {
+        return false;
+    }
+
+    @Override
+    protected boolean acceptsNewMessage(long dialogId, MessageObject message) {
+        // new answers arrive with the next load, in their place
+        return false;
+    }
+
+    @Override
+    protected void addPostMenuRows(FeedPost post, LinearLayout content, Runnable dismiss) {
+        final boolean isQuestion = !posts.isEmpty() && post == posts.get(0);
+        final MessageObject message = post.primary();
+        if (isQuestion || !NilakAsk.isMine(currentAccount, topic.from_id) || NilakAsk.isMine(currentAccount, message.messageOwner.from_id)) {
+            return;
+        }
+        // the asker picks the answer that helped: their ✅ reaction, visible in every Telegram app
+        final boolean isChosen = chosen.contains(message.getId());
+        content.addView(sheetRow(content.getContext(), R.drawable.msg_select,
+            LocaleController.getString(isChosen ? R.string.NilakAskUnchoose : R.string.NilakAskChooseBest), false, () -> {
+                dismiss.run();
+                NilakAsk.toggleChosen(this, message);
+                if (!chosen.remove(message.getId())) {
+                    chosen.add(message.getId());
+                }
+                rebuild();
+            }));
+    }
+
+    @Override
+    protected boolean isLoadingPosts() {
+        return loading;
+    }
+
+    @Override
+    protected boolean isInitialLoading() {
+        return loading && posts.isEmpty();
     }
 }

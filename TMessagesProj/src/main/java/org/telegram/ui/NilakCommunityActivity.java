@@ -57,8 +57,13 @@ import java.util.HashSet;
 public class NilakCommunityActivity extends TigiFeedBase {
 
     private static final int TAB_FEED = 0;
-    private static final int TAB_CHATS = 1;
-    private static final int TAB_ABOUT = 2;
+    private static final int TAB_ASK = 1;
+    private static final int TAB_CHATS = 2;
+    private static final int TAB_ABOUT = 3;
+    private static final int SORT_HOT = 0;
+    private static final int SORT_NEW = 1;
+    private static final int SORT_TOP = 2;
+    private static final int SORT_UNANSWERED = 3;
     private static final int POSTS_PER_CHANNEL = 10;
     private static final int MAX_POSTS = 60;
     private static final int PREVIEW_LENGTH = 70;
@@ -79,7 +84,13 @@ public class NilakCommunityActivity extends TigiFeedBase {
     private TextView titleView;
     private TextView subtitleView;
     private TextView joinButton;
-    private final TextView[] tabViews = new TextView[3];
+    private final TextView[] tabViews = new TextView[4];
+    // Ask: the board (a group with topics in the community) and its questions
+    private TLRPC.Chat askBoard;
+    private final HashMap<Long, NilakAsk.Question> askKnown = new HashMap<>();
+    private ArrayList<NilakAsk.Question> askQuestions = new ArrayList<>();
+    private int askSort = SORT_HOT;
+    private String askCategory;
     private View tabsLine;
     private LinearLayout shareBar;
     private TextView shareText;
@@ -113,6 +124,8 @@ public class NilakCommunityActivity extends TigiFeedBase {
         getNotificationCenter().addObserver(this, NotificationCenter.chatInfoDidLoad);
         getNotificationCenter().addObserver(this, NotificationCenter.dialogsNeedReload);
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().addObserver(this, NotificationCenter.topicsDidLoaded);
+        getNotificationCenter().addObserver(this, NotificationCenter.didUpdateReactions);
         getMessagesController().loadFullChat(communityId, classGuid, true);
         return true;
     }
@@ -122,11 +135,33 @@ public class NilakCommunityActivity extends TigiFeedBase {
         getNotificationCenter().removeObserver(this, NotificationCenter.chatInfoDidLoad);
         getNotificationCenter().removeObserver(this, NotificationCenter.dialogsNeedReload);
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
+        getNotificationCenter().removeObserver(this, NotificationCenter.topicsDidLoaded);
+        getNotificationCenter().removeObserver(this, NotificationCenter.didUpdateReactions);
         super.onFragmentDestroy();
     }
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.topicsDidLoaded) {
+            if (askBoard != null && (Long) args[0] == askBoard.id) {
+                refreshAsk();
+            }
+            return;
+        }
+        if (id == NotificationCenter.didUpdateReactions && askBoard != null && (Long) args[0] == -askBoard.id) {
+            // a vote on a question: its count and the Hot and Top order change
+            final int msgId = (Integer) args[1];
+            for (NilakAsk.Question question : askQuestions) {
+                if (question.details != null && question.details.getId() == msgId && args[2] instanceof TLRPC.TL_messageReactions) {
+                    MessageObject.updateReactions(question.details.messageOwner, (TLRPC.TL_messageReactions) args[2]);
+                    if (tab == TAB_ASK) {
+                        bindPage();
+                    }
+                }
+            }
+            super.didReceivedNotification(id, account, args);
+            return;
+        }
         if (id == NotificationCenter.chatInfoDidLoad) {
             final TLRPC.ChatFull info = (TLRPC.ChatFull) args[0];
             if (info != null && info.id == communityId) {
@@ -222,7 +257,7 @@ public class NilakCommunityActivity extends TigiFeedBase {
 
         final LinearLayout tabs = new LinearLayout(context);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        final int[] names2 = {R.string.NilakCommunityFeed, R.string.NilakCommunityChats, R.string.NilakCommunityAbout};
+        final int[] names2 = {R.string.NilakCommunityFeed, R.string.NilakAsk, R.string.NilakCommunityChats, R.string.NilakCommunityAbout};
         for (int i = 0; i < tabViews.length; i++) {
             final int index = i;
             final TextView view = new TextView(context);
@@ -320,6 +355,9 @@ public class NilakCommunityActivity extends TigiFeedBase {
             return;
         }
         tab = index;
+        if (tab == TAB_ASK) {
+            refreshAsk();
+        }
         bindTabs();
         bindHeader();
         final boolean feed = tab == TAB_FEED;
@@ -391,11 +429,243 @@ public class NilakCommunityActivity extends TigiFeedBase {
             return;
         }
         pageContent.removeAllViews();
-        if (tab == TAB_CHATS) {
+        if (tab == TAB_ASK) {
+            bindAsk();
+        } else if (tab == TAB_CHATS) {
             bindChats();
         } else if (tab == TAB_ABOUT) {
             bindAbout();
         }
+    }
+
+    /* Ask */
+
+    /** Finds the board and asks Telegram for its topics; the list fills in as topics and details arrive. */
+    private void refreshAsk() {
+        askBoard = NilakAsk.findBoard(currentAccount, communityId);
+        if (askBoard == null) {
+            askQuestions = new ArrayList<>();
+        } else {
+            if (getMessagesController().getTopicsController().getTopics(askBoard.id) == null) {
+                getMessagesController().getTopicsController().loadTopics(askBoard.id);
+            }
+            askQuestions = NilakAsk.questionsOf(currentAccount, askBoard, askKnown);
+            NilakAsk.loadDetails(this, askBoard, askQuestions, () -> {
+                if (tab == TAB_ASK) {
+                    bindPage();
+                }
+            });
+        }
+        if (tab == TAB_ASK) {
+            bindPage();
+        }
+    }
+
+    private void bindAsk() {
+        final Context context = pageContent.getContext();
+        if (askBoard == null) {
+            final LinearLayout card = card();
+            card.setGravity(Gravity.CENTER_HORIZONTAL);
+            card.setPadding(dp(20), dp(22), dp(20), dp(20));
+            final TextView title = new TextView(context);
+            title.setText(LocaleController.getString(R.string.NilakAskEmptyTitle));
+            title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
+            title.setTypeface(TigiStyle.displayExtraBold());
+            title.setTextColor(inkColor());
+            title.setGravity(Gravity.CENTER);
+            card.addView(title);
+            final TextView text = new TextView(context);
+            text.setText(LocaleController.getString(R.string.NilakAskEmptyText));
+            text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            text.setTextColor(metaColor());
+            text.setGravity(Gravity.CENTER);
+            card.addView(text, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+            pageContent.addView(card, cardParams());
+            return;
+        }
+
+        // sorting and categories
+        final LinearLayout sorts = chipRow(context);
+        final int[] sortNames = {R.string.NilakAskHot, R.string.NilakAskNew, R.string.NilakAskTop, R.string.NilakAskUnanswered};
+        for (int i = 0; i < sortNames.length; i++) {
+            final int sort = i;
+            sorts.addView(chip(context, LocaleController.getString(sortNames[i]), askSort == sort, () -> {
+                askSort = sort;
+                bindPage();
+            }));
+        }
+        pageContent.addView(wrapChips(sorts), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 8));
+        final java.util.LinkedHashSet<String> categories = new java.util.LinkedHashSet<>();
+        for (NilakAsk.Question question : askQuestions) {
+            if (question.category != null) {
+                categories.add(question.category);
+            }
+        }
+        if (!categories.isEmpty()) {
+            final LinearLayout cats = chipRow(context);
+            cats.addView(chip(context, LocaleController.getString(R.string.NilakAskAll), askCategory == null, () -> {
+                askCategory = null;
+                bindPage();
+            }));
+            for (String category : categories) {
+                cats.addView(chip(context, "#" + category, category.equals(askCategory), () -> {
+                    askCategory = category;
+                    bindPage();
+                }));
+            }
+            pageContent.addView(wrapChips(cats), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 8));
+        }
+
+        // Ask: Telegram's new topic screen in the board
+        final TextView ask = new TextView(context);
+        ask.setText(LocaleController.getString(R.string.NilakAskButton));
+        ask.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        ask.setTypeface(TigiStyle.displayBold());
+        ask.setTextColor(0xFFFFFFFF);
+        ask.setGravity(Gravity.CENTER);
+        ask.setBackground(TigiStyle.primaryPill(22));
+        ask.setOnClickListener(v -> askQuestion());
+        pageContent.addView(ask, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44, 12, 0, 12, 12));
+
+        final ArrayList<NilakAsk.Question> shown = new ArrayList<>();
+        for (NilakAsk.Question question : askQuestions) {
+            if (askCategory != null && !askCategory.equals(question.category)) {
+                continue;
+            }
+            if (askSort == SORT_UNANSWERED && question.answers != 0) {
+                continue;
+            }
+            shown.add(question);
+        }
+        final int now = getConnectionsManager().getCurrentTime();
+        if (askSort == SORT_HOT) {
+            Collections.sort(shown, (a, b) -> Double.compare(b.hot(now), a.hot(now)));
+        } else if (askSort == SORT_TOP) {
+            Collections.sort(shown, (a, b) -> Integer.compare(b.votes(), a.votes()));
+        }
+        for (NilakAsk.Question question : shown) {
+            pageContent.addView(questionRow(question), cardParams());
+        }
+        if (shown.isEmpty()) {
+            pageContent.addView(note(LocaleController.getString(getMessagesController().getTopicsController().getTopics(askBoard.id) == null
+                ? R.string.Loading : R.string.NilakAskNoQuestions)), cardParams());
+        }
+    }
+
+    private void askQuestion() {
+        if (askBoard == null) {
+            return;
+        }
+        if (ChatObject.isNotInChat(askBoard)) {
+            // join the board first, in its chat
+            final Bundle args = new Bundle();
+            args.putLong("chat_id", askBoard.id);
+            presentFragment(new ChatActivity(args));
+            return;
+        }
+        presentFragment(TopicCreateFragment.create(askBoard.id, 0));
+    }
+
+    private View questionRow(NilakAsk.Question question) {
+        final Context context = pageContent.getContext();
+        final LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setPadding(dp(10), dp(12), dp(14), dp(12));
+        card.setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
+        card.setOnClickListener(v -> NilakQuestionActivity.open(this, askBoard.id, question.topic.id));
+
+        // ▲ and the votes; a tap votes without opening the question
+        final LinearLayout vote = new LinearLayout(context);
+        vote.setOrientation(LinearLayout.VERTICAL);
+        vote.setGravity(Gravity.CENTER_HORIZONTAL);
+        final boolean voted = question.voted();
+        final TextView arrow = new TextView(context);
+        arrow.setText("▲");
+        arrow.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        arrow.setTextColor(voted ? TigiStyle.accent() : metaColor());
+        arrow.setGravity(Gravity.CENTER);
+        vote.addView(arrow);
+        final TextView votes = new TextView(context);
+        votes.setText(LocaleController.formatShortNumber(question.votes(), null));
+        votes.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        votes.setTypeface(TigiStyle.displayBold());
+        votes.setTextColor(voted ? TigiStyle.accent() : metaColor());
+        votes.setGravity(Gravity.CENTER);
+        vote.addView(votes);
+        vote.setContentDescription(LocaleController.getString(R.string.NilakAskVote));
+        if (question.details != null) {
+            vote.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.12f), dp(12), dp(12)));
+            vote.setOnClickListener(v -> {
+                NilakAsk.toggleVote(this, question.details);
+                bindPage();
+            });
+        }
+        card.addView(vote, LayoutHelper.createLinear(42, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+
+        final LinearLayout texts = new LinearLayout(context);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        final TextView title = new TextView(context);
+        title.setText(question.topic.title);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15.5f);
+        title.setTypeface(TigiStyle.displayBold());
+        title.setTextColor(inkColor());
+        title.setMaxLines(3);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(title);
+        if (question.details != null && !TextUtils.isEmpty(question.details.messageText)) {
+            final TextView excerpt = new TextView(context);
+            excerpt.setText(question.details.messageText.toString().replace('\n', ' '));
+            excerpt.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
+            excerpt.setTextColor(metaColor());
+            excerpt.setMaxLines(2);
+            excerpt.setEllipsize(TextUtils.TruncateAt.END);
+            texts.addView(excerpt, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
+        }
+        final TextView meta = new TextView(context);
+        final StringBuilder line = new StringBuilder();
+        if (question.category != null) {
+            line.append('#').append(question.category).append("  ·  ");
+        }
+        line.append(LocaleController.stringForMessageListDate(question.topic.date));
+        if (question.answers >= 0) {
+            line.append("  ·  ").append(LocaleController.formatPluralString("NilakAskAnswers", question.answers));
+        }
+        meta.setText(line);
+        meta.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+        meta.setTextColor(metaColor());
+        texts.addView(meta, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
+        card.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, 6, 0, 0, 0));
+        card.setContentDescription(question.topic.title);
+        return card;
+    }
+
+    private LinearLayout chipRow(Context context) {
+        final LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(12), 0, dp(12), 0);
+        return row;
+    }
+
+    private View wrapChips(LinearLayout row) {
+        final android.widget.HorizontalScrollView scroll = new android.widget.HorizontalScrollView(row.getContext());
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.addView(row);
+        return scroll;
+    }
+
+    private View chip(Context context, String text, boolean on, Runnable action) {
+        final TextView chip = new TextView(context);
+        chip.setText(text);
+        chip.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        chip.setTypeface(TigiStyle.displayBold());
+        chip.setTextColor(on ? 0xFFFFFFFF : inkColor());
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(14), 0, dp(14), 0);
+        chip.setBackground(on ? TigiStyle.primaryPill(16) : Theme.createRoundRectDrawable(dp(16), cardColor()));
+        chip.setOnClickListener(v -> action.run());
+        final LinearLayout.LayoutParams params = LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 32, 0, 0, 6, 0);
+        chip.setLayoutParams(params);
+        return chip;
     }
 
     private void bindChats() {

@@ -148,8 +148,8 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
             }
         });
         bar.addView(searchButton, LayoutHelper.createFrame(48, 48, Gravity.TOP | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT), 6, 4, 6, 0));
-        // Create lives here, like Instagram's "+", when the bottom bar has Read in its place
-        if (BuildVars.TIGI_READ_TAB && (BuildVars.TIGI_POST || BuildVars.TIGI_LIVE)) {
+        // Create lives here, like Instagram's "+", when the bottom bar has Read or Communities in its place
+        if ((BuildVars.TIGI_READ_TAB || BuildVars.TIGI_COMMUNITIES_TAB) && (BuildVars.TIGI_POST || BuildVars.TIGI_LIVE)) {
             createButton = new ImageView(context);
             createButton.setScaleType(ImageView.ScaleType.CENTER);
             createButton.setImageResource(R.drawable.tigi_add_24);
@@ -470,6 +470,10 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         searchButton.setEnabled(shown > 0.5f);
         activityButton.setAlpha(shown);
         activityButton.setEnabled(shown > 0.5f);
+        if (createButton != null) {
+            createButton.setAlpha(shown);
+            createButton.setEnabled(shown > 0.5f);
+        }
         if (activityBadge != null) {
             activityBadge.setAlpha(shown);
         }

@@ -81,7 +81,7 @@ public class TigiCreateSheet {
      * Telegram's own Community screen for the person's channel: create a new Community around it or add it to one
      * they belong to. Without a channel, Telegram's new group comes first; a group can become a Community too.
      */
-    private static void openCommunity(BaseFragment fragment) {
+    static void openCommunity(BaseFragment fragment) {
         final TLRPC.Chat mine = TigiPosting.defaultChannel(fragment.getCurrentAccount());
         if (mine == null) {
             fragment.presentFragment(new GroupCreateActivity(new Bundle()));

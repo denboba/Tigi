@@ -629,6 +629,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         LINK(TabAnimationType.STATIC, R.drawable.tabs_link_24),
         HOME(TabAnimationType.STATIC, R.drawable.tabs_home_24),
         REELS(TabAnimationType.STATIC, R.drawable.tigi_reels_24),
+        COMMUNITIES(TabAnimationType.STATIC, R.drawable.outline_groups_24), // Nilak: Communities tab
         ARTICLE(R.raw.tab_article, R.raw.tab_article_reverse),
         GRAM(R.raw.gram, R.raw.gram_reverse),
 

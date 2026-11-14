@@ -86,6 +86,7 @@ public class BuildVars {
     public static boolean NILAK_BARRUU = true;
     public static boolean TIGI_PAID_FEATURES = false;
     public static boolean TIGI_READ_TAB = false;
+    public static boolean TIGI_COMMUNITIES_TAB = true; // Home | Reels | Communities | Chats | Profile; "+" moves to Home's bar
 
     // Tigi links (owner: fill these in before a store release)
     public static String TIGI_SOURCE_URL = "https://github.com/denboba/Tigi"; // GPL: where the full source lives

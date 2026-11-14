@@ -11076,6 +11076,11 @@
     <string name="TigiConnectionText">So your messages and calls arrive. You can turn this off in Settings → Notifications.</string>
     <string name="TigiReactionFailed">Could not send the reaction.</string>
     <string name="TigiSharePrivate">This channel is private, so its posts have no public link.</string>
+    <string name="NilakCommunities">Communities</string>
+    <string name="NilakCommunitiesLatest">Latest posts</string>
+    <string name="NilakCommunitiesEmptyTitle">Bring people together</string>
+    <string name="NilakCommunitiesEmptyText">A community keeps a class, school, university or club in one place: its channels, groups and bots.</string>
+    <string name="NilakCommunityNew">New community</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>
     <string name="SwitchThemeToDay">Day Mode</string>

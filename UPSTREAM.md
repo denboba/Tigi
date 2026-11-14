@@ -36,5 +36,7 @@ Resolve the conflicts (see below), keep `APP_PACKAGE=com.nilak.app` in `gradle.p
 | `Theme`, `ThemeColors`, `darkblue.attheme` | lilac colours, lilac night (`TigiLilac.tintNight`, `createNilakNightWallpaper`) |
 | `SettingsActivity` | lilac page, hidden version line |
 | `AndroidManifest.xml` | removed permissions (background location, call log) for Google Play |
+| `MainTabsActivity` | Nilak bottom bar: Home, Reels, Communities (`TIGI_COMMUNITIES_TAB`), Read, Create, Chats, Profile |
+| `GlassTabView` | `HOME`, `REELS`, `COMMUNITIES` tab icons |
 | `BuildVars` | Nilak flags and links |
 | `gradle.properties` | package name and version |

@@ -1818,6 +1818,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /* cell */
 
+    private static final int MAX_BUTTON_ROWS = 4;
+
     protected class FeedCell extends LinearLayout {
         private final BackupImageView avatarView;
         private final TextView nameView;
@@ -1848,6 +1850,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private LinearLayout actions;
         private final TextView forwardedView;
         private final LinearLayout fallbackBox;
+        // the post's own buttons (links, mini apps, votes), as in the channel
+        private final LinearLayout buttonsBox;
         private TigiAttachmentView attachmentView;
         private final TextView fallbackLabel;
         private TextView fallbackOpen;
@@ -2105,6 +2109,10 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 BulletinFactory.of(TigiFeedBase.this).createSimpleBulletin(R.raw.msg_stories_saved, LocaleController.getString(nowSaved ? R.string.TigiSavedDone : R.string.TigiUnsavedDone)).show();
             });
             actions.addView(saveButton, LayoutHelper.createLinear(48, 48));
+            buttonsBox = new LinearLayout(context);
+            buttonsBox.setOrientation(VERTICAL);
+            buttonsBox.setVisibility(GONE);
+            addView(buttonsBox, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 4, 12, 2));
             addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
 
             chipsRow = new LinearLayout(context);
@@ -2223,15 +2231,69 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             return x >= location[0] && x <= location[0] + mediaFrame.getWidth() && y >= location[1] && y <= location[1] + mediaFrame.getHeight();
         }
 
+        /** The inline keyboard of the post: a link opens like in the chat (mini apps included), other buttons in the chat. */
+        private void bindButtons(FeedPost post) {
+            buttonsBox.removeAllViews();
+            MessageObject owner = null;
+            for (int i = 0; i < post.messages.size(); i++) {
+                final MessageObject candidate = post.messages.get(i);
+                if (candidate.messageOwner != null && candidate.messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup) {
+                    owner = candidate;
+                    break;
+                }
+            }
+            if (owner == null) {
+                buttonsBox.setVisibility(GONE);
+                return;
+            }
+            final MessageObject message = owner;
+            final Context context = getContext();
+            final ArrayList<org.telegram.tgnet.tl.TL_keyboard.KeyboardInlineButtonRow> rows = ((TLRPC.TL_replyInlineMarkup) message.messageOwner.reply_markup).rows;
+            for (int r = 0; r < rows.size() && r < MAX_BUTTON_ROWS; r++) {
+                final LinearLayout line = new LinearLayout(context);
+                line.setOrientation(HORIZONTAL);
+                final ArrayList<org.telegram.tgnet.tl.TL_keyboard.KeyboardInlineButton> buttons = rows.get(r).buttons;
+                for (int b = 0; b < buttons.size(); b++) {
+                    final org.telegram.tgnet.tl.TL_keyboard.KeyboardInlineButton button = buttons.get(b);
+                    final TextView view = new TextView(context);
+                    final String url = button.type instanceof org.telegram.tgnet.tl.TL_keyboard.TL_inlineButtonTypeUrl
+                        ? ((org.telegram.tgnet.tl.TL_keyboard.TL_inlineButtonTypeUrl) button.type).url : null;
+                    final boolean isLink = !TextUtils.isEmpty(url);
+                    view.setText(isLink ? button.text + "  ↗" : button.text);
+                    view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+                    view.setTypeface(TigiStyle.displayBold());
+                    view.setTextColor(TigiStyle.accent());
+                    view.setGravity(Gravity.CENTER);
+                    view.setSingleLine(true);
+                    view.setEllipsize(TextUtils.TruncateAt.END);
+                    view.setPadding(dp(10), 0, dp(10), 0);
+                    view.setBackground(TigiStyle.tintedPill(14));
+                    view.setOnClickListener(v -> {
+                        if (isLink) {
+                            org.telegram.messenger.browser.Browser.openUrl(getParentActivity(), url);
+                        } else {
+                            // callbacks, games, payments and the rest work in the chat, as in Telegram
+                            openPostInChat(post, message);
+                        }
+                    });
+                    line.addView(view, LayoutHelper.createLinear(0, 40, 1f, b == 0 ? 0 : 3, 0, b == buttons.size() - 1 ? 0 : 3, 0));
+                }
+                buttonsBox.addView(line, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 40, 0, r == 0 ? 0 : 6, 0, 0));
+            }
+            buttonsBox.setVisibility(VISIBLE);
+        }
+
         void bind(FeedPost post) {
             this.post = post;
             if (post == null || post.messages.isEmpty()) {
                 return;
             }
             if (post.sponsored) {
+                buttonsBox.setVisibility(GONE);
                 bindSponsored(post);
                 return;
             }
+            bindButtons(post);
             actions.setVisibility(VISIBLE);
             fallbackOpen.setText(LocaleController.getString(R.string.ViewInChat));
             moreButton.setContentDescription(LocaleController.getString(R.string.AccDescrMoreOptions));

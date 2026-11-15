@@ -134,7 +134,13 @@ public class TigiSuggestedRow extends LinearLayout {
         bindFollow(follow, !ChatObject.isNotInChat(chat));
         follow.setOnClickListener(v -> {
             final TLRPC.Chat current = MessagesController.getInstance(fragment.getCurrentAccount()).getChat(chat.id);
-            if (current == null || !ChatObject.isNotInChat(current)) {
+            if (current == null) {
+                return;
+            }
+            if (!ChatObject.isNotInChat(current)) {
+                if (!current.creator) {
+                    TigiPosting.confirmUnfollow(fragment, current, () -> bindFollow(follow, false));
+                }
                 return;
             }
             bindFollow(follow, true);

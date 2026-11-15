@@ -124,6 +124,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     protected TigiInlinePlayer inlinePlayer;
     private boolean paused = true;
     private ReactionsContainerLayout pickerLayout;
+    // Telegram's reaction overlay centres its effect on a view of this size (dp)
+    private static final int REACTION_ANCHOR_SIZE = 14;
+    // Longer than Telegram's short reaction animation, which ends by itself
+    private static final long REACTION_EFFECT_MS = 3000;
+    private View reactionAnchor;
+    private android.view.ViewTreeObserver.OnPreDrawListener anchorFollower;
     private View pickerScrim;
 
     protected TigiFeedBase(Bundle args) {
@@ -225,6 +231,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         if (inlinePlayer != null) {
             inlinePlayer.stop();
         }
+        stopFollowingReaction();
         super.onFragmentDestroy();
     }
 
@@ -891,14 +898,14 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     /** Returns false when the reaction could not be sent at all (not allowed in this channel). */
     protected boolean applyReaction(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction, boolean big, boolean addToRecent) {
-        return applyReaction(post, reaction, big, addToRecent, null);
+        return applyReaction(post, reaction, big, addToRecent, false);
     }
 
     /**
-     * Sends the reaction; a reaction that is added plays Telegram's own reaction animation over the view it came
-     * from (the Like button, a reaction under the post, or the post when picked from the reaction bar).
+     * Sends the reaction; with `animate`, a reaction that is added plays Telegram's own reaction animation where it
+     * shows under the card.
      */
-    protected boolean applyReaction(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction, boolean big, boolean addToRecent, View animateFrom) {
+    protected boolean applyReaction(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction, boolean big, boolean addToRecent, boolean animate) {
         if (post == null || post.messages.isEmpty() || reaction == null) {
             return false;
         }
@@ -908,12 +915,6 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
         final MessageObject message = post.primary();
         final boolean added = message.selectReaction(reaction, big, false);
-        if (added && animateFrom != null && animateFrom.isAttachedToWindow()) {
-            ReactionsEffectOverlay.removeCurrent(false);
-            ReactionsEffectOverlay.show(this, null, animateFrom, null, animateFrom.getWidth() / 2f, animateFrom.getHeight() / 2f,
-                reaction, currentAccount, ReactionsEffectOverlay.LONG_ANIMATION);
-            ReactionsEffectOverlay.startAnimation();
-        }
         final ArrayList<ReactionsLayoutInBubble.VisibleReaction> chosen = new ArrayList<>(message.getChoosenReactions());
         getSendMessagesHelper().sendReaction(message, chosen, added ? reaction : null, big, addToRecent, this, null, error -> {
             // the server said no (limit, reactions turned off meanwhile, flood): undo the local change
@@ -924,20 +925,69 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
         });
         refreshPost(post);
+        if (added && animate) {
+            playReactionEffect(post, reaction);
+        }
         return true;
     }
 
     protected boolean toggleHeart(FeedPost post) {
-        return toggleHeart(post, null);
+        return toggleHeart(post, false);
     }
 
-    protected boolean toggleHeart(FeedPost post, View animateFrom) {
+    protected boolean toggleHeart(FeedPost post, boolean animate) {
         final ReactionsLayoutInBubble.VisibleReaction like = likeReaction(post);
         if (like == null) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiReactionsOff)).show();
             return false;
         }
-        return applyReaction(post, like, false, false, animateFrom);
+        return applyReaction(post, like, false, false, animate);
+    }
+
+    /**
+     * Telegram's reaction animation as in a chat (the emoji plays with its small effect around it), on the place the
+     * reaction shows under the card: the Like button or the reaction's chip. Telegram's overlay plays on a view's
+     * corner, so a small anchor follows the reaction's centre while it plays.
+     */
+    protected void playReactionEffect(FeedPost post, ReactionsLayoutInBubble.VisibleReaction reaction) {
+        final View card = findPostView(post);
+        if (!(card instanceof FeedCell) || overlay == null || !(overlay.getParent() instanceof ViewGroup)) {
+            return;
+        }
+        final FeedCell cell = (FeedCell) card;
+        final ViewGroup root = (ViewGroup) overlay.getParent();
+        if (reactionAnchor == null || reactionAnchor.getParent() != root) {
+            reactionAnchor = new View(root.getContext());
+            reactionAnchor.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            root.addView(reactionAnchor, LayoutHelper.createFrame(REACTION_ANCHOR_SIZE, REACTION_ANCHOR_SIZE, Gravity.TOP | Gravity.LEFT));
+        }
+        stopFollowingReaction();
+        final int[] center = new int[2];
+        final int[] rootLocation = new int[2];
+        anchorFollower = () -> {
+            if (cell.post == post && cell.reactionCenter(reaction, center)) {
+                root.getLocationInWindow(rootLocation);
+                reactionAnchor.setTranslationX(center[0] - rootLocation[0] - dp(REACTION_ANCHOR_SIZE) / 2f);
+                reactionAnchor.setTranslationY(center[1] - rootLocation[1] - dp(REACTION_ANCHOR_SIZE) / 2f);
+            }
+            return true;
+        };
+        root.getViewTreeObserver().addOnPreDrawListener(anchorFollower);
+        anchorFollower.onPreDraw();
+        ReactionsEffectOverlay.removeCurrent(false);
+        ReactionsEffectOverlay.show(this, null, reactionAnchor, null, 0, 0, reaction, currentAccount, ReactionsEffectOverlay.SHORT_ANIMATION);
+        ReactionsEffectOverlay.startAnimation();
+        AndroidUtilities.runOnUIThread(stopFollowingTask, REACTION_EFFECT_MS);
+    }
+
+    private final Runnable stopFollowingTask = this::stopFollowingReaction;
+
+    private void stopFollowingReaction() {
+        AndroidUtilities.cancelRunOnUIThread(stopFollowingTask);
+        if (anchorFollower != null && reactionAnchor != null && reactionAnchor.getParent() != null) {
+            ((View) reactionAnchor.getParent()).getViewTreeObserver().removeOnPreDrawListener(anchorFollower);
+        }
+        anchorFollower = null;
     }
 
     protected void refreshPost(FeedPost post) {
@@ -1376,7 +1426,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         pickerLayout.setDelegate(new ReactionsContainerLayout.ReactionsContainerDelegate() {
             @Override
             public void onReactionClicked(View view, ReactionsLayoutInBubble.VisibleReaction visibleReaction, boolean longpress, boolean addToRecent) {
-                applyReaction(post, visibleReaction, longpress, addToRecent, findPostView(post));
+                applyReaction(post, visibleReaction, longpress, addToRecent, true);
                 AndroidUtilities.runOnUIThread(() -> hideReactionPicker());
             }
 
@@ -1674,27 +1724,17 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     }
 
     private void confirmUnfollow(TLRPC.Chat chat) {
-        if (getParentActivity() == null) {
-            return;
-        }
-        new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity(), getResourceProvider())
-            .setTitle(LocaleController.getString(R.string.TigiUnfollow))
-            .setMessage(LocaleController.formatString(R.string.TigiUnfollowText, chat.title))
-            .setPositiveButton(LocaleController.getString(R.string.TigiUnfollow), (dialog, which) -> {
-                getMessagesController().deleteParticipantFromChat(chat.id, getUserConfig().getCurrentUser());
-                if (appliesFeedFilter()) {
-                    // the channel's posts leave the feed with it
-                    for (int i = posts.size() - 1; i >= 0; i--) {
-                        if (posts.get(i).chat != null && posts.get(i).chat.id == chat.id) {
-                            posts.remove(i);
-                        }
+        TigiPosting.confirmUnfollow(this, chat, () -> {
+            if (appliesFeedFilter()) {
+                // the channel's posts leave the feed with it
+                for (int i = posts.size() - 1; i >= 0; i--) {
+                    if (posts.get(i).chat != null && posts.get(i).chat.id == chat.id) {
+                        posts.remove(i);
                     }
-                    notifyPostsChanged();
                 }
-            })
-            .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
-            .makeRed(org.telegram.ui.ActionBar.AlertDialog.BUTTON_POSITIVE)
-            .show();
+                notifyPostsChanged();
+            }
+        });
     }
 
     /** Drops posts the user just hid or marked "Not interested" from the screen. */
@@ -1829,7 +1869,6 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final LinearLayoutManager pagerManager;
         private final PhotoAdapter photoAdapter = new PhotoAdapter();
         private final TextView counterView;
-        private final ImageView bigHeart;
         private final DotsView dotsView;
         private final ImageView heartButton;
         private final TextView heartCountView;
@@ -2030,11 +2069,6 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             counterView.setBackground(Theme.createRoundRectDrawable(dp(14), 0xCC111827));
             mediaFrame.addView(counterView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 28, Gravity.TOP | Gravity.RIGHT, 0, 12, 12, 0));
 
-            bigHeart = new ImageView(context);
-            bigHeart.setImageResource(R.drawable.tigi_heart_filled_24);
-            bigHeart.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
-            bigHeart.setVisibility(GONE);
-            mediaFrame.addView(bigHeart, LayoutHelper.createFrame(96, 96, Gravity.CENTER));
             addView(mediaFrame, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 200));
 
             dotsView = new DotsView(context);
@@ -2052,9 +2086,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 if (post == null) {
                     return;
                 }
-                if (toggleHeart(post, v)) {
-                    popHeart();
-                }
+                toggleHeart(post, true);
             });
             heartButton.setOnLongClickListener(v -> {
                 if (post != null) {
@@ -2526,6 +2558,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                         continue;
                     }
                     final TigiEmojiTextView chip = reactionChip(count.chosen);
+                    chip.setTag(visible);
                     final CharSequence count_ = " " + LocaleController.formatShortNumber(count.count, null);
                     if (visible.documentId != 0) {
                         final android.text.SpannableStringBuilder text = new android.text.SpannableStringBuilder("😀");
@@ -2539,7 +2572,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                     if (!isPaid) {
                         chip.setOnClickListener(v -> {
                             if (post != null) {
-                                applyReaction(post, visible, false, false, v);
+                                applyReaction(post, visible, false, false, true);
                             }
                         });
                     }
@@ -2585,35 +2618,44 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             saveButton.setVisibility(post != null && post.primary().getId() > 0 ? VISIBLE : GONE);
         }
 
-        private void popHeart() {
-            heartButton.animate().cancel();
-            heartButton.setScaleX(1f);
-            heartButton.setScaleY(1f);
-            heartButton.animate().scaleX(1.25f).scaleY(1.25f).setDuration(110).withEndAction(() -> heartButton.animate().scaleX(1f).scaleY(1f).setDuration(110).start()).start();
+        /** The centre of the reaction under the card, in window coordinates: the Like button or the reaction's chip. */
+        boolean reactionCenter(ReactionsLayoutInBubble.VisibleReaction reaction, int[] out) {
+            View target = null;
+            int x = 0;
+            if (sameReaction(reaction, likeReaction(post))) {
+                target = heartButton;
+                x = heartButton.getWidth() / 2;
+            } else {
+                for (int i = 0; i < chipsRow.getChildCount(); i++) {
+                    final View child = chipsRow.getChildAt(i);
+                    if (child.getTag() instanceof ReactionsLayoutInBubble.VisibleReaction && sameReaction(reaction, (ReactionsLayoutInBubble.VisibleReaction) child.getTag()) && child instanceof TextView && ((TextView) child).getLayout() != null) {
+                        // the emoji is the chip's first character
+                        final TextView chip = (TextView) child;
+                        target = chip;
+                        x = (int) (chip.getCompoundPaddingLeft() + chip.getLayout().getPrimaryHorizontal(0) + chip.getTextSize() / 2f);
+                        break;
+                    }
+                }
+            }
+            if (target == null || !target.isAttachedToWindow() || target.getHeight() == 0) {
+                return false;
+            }
+            target.getLocationInWindow(out);
+            out[0] += x;
+            out[1] += target.getHeight() / 2;
+            return true;
         }
 
-        private void showBigHeart() {
-            bigHeart.animate().cancel();
-            bigHeart.setVisibility(VISIBLE);
-            bigHeart.setAlpha(0f);
-            bigHeart.setScaleX(0.4f);
-            bigHeart.setScaleY(0.4f);
-            bigHeart.animate().alpha(1f).scaleX(1.1f).scaleY(1.1f).setDuration(160).withEndAction(() ->
-                bigHeart.animate().alpha(0f).scaleX(1.4f).scaleY(1.4f).setDuration(260).withEndAction(() -> bigHeart.setVisibility(GONE)).start()
-            ).start();
-        }
-
+        /** Double tap likes the post; on a liked post it plays the Like animation again. */
         private void onPhotoDoubleTap() {
             if (post == null) {
                 return;
             }
             if (!likeChosen(post)) {
-                if (!toggleHeart(post)) {
-                    return;
-                }
-                popHeart();
+                toggleHeart(post, true);
+            } else {
+                playReactionEffect(post, likeReaction(post));
             }
-            showBigHeart();
         }
 
         private void onPhotoTap(int position) {

@@ -1027,8 +1027,22 @@ public class ReelsActivity extends TigiFeedBase implements MainTabsActivity.TabF
             captionView.setMaxLines(2);
             final MessageObject message = post.primary();
             final TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(message.photoThumbs, AndroidUtilities.getPhotoSize());
-            // like the video: tall clips fill the screen, wide ones keep bars
-            thumbView.getImageReceiver().setAspectFit(size == null || size.h < size.w * 1.25f);
+            // Like the video: the whole picture shows, filling the screen only when that hides just a sliver
+            final TLRPC.Document document = message.getDocument();
+            int videoWidth = size != null ? size.w : 0;
+            int videoHeight = size != null ? size.h : 0;
+            if (document != null) {
+                for (TLRPC.DocumentAttribute attribute : document.attributes) {
+                    if (attribute instanceof TLRPC.TL_documentAttributeVideo && attribute.w > 0 && attribute.h > 0) {
+                        videoWidth = attribute.w;
+                        videoHeight = attribute.h;
+                        break;
+                    }
+                }
+            }
+            final float hostWidth = getWidth() > 0 ? getWidth() : AndroidUtilities.displaySize.x;
+            final float hostHeight = getHeight() > 0 ? getHeight() : AndroidUtilities.displaySize.y;
+            thumbView.getImageReceiver().setAspectFit(!TigiInlinePlayer.shouldFill(videoWidth, videoHeight, hostWidth, hostHeight));
             thumbView.setImage(ImageLocation.getForObject(size, message.photoThumbsObject), "1000_1000", (android.graphics.drawable.Drawable) null, message.photoThumbsObject);
             final AvatarDrawable avatarDrawable = new AvatarDrawable();
             avatarDrawable.setInfo(currentAccount, post.chat);

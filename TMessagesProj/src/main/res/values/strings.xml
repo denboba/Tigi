@@ -10953,6 +10953,8 @@
     <string name="NilakFriendsBadge">Friends</string>
     <string name="NilakFriendsEmpty">Posts from friends who have a Nilak profile show here. Friends are people you and they both have as contacts.</string>
     <string name="NilakMore">More</string>
+    <string name="NilakManage">Your channels, groups and bots</string>
+    <string name="NilakNewBot">New Bot</string>
     <string name="NilakRead">Read</string>
     <string name="NilakReadEmpty">No Barruu from your channels yet. Long posts and Barruu show here.</string>
     <string name="NilakText">Text</string>

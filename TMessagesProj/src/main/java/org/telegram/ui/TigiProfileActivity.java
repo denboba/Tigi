@@ -239,7 +239,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         topTitle.setEllipsize(TextUtils.TruncateAt.END);
         topTitle.setGravity(Gravity.CENTER_VERTICAL);
         androidx.core.view.ViewCompat.setAccessibilityHeading(topTitle, true);
-        bar.addView(topTitle, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), LocaleController.isRTL ? 160 : 16, 0, LocaleController.isRTL ? 16 : 160, 0));
+        if (self) {
+            // Instagram-style: the username switches between the person's accounts (Telegram's account menu)
+            topTitle.setOnClickListener(v -> openAccountSelector());
+            topTitle.setCompoundDrawablePadding(dp(2));
+        }
+        bar.addView(topTitle, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 56, Gravity.TOP | (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT), LocaleController.isRTL ? 160 : 16, 0, LocaleController.isRTL ? 16 : 160, 0));
 
         final LinearLayout icons = new LinearLayout(context);
         icons.setOrientation(LinearLayout.HORIZONTAL);
@@ -280,6 +285,11 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         final String username = user != null ? UserObject.getPublicUsername(user) : (chat != null ? ChatObject.getPublicUsername(chat) : null);
         topTitle.setText(!TextUtils.isEmpty(username) ? username : (user != null ? UserObject.getUserName(user) : chat.title));
         final PorterDuffColorFilter filter = new PorterDuffColorFilter(text, PorterDuff.Mode.SRC_IN);
+        if (self) {
+            final android.graphics.drawable.Drawable arrow = androidx.core.content.ContextCompat.getDrawable(topTitle.getContext(), R.drawable.ic_arrow_drop_down).mutate();
+            arrow.setColorFilter(filter);
+            topTitle.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, arrow, null);
+        }
         if (regionButton != null) {
             regionButton.setColorFilter(filter);
         }
@@ -288,6 +298,13 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
         if (telegramProfileButton != null) {
             telegramProfileButton.setColorFilter(filter);
+        }
+    }
+
+    private void openAccountSelector() {
+        final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
+        if (tabs != null) {
+            tabs.openAccountSelector(topTitle);
         }
     }
 
@@ -732,12 +749,13 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }, err -> true);
     }
 
-    /** Nilak's own settings and places: country and language, data saver, apps, friends, brief. */
+    /** Nilak's own settings and places: the person's channels, groups and bots, country and language, data saver, apps, friends, brief. */
     private void showNilakMenu() {
         if (getParentActivity() == null) {
             return;
         }
         final CharSequence[] items = {
+            LocaleController.getString(R.string.NilakManage),
             LocaleController.getString(R.string.NilakContentRegion) + " · " + TigiRegion.summary(),
             LocaleController.getString(R.string.NilakDataSaver),
             LocaleController.getString(R.string.NilakApps),
@@ -745,24 +763,25 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             LocaleController.getString(R.string.NilakBriefReminder),
             LocaleController.getString(TigiLilac.flowers() ? R.string.NilakFlowersOn : R.string.NilakFlowersOff)
         };
-        final int[] icons = {R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved, R.drawable.msg_theme};
+        final int[] icons = {R.drawable.msg_channel, R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved, R.drawable.msg_theme};
         // the last item (lilac flowers) is retired
         final CharSequence[] shown = java.util.Arrays.copyOf(items, items.length - 1);
         final int[] shownIcons = java.util.Arrays.copyOf(icons, icons.length - 1);
         final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
         builder.setItems(shown, shownIcons, (dialog, which) -> {
             switch (which) {
-                case 0:
+                case 0: presentFragment(new NilakManageActivity()); break;
+                case 1:
                     TigiRegion.showPicker(this, () -> {
                         TigiPosting.clearSuggestedCache(currentAccount);
                         BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.NilakContentFrom, TigiRegion.summary())).show();
                     });
                     break;
-                case 1: presentFragment(new TigiDataSaverActivity()); break;
-                case 2: TigiAppsActivity.open(this); break;
-                case 3: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
-                case 4: TigiTopicFeedActivity.showReminderPicker(this); break;
-                case 5:
+                case 2: presentFragment(new TigiDataSaverActivity()); break;
+                case 3: TigiAppsActivity.open(this); break;
+                case 4: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
+                case 5: TigiTopicFeedActivity.showReminderPicker(this); break;
+                case 6:
                     TigiLilac.setFlowers(!TigiLilac.flowers());
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check,
                         LocaleController.getString(TigiLilac.flowers() ? R.string.NilakFlowersOn : R.string.NilakFlowersOff)).show();
@@ -909,7 +928,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 } else if (ChatObject.isNotInChat(chat)) {
                     join();
                 } else {
-                    openMessage();
+                    // Following: tapping it offers Unfollow
+                    TigiPosting.confirmUnfollow(TigiProfileActivity.this, chat, () -> {
+                        if (header != null) {
+                            header.bind();
+                        }
+                    });
                 }
             });
             buttons.addView(primaryButton, LayoutHelper.createLinear(0, 36, 1f, 0, 0, 6, 0));
@@ -1164,8 +1188,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 primaryButton.setTextColor(0xFFFFFFFF);
                 primaryButton.setBackground(TigiStyle.primaryPill(10));
             }
-            // a personal channel's owner is messaged directly, and "Following" opens the channel
-            messageButton.setVisibility((user != null && !UserObject.isUserSelf(user)) || !member ? VISIBLE : GONE);
+            // a personal channel's owner is messaged directly; other channels open as a chat
+            messageButton.setVisibility((user != null && !UserObject.isUserSelf(user)) || !canEdit ? VISIBLE : GONE);
         }
     }
 

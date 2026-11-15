@@ -69,6 +69,25 @@ public class TigiPosting {
     }
 
     /** Channels the user follows (joined broadcast channels from the chat list), without the own Tigi channel. */
+    /** Asks to unfollow (leave) the channel; onUnfollowed runs once the person confirms. */
+    public static void confirmUnfollow(org.telegram.ui.ActionBar.BaseFragment fragment, TLRPC.Chat chat, Runnable onUnfollowed) {
+        if (fragment.getParentActivity() == null) {
+            return;
+        }
+        new org.telegram.ui.ActionBar.AlertDialog.Builder(fragment.getParentActivity(), fragment.getResourceProvider())
+            .setTitle(LocaleController.getString(R.string.TigiUnfollow))
+            .setMessage(LocaleController.formatString(R.string.TigiUnfollowText, chat.title))
+            .setPositiveButton(LocaleController.getString(R.string.TigiUnfollow), (dialog, which) -> {
+                MessagesController.getInstance(fragment.getCurrentAccount()).deleteParticipantFromChat(chat.id, UserConfig.getInstance(fragment.getCurrentAccount()).getCurrentUser());
+                if (onUnfollowed != null) {
+                    onUnfollowed.run();
+                }
+            })
+            .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+            .makeRed(org.telegram.ui.ActionBar.AlertDialog.BUTTON_POSITIVE)
+            .show();
+    }
+
     public static ArrayList<TLRPC.Chat> followedChannels(int account) {
         final MessagesController controller = MessagesController.getInstance(account);
         final long ownId = prefs(account).getLong(KEY_OWN, 0);

@@ -131,6 +131,12 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     private View reactionAnchor;
     private android.view.ViewTreeObserver.OnPreDrawListener anchorFollower;
     private View pickerScrim;
+    // How long the reaction bar waits for the channel's allowed reactions before opening anyway
+    private static final long PICKER_INFO_WAIT_MS = 1500;
+    private FeedPost pendingPickerPost;
+    private float pendingPickerX;
+    private float pendingPickerY;
+    private View pendingPickerAnchor;
 
     protected TigiFeedBase(Bundle args) {
         super(args);
@@ -218,6 +224,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         getNotificationCenter().addObserver(this, NotificationCenter.didReceiveNewMessages);
         getNotificationCenter().addObserver(this, NotificationCenter.messageReceivedByServer);
         getNotificationCenter().addObserver(this, NotificationCenter.messageSendError);
+        getNotificationCenter().addObserver(this, NotificationCenter.chatInfoDidLoad);
         return super.onFragmentCreate();
     }
 
@@ -228,6 +235,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         getNotificationCenter().removeObserver(this, NotificationCenter.didReceiveNewMessages);
         getNotificationCenter().removeObserver(this, NotificationCenter.messageReceivedByServer);
         getNotificationCenter().removeObserver(this, NotificationCenter.messageSendError);
+        getNotificationCenter().removeObserver(this, NotificationCenter.chatInfoDidLoad);
+        AndroidUtilities.cancelRunOnUIThread(showPendingPickerTask);
         if (inlinePlayer != null) {
             inlinePlayer.stop();
         }
@@ -277,6 +286,13 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.chatInfoDidLoad) {
+            final TLRPC.ChatFull full = (TLRPC.ChatFull) args[0];
+            if (pendingPickerPost != null && full != null && pendingPickerPost.chat != null && full.id == pendingPickerPost.chat.id) {
+                showPendingPicker();
+            }
+            return;
+        }
         if (id == NotificationCenter.didUpdateReactions) {
             final long dialogId = (Long) args[0];
             final int msgId = (Integer) args[1];
@@ -1409,9 +1425,18 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         final Context context = fragmentView.getContext();
         final MessageObject message = post.primary();
         final TLRPC.ChatFull full = getMessagesController().getChatFull(post.chat.id);
-        if (full == null) {
+        if (full == null && pendingPickerPost != post) {
+            // The bar lists only the reactions this channel allows, so it opens once Telegram has sent them
+            pendingPickerPost = post;
+            pendingPickerX = pressRawX;
+            pendingPickerY = pressRawY;
+            pendingPickerAnchor = anchor;
             getMessagesController().loadFullChat(post.chat.id, 0, true);
+            AndroidUtilities.runOnUIThread(showPendingPickerTask, PICKER_INFO_WAIT_MS);
+            return;
         }
+        pendingPickerPost = null;
+        AndroidUtilities.cancelRunOnUIThread(showPendingPickerTask);
 
         pickerScrim = new View(context);
         pickerScrim.setBackgroundColor(0x33000000);
@@ -1461,6 +1486,25 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         overlay.setVisibility(View.VISIBLE);
         pickerLayout.setMessage(message, full, true);
     }
+
+    /** Opens the reaction bar that waited for the channel's allowed reactions (or for the wait to end) */
+    private void showPendingPicker() {
+        final FeedPost post = pendingPickerPost;
+        if (post == null) {
+            return;
+        }
+        final View anchor = pendingPickerAnchor;
+        pendingPickerAnchor = null;
+        if (anchor != null && !anchor.isAttachedToWindow()) {
+            // The card scrolled away meanwhile
+            pendingPickerPost = null;
+            AndroidUtilities.cancelRunOnUIThread(showPendingPickerTask);
+            return;
+        }
+        showReactionPicker(post, pendingPickerX, pendingPickerY, anchor);
+    }
+
+    private final Runnable showPendingPickerTask = this::showPendingPicker;
 
     /** The card showing this post, if it is on screen. */
     protected View findPostView(FeedPost post) {

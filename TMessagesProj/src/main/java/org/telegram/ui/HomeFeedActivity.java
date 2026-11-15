@@ -839,6 +839,7 @@ public class HomeFeedActivity extends TigiFeedBase implements MainTabsActivity.T
         if (id == NotificationCenter.dialogsNeedReload) {
             if (BuildVars.TIGI_POST) {
                 TigiPosting.archiveOwnChannelOnce(currentAccount);
+                TigiPosting.adoptOwnChannelOnce(currentAccount);
             }
             updateBriefCard();
             updateActivityBadge();

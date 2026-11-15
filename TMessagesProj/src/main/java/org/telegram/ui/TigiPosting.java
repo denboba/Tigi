@@ -244,6 +244,71 @@ public class TigiPosting {
         return canPostTo(own) ? own : null;
     }
 
+    /**
+     * Finds the person's existing Nilak channel before any is made, so a new login, a reinstall or a cold start never
+     * makes a second one: the remembered channel, then a channel they own with a Nilak link (_nilak), then the personal
+     * channel on their Telegram profile, then their public channels on the server. onDone gets it, or null when they
+     * have none; a channel found is remembered. onFailed gets the error when the server could not be asked, so
+     * nothing is made without knowing.
+     */
+    public static void findOwnChannel(int account, Utilities.Callback<TLRPC.Chat> onDone, Utilities.Callback<TLRPC.TL_error> onFailed) {
+        final TLRPC.Chat known = ownChannel(account);
+        if (known != null) {
+            onDone.run(known);
+            return;
+        }
+        final MessagesController controller = MessagesController.getInstance(account);
+        for (TLRPC.Dialog dialog : controller.getAllDialogs()) {
+            final TLRPC.Chat chat = dialog.id < 0 ? controller.getChat(-dialog.id) : null;
+            if (isOwnNilakChannel(chat)) {
+                onDone.run(rememberOwn(account, chat));
+                return;
+            }
+        }
+        final TLRPC.User self = UserConfig.getInstance(account).getCurrentUser();
+        final TLRPC.UserFull full = self != null ? controller.getUserFull(self.id) : null;
+        final TLRPC.Chat personal = full != null && full.personal_channel_id != 0 ? controller.getChat(full.personal_channel_id) : null;
+        final TLRPC.TL_channels_getAdminedPublicChannels req = new TLRPC.TL_channels_getAdminedPublicChannels();
+        ConnectionsManager.getInstance(account).sendRequest(req, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+            if (!(response instanceof TLRPC.messages_Chats)) {
+                onFailed.run(error);
+                return;
+            }
+            final ArrayList<TLRPC.Chat> chats = ((TLRPC.messages_Chats) response).chats;
+            controller.putChats(chats, false);
+            for (TLRPC.Chat chat : chats) {
+                if (isOwnNilakChannel(chat)) {
+                    onDone.run(rememberOwn(account, chat));
+                    return;
+                }
+            }
+            onDone.run(personal != null && personal.creator && canPostTo(personal) ? rememberOwn(account, personal) : null);
+        }));
+    }
+
+    private static boolean isOwnNilakChannel(TLRPC.Chat chat) {
+        return chat != null && chat.creator && isNilakProfile(chat) && canPostTo(chat);
+    }
+
+    private static TLRPC.Chat rememberOwn(int account, TLRPC.Chat chat) {
+        // A channel found, not made here, stays where the person keeps it in their chat list
+        prefs(account).edit().putLong(KEY_OWN, chat.id).putLong(KEY_ARCHIVED, chat.id).apply();
+        return chat;
+    }
+
+    // Accounts whose existing Nilak channel was looked up in this session
+    private static final boolean[] isOwnChannelChecked = new boolean[UserConfig.MAX_ACCOUNT_COUNT];
+
+    /** After login and on each start: picks up the Nilak channel the person already has, once a session */
+    public static void adoptOwnChannelOnce(int account) {
+        if (isOwnChannelChecked[account] || ownChannel(account) != null || !UserConfig.getInstance(account).isClientActivated()) {
+            return;
+        }
+        isOwnChannelChecked[account] = true;
+        // Not found or not reachable now: posting looks again before it makes a channel
+        findOwnChannel(account, chat -> {}, error -> isOwnChannelChecked[account] = false);
+    }
+
     /** Where a post goes without asking: the own Tigi channel, else the last channel used for a post. */
     public static TLRPC.Chat defaultChannel(int account) {
         final TLRPC.Chat own = ownChannel(account);
@@ -409,16 +474,25 @@ public class TigiPosting {
      * returns it on the UI thread. Errors come back as a user-readable message.
      */
     public static void createPersonalChannel(int account, String title, String publicUsername, Utilities.Callback<TLRPC.Chat> onDone, Utilities.Callback<String> onError) {
-        final TLRPC.Chat existing = MessagesController.getInstance(account).getChat(prefs(account).getLong(KEY_OWN, 0));
-        if (canPostTo(existing)) {
-            // already made on an earlier try (maybe the answer got lost); never make a second one
-            onDone.run(existing);
-            return;
-        }
         if (creating) {
             return;
         }
         creating = true;
+        // A channel made earlier (another device, a lost answer, before a reinstall) is used, never a second one
+        findOwnChannel(account, existing -> {
+            if (existing != null) {
+                creating = false;
+                onDone.run(existing);
+                return;
+            }
+            createChannel(account, title, publicUsername, onDone, onError);
+        }, error -> {
+            creating = false;
+            onError.run(errorText(error));
+        });
+    }
+
+    private static void createChannel(int account, String title, String publicUsername, Utilities.Callback<TLRPC.Chat> onDone, Utilities.Callback<String> onError) {
         final TLRPC.TL_channels_createChannel req = new TLRPC.TL_channels_createChannel();
         req.broadcast = true;
         req.title = TextUtils.isEmpty(title) ? suggestedTitle(account) : title.trim();

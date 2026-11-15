@@ -301,6 +301,43 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
     }
 
+    /** Your channels, groups and bots: a card of its own on the own profile, one tap from managing them */
+    private View manageRow(Context context) {
+        final int text = TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
+        final LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), 0, dp(12), 0);
+        row.setBackground(Theme.createRoundRectDrawable(dp(18), TigiLilac.on() ? TigiLilac.card() : Theme.getColor(Theme.key_windowBackgroundGray)));
+        row.setForeground(Theme.createRadSelectorDrawable(Theme.getColor(Theme.key_listSelector), 18, 18));
+        if (TigiLilac.on()) {
+            row.setElevation(dp(1));
+        }
+        row.setOnClickListener(v -> presentFragment(new NilakManageActivity()));
+        final ImageView icon = new ImageView(context);
+        icon.setScaleType(ImageView.ScaleType.CENTER);
+        icon.setImageResource(R.drawable.msg_channel);
+        icon.setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
+        icon.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
+        row.addView(icon, LayoutHelper.createLinear(36, 36));
+        final TextView title = new TextView(context);
+        title.setText(LocaleController.getString(R.string.NilakManage));
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        title.setTypeface(TigiStyle.displayBold());
+        title.setTextColor(text);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        row.addView(title, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 12, 0, 8, 0));
+        final ImageView arrow = new ImageView(context);
+        arrow.setScaleType(ImageView.ScaleType.CENTER);
+        arrow.setImageResource(R.drawable.msg_arrowright);
+        arrow.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.SRC_IN));
+        arrow.setScaleX(LocaleController.isRTL ? -1 : 1);
+        row.addView(arrow, LayoutHelper.createLinear(24, 24));
+        row.setContentDescription(title.getText());
+        return row;
+    }
+
     private void openAccountSelector() {
         final MainTabsActivity tabs = TigiNavigation.findMainTabs(this);
         if (tabs != null) {
@@ -749,13 +786,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }, err -> true);
     }
 
-    /** Nilak's own settings and places: the person's channels, groups and bots, country and language, data saver, apps, friends, brief. */
+    /** Nilak's own settings and places: country and language, data saver, apps, friends, brief. */
     private void showNilakMenu() {
         if (getParentActivity() == null) {
             return;
         }
         final CharSequence[] items = {
-            LocaleController.getString(R.string.NilakManage),
             LocaleController.getString(R.string.NilakContentRegion) + " · " + TigiRegion.summary(),
             LocaleController.getString(R.string.NilakDataSaver),
             LocaleController.getString(R.string.NilakApps),
@@ -763,25 +799,24 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             LocaleController.getString(R.string.NilakBriefReminder),
             LocaleController.getString(TigiLilac.flowers() ? R.string.NilakFlowersOn : R.string.NilakFlowersOff)
         };
-        final int[] icons = {R.drawable.msg_channel, R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved, R.drawable.msg_theme};
+        final int[] icons = {R.drawable.msg_language, R.drawable.msg2_data, R.drawable.msg_bots, R.drawable.msg_contacts, R.drawable.msg_saved, R.drawable.msg_theme};
         // the last item (lilac flowers) is retired
         final CharSequence[] shown = java.util.Arrays.copyOf(items, items.length - 1);
         final int[] shownIcons = java.util.Arrays.copyOf(icons, icons.length - 1);
         final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity());
         builder.setItems(shown, shownIcons, (dialog, which) -> {
             switch (which) {
-                case 0: presentFragment(new NilakManageActivity()); break;
-                case 1:
+                case 0:
                     TigiRegion.showPicker(this, () -> {
                         TigiPosting.clearSuggestedCache(currentAccount);
                         BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString(R.string.NilakContentFrom, TigiRegion.summary())).show();
                     });
                     break;
-                case 2: presentFragment(new TigiDataSaverActivity()); break;
-                case 3: TigiAppsActivity.open(this); break;
-                case 4: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
-                case 5: TigiTopicFeedActivity.showReminderPicker(this); break;
-                case 6:
+                case 1: presentFragment(new TigiDataSaverActivity()); break;
+                case 2: TigiAppsActivity.open(this); break;
+                case 3: presentFragment(TigiTopicFeedActivity.of(TigiTopicFeedActivity.MODE_FRIENDS)); break;
+                case 4: TigiTopicFeedActivity.showReminderPicker(this); break;
+                case 5:
                     TigiLilac.setFlowers(!TigiLilac.flowers());
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check,
                         LocaleController.getString(TigiLilac.flowers() ? R.string.NilakFlowersOn : R.string.NilakFlowersOff)).show();
@@ -990,6 +1025,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             // highlights: stories pinned to the profile
             highlights = new HighlightsRow(context);
             addView(highlights, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, -16, 0, -16, 6));
+            if (self) {
+                addView(manageRow(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56, 0, 4, 0, 10));
+            }
             if (self && org.telegram.messenger.BuildVars.TIGI_COMMUNITIES_TAB) {
                 // the communities the person belongs to (Telegram tells only them)
                 communitiesRow = new NilakProfileCommunitiesRow(context, TigiProfileActivity.this);

@@ -119,7 +119,6 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
                     loadPosts();
                 }
             }
-            return;
         }
         if (id == NotificationCenter.dialogsNeedReload || id == NotificationCenter.updateInterfaces) {
             bindCommunities();

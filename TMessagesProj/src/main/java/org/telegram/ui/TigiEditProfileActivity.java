@@ -159,6 +159,12 @@ public class TigiEditProfileActivity extends BaseFragment {
                 args.putInt("type", ChatUsersActivity.TYPE_USERS);
                 presentFragment(new ChatUsersActivity(args));
             });
+            row(context, R.string.NilakAllChannelSettings, null, () -> {
+                // Telegram's own channel settings: name, description, type, discussion, admins, members, deletion
+                final Bundle args = new Bundle();
+                args.putLong("chat_id", posts.id);
+                presentFragment(new ChatEditActivity(args));
+            });
             toggle(context, R.string.NilakShareFollowing, R.string.NilakShareFollowingInfo, TigiIdentity.sharesFollowing(currentAccount),
                 value -> TigiIdentity.setSharesFollowing(currentAccount, value));
         }

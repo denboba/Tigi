@@ -31,13 +31,12 @@ Resolve the conflicts (see below), keep `APP_PACKAGE=com.nilak.app` in `gradle.p
 | --- | --- |
 | `ChatMessageCell` | smart fold (`nilakFold`), Barruu card (`nilakBarruu`), album card (`isTigiCardMedia`) |
 | `MessageObject` | `nilakSmartFold`, `tigiStack` albums |
-| `ChatActivity` | compose screen background (`nilakFeedLook`), `tigi_action`, Barruu tap opens the reader, `setNilakReplyMessage` (Ask: reply to an answer) |
+| `ChatActivity` | compose screen background (`nilakFeedLook`), `tigi_action`, Barruu tap opens the reader |
 | `ChatAttachAlert` | Barruu button next to Article (`LAYOUT_TYPE_BARRUU`) |
 | `Theme`, `ThemeColors`, `darkblue.attheme` | lilac colours, lilac night (`TigiLilac.tintNight`, `createNilakNightWallpaper`) |
 | `SettingsActivity` | lilac page, hidden version line |
 | `AndroidManifest.xml` | removed permissions (background location, call log) for Google Play |
 | `MainTabsActivity` | Nilak bottom bar: Home, Reels, Communities (`TIGI_COMMUNITIES_TAB`), Read, Create, Chats, Profile |
 | `GlassTabView` | `HOME`, `REELS`, `COMMUNITIES` tab icons |
-| `DialogsActivity`, `DialogCell`, `ChatActivity`, `ProfileActivity`, `ChatActionCell` | a community opens `NilakCommunityActivity` (`NilakCommunityActivity.open`), Telegram's `CommunitySheet` when the flag is off |
 | `BuildVars` | Nilak flags and links |
 | `gradle.properties` | package name and version |

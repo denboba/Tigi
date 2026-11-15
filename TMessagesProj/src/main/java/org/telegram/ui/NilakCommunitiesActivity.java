@@ -30,6 +30,7 @@ import org.telegram.tgnet.tl.TL_communities;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.community.CommunitySheet;
 
@@ -74,7 +75,6 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
     private TextView latestLabel;
     // newest questions from the communities' Ask boards
     private LinearLayout questionsCard;
-    private final java.util.HashMap<Long, NilakAsk.Question> askKnown = new java.util.HashMap<>();
     private int titleOffset;
 
     public NilakCommunitiesActivity(Bundle args) {
@@ -306,11 +306,11 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
             if (load && getMessagesController().getTopicsController().getTopics(board.id) == null) {
                 getMessagesController().getTopicsController().loadTopics(board.id);
             }
-            for (NilakAsk.Question question : NilakAsk.questionsOf(currentAccount, board, askKnown)) {
+            for (TLRPC.TL_forumTopic question : NilakAsk.questionsOf(currentAccount, board)) {
                 found.add(new Object[]{question, board, community});
             }
         }
-        Collections.sort(found, (a, b) -> Integer.compare(NilakAsk.dateOf(((NilakAsk.Question) b[0]).topic), NilakAsk.dateOf(((NilakAsk.Question) a[0]).topic)));
+        Collections.sort(found, (a, b) -> Integer.compare(NilakAsk.dateOf((TLRPC.TL_forumTopic) b[0]), NilakAsk.dateOf((TLRPC.TL_forumTopic) a[0])));
         questionsCard.removeAllViews();
         questionsCard.setVisibility(found.isEmpty() ? View.GONE : View.VISIBLE);
         if (found.isEmpty()) {
@@ -324,16 +324,17 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         header.setPadding(dp(10), 0, dp(10), dp(4));
         questionsCard.addView(header);
         for (int i = 0; i < found.size() && i < QUESTIONS_SHOWN; i++) {
-            final NilakAsk.Question question = (NilakAsk.Question) found.get(i)[0];
+            final TLRPC.TL_forumTopic question = (TLRPC.TL_forumTopic) found.get(i)[0];
             final TLRPC.Chat board = (TLRPC.Chat) found.get(i)[1];
             final TLRPC.Chat community = (TLRPC.Chat) found.get(i)[2];
             final LinearLayout row = new LinearLayout(questionsCard.getContext());
             row.setOrientation(LinearLayout.VERTICAL);
             row.setPadding(dp(10), dp(8), dp(10), dp(8));
             row.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(14), dp(14)));
-            row.setOnClickListener(v -> NilakQuestionActivity.open(this, board.id, question.topic.id));
+            // the question in Telegram's own topic chat
+            row.setOnClickListener(v -> org.telegram.ui.Components.Forum.ForumUtilities.openTopic(this, board.id, question, 0));
             final TextView title = new TextView(questionsCard.getContext());
-            title.setText(question.topic.title);
+            title.setText(question.title);
             title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             title.setTypeface(TigiStyle.displayBold());
             title.setTextColor(inkColor());
@@ -341,7 +342,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
             title.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(title);
             final TextView meta = new TextView(questionsCard.getContext());
-            meta.setText(community.title + "  ·  " + LocaleController.stringForMessageListDate(NilakAsk.dateOf(question.topic)));
+            meta.setText(community.title + "  ·  " + LocaleController.stringForMessageListDate(NilakAsk.dateOf(question)));
             meta.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
             meta.setTextColor(metaColor());
             meta.setSingleLine(true);
@@ -400,6 +401,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         row.setPadding(dp(10), dp(10), dp(10), dp(10));
         row.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(16), dp(16)));
         row.setOnClickListener(v -> openCommunity(community.id));
+        row.setOnLongClickListener(v -> showCommunityOptions(community, v));
 
         final BackupImageView avatar = new BackupImageView(context);
         avatar.setRoundRadius(dp(16));
@@ -518,9 +520,36 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
     }
 
     private void openCommunity(long communityId) {
-        if (!NilakCommunityActivity.open(this, communityId)) {
-            showDialog(new CommunitySheet(this, communityId));
+        NilakCommunitySheets.openCommunity(this, communityId);
+    }
+
+    /** Long press on a community: Telegram's settings for admins, and the Ask board when it has none yet. */
+    private boolean showCommunityOptions(TLRPC.Chat community, View anchor) {
+        final org.telegram.ui.Components.ItemOptions options = org.telegram.ui.Components.ItemOptions.makeOptions(this, anchor);
+        options.add(R.drawable.msg_openin, LocaleController.getString(R.string.Open), () -> openCommunity(community.id));
+        if (NilakAsk.findBoard(currentAccount, community.id) == null && ChatObject.canAddChatToCommunity(community)) {
+            options.add(R.drawable.msg_topics, LocaleController.getString(R.string.NilakAskAddBoard), () ->
+                NilakAsk.createBoard(this, community, LocaleController.formatString(R.string.NilakAskBoardTitle, community.title), board -> {
+                    if (isDead()) {
+                        return;
+                    }
+                    if (board == null) {
+                        BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakAskBoardFailed)).show();
+                    } else {
+                        BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.getString(R.string.NilakAskBoardAdded)).show();
+                        bindQuestions(true);
+                    }
+                }));
         }
+        if (ChatObject.hasAdminRights(community)) {
+            options.add(R.drawable.msg_settings, LocaleController.getString(R.string.CommunityMenuSettings), () -> {
+                final Bundle args = new Bundle();
+                args.putLong("community_id", community.id);
+                presentFragment(new org.telegram.ui.community.CommunityEditActivity(args));
+            });
+        }
+        options.show();
+        return true;
     }
 
     /* loading */

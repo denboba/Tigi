@@ -711,7 +711,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         }
         final ArrayList<FeedPost> valid = new ArrayList<>();
         for (int i = 0; i < out.size(); i++) {
-            if (out.get(i).isValid() && (!dropsLowValue() || !isLowValue(out.get(i)))) {
+            if (out.get(i).isValid() && !isLowValue(out.get(i))) {
                 valid.add(out.get(i));
             }
         }
@@ -1589,7 +1589,6 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 BulletinFactory.of(this).createCopyLinkBulletin(TextUtils.isEmpty(ChatObject.getPublicUsername(chat))).show();
             }));
         }
-        addPostMenuRows(post, content, sheet::dismiss);
         content.addView(sheetRow(context, R.drawable.msg_openin, LocaleController.getString(R.string.ViewInChat), false, () -> {
             sheet.dismiss();
             openPostInChat(post, primary);
@@ -1647,7 +1646,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         return tile;
     }
 
-    protected View sheetRow(Context context, int icon, String text, boolean destructive, Runnable action) {
+    private View sheetRow(Context context, int icon, String text, boolean destructive, Runnable action) {
         final TextView row = new TextView(context);
         final int color = destructive ? Theme.getColor(Theme.key_text_RedBold, getResourceProvider()) : Theme.getColor(Theme.key_dialogTextBlack, getResourceProvider());
         row.setText(text);
@@ -1763,43 +1762,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         if (inlineRow == null || inlineRow.getVisibility() != View.VISIBLE || posts.isEmpty()) {
             return -1;
         }
-        return Math.min(inlineRowAfter(), posts.size());
-    }
-
-    /** Whether short replies and punctuation are left out (feeds); a screen of answers keeps every message. */
-    protected boolean dropsLowValue() {
-        return true;
-    }
-
-    /** The whole screen, for screens that add their own layer (a composer bar). */
-    protected FrameLayout getRootLayout() {
-        return rootView;
-    }
-
-    /** After how many posts the inline row comes. */
-    protected int inlineRowAfter() {
-        return INLINE_ROW_AFTER;
-    }
-
-    /** The Like button's icon: the heart, or another mark on screens whose Like means something else (Ask's vote). */
-    protected int likeIcon(boolean liked) {
-        return liked ? R.drawable.tigi_heart_filled_24 : R.drawable.tigi_heart_outline_24;
-    }
-
-    /** The number by the comment button: the post's comments, or another count on screens that define it. */
-    protected int commentCount(FeedPost post) {
-        final MessageObject message = post.primary();
-        return message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
-    }
-
-    protected boolean commentsOn(FeedPost post) {
-        final MessageObject message = post.primary();
-        return message.messageOwner.replies != null && message.messageOwner.replies.comments
-            || post.chat != null && ChatObject.canChangeChatInfo(post.chat);
-    }
-
-    /** Rows a screen adds to a post's menu, above View in chat. */
-    protected void addPostMenuRows(FeedPost post, LinearLayout content, Runnable dismiss) {
+        return Math.min(INLINE_ROW_AFTER, posts.size());
     }
 
     protected class FeedAdapter extends RecyclerListView.SelectionAdapter {
@@ -2068,7 +2031,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             mediaFrame.addView(counterView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 28, Gravity.TOP | Gravity.RIGHT, 0, 12, 12, 0));
 
             bigHeart = new ImageView(context);
-            bigHeart.setImageResource(likeIcon(true));
+            bigHeart.setImageResource(R.drawable.tigi_heart_filled_24);
             bigHeart.setColorFilter(new PorterDuffColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN));
             bigHeart.setVisibility(GONE);
             mediaFrame.addView(bigHeart, LayoutHelper.createFrame(96, 96, Gravity.CENTER));
@@ -2527,7 +2490,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             final MessageObject message = post.primary();
             final ReactionsLayoutInBubble.VisibleReaction like = likeReaction(post);
             final boolean liked = likeChosen(post);
-            heartButton.setImageResource(likeIcon(liked));
+            heartButton.setImageResource(liked ? R.drawable.tigi_heart_filled_24 : R.drawable.tigi_heart_outline_24);
             heartButton.setContentDescription(LocaleController.getString(liked ? R.string.TigiUnlike : R.string.TigiLike));
             if (liked) {
                 heartButton.clearColorFilter();
@@ -2536,10 +2499,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             }
             final int hearts = countOf(message, like);
             heartCountView.setText(hearts > 0 ? LocaleController.formatShortNumber(hearts, null) : "");
-            final int comments = commentCount(post);
+            final int comments = message.messageOwner.replies != null ? message.messageOwner.replies.replies : 0;
             commentCountView.setText(comments > 0 ? LocaleController.formatShortNumber(comments, null) : "");
             // what this post does not allow looks off (grey); a tap still says why
-            final boolean commentsOn = commentsOn(post);
+            final boolean commentsOn = message.messageOwner.replies != null && message.messageOwner.replies.comments
+                || post.chat != null && ChatObject.canChangeChatInfo(post.chat);
             commentButton.setAlpha(commentsOn ? 1f : 0.32f);
             commentCountView.setAlpha(commentsOn ? 1f : 0.32f);
             final boolean reactionsOn = like != null;

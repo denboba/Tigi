@@ -98,61 +98,11 @@ public final class NilakCommunitySheets {
         fragment.presentFragment(new CommunityCreateActivity(args));
     }
 
-    /** Post to…: the community's chats where the person can write; Telegram's compose screen opens in the chosen one. */
-    public static boolean hasChatsToPostIn(int account, long communityId) {
-        return !postableChats(account, communityId).isEmpty();
-    }
-
-    public static void showPostTo(BaseFragment fragment, long communityId) {
-        final Context context = fragment != null ? fragment.getParentActivity() : null;
-        if (context == null) {
-            return;
-        }
-        final ArrayList<TLRPC.Chat> chats = postableChats(fragment.getCurrentAccount(), communityId);
-        if (chats.size() == 1) {
-            openChat(fragment, chats.get(0));
-            return;
-        }
-        final LinearLayout column = column(context, R.string.NilakCommunityPostTo, R.string.NilakCommunityPostToHint);
-        final BottomSheet[] sheet = new BottomSheet[1];
-        for (TLRPC.Chat chat : chats) {
-            column.addView(chatRow(context, fragment.getCurrentAccount(), chat, kindOf(chat), () -> {
-                sheet[0].dismiss();
-                openChat(fragment, chat);
-            }));
-        }
-        sheet[0] = show(fragment, column);
-    }
-
-    private static ArrayList<TLRPC.Chat> postableChats(int account, long communityId) {
-        final ArrayList<TLRPC.Chat> result = new ArrayList<>();
-        final MessagesController.CommunityPeersDialog peers = MessagesController.getInstance(account).buildCommunityPeers(communityId);
-        if (peers == null) {
-            return result;
-        }
-        for (MessagesController.CommunityPeerDialog peer : peers.chatsYouAreIn) {
-            if (peer.chat != null && !ChatObject.isNotInChat(peer.chat) && ChatObject.canWriteToChat(peer.chat)) {
-                result.add(peer.chat);
-            }
-        }
-        return result;
-    }
-
-    private static void openChat(BaseFragment fragment, TLRPC.Chat chat) {
+    /** A community opens as Telegram shows it: its chats, in Telegram's own community list. */
+    public static void openCommunity(BaseFragment fragment, long communityId) {
         final Bundle args = new Bundle();
-        args.putLong("chat_id", chat.id);
-        if (ChatObject.isForum(chat)) {
-            if (ChatObject.areTabsEnabled(chat)) {
-                final ChatActivity activity = new ChatActivity(args);
-                ForumUtilities.applyTopic(activity, MessagesStorage.TopicKey.of(-chat.id,
-                    MessagesController.getInstance(fragment.getCurrentAccount()).getForumLastTopicId(chat.id)));
-                fragment.presentFragment(activity);
-            } else {
-                fragment.presentFragment(new TopicsFragment(args));
-            }
-        } else {
-            fragment.presentFragment(new ChatActivity(args));
-        }
+        args.putLong("community_id", communityId);
+        fragment.presentFragment(new DialogsActivity(args));
     }
 
     private static String kindOf(TLRPC.Chat chat) {

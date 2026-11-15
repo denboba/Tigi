@@ -220,17 +220,13 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 if (dialogId > 0) {
                     final TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
                     if (user != null && user.linked_community_id != 0) {
-                        if (!org.telegram.ui.NilakCommunityActivity.open(parentFragment, user.linked_community_id)) { // Nilak
-                            parentFragment.showDialog(new CommunitySheet(parentFragment, user.linked_community_id));
-                        }
+                        parentFragment.showDialog(new CommunitySheet(parentFragment, user.linked_community_id));
                         return true;
                     }
                 } else {
                     final TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
                     if (chat != null && chat.linked_community_id != 0) {
-                        if (!org.telegram.ui.NilakCommunityActivity.open(parentFragment, chat.linked_community_id)) { // Nilak
-                            parentFragment.showDialog(new CommunitySheet(parentFragment, chat.linked_community_id));
-                        }
+                        parentFragment.showDialog(new CommunitySheet(parentFragment, chat.linked_community_id));
                         return true;
                     }
                 }

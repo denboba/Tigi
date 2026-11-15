@@ -1745,13 +1745,6 @@ public class ChatActivity extends BaseFragment implements
         tigiEditMessage = message;
     }
 
-    // Nilak Ask > Reply: reply to this answer, keyboard open, as soon as the chat is open
-    private MessageObject nilakReplyMessage;
-
-    public void setNilakReplyMessage(MessageObject message) {
-        nilakReplyMessage = message;
-    }
-
     private final static int topic_close = 60;
     private final static int open_forum = 61;
 
@@ -4170,14 +4163,10 @@ public class ChatActivity extends BaseFragment implements
             @Override
             protected boolean onAvatarClick() {
                 if (currentUser != null && currentUser.linked_community_id != 0) {
-                    if (!NilakCommunityActivity.open(ChatActivity.this, currentUser.linked_community_id)) { // Nilak
-                        showDialog(new CommunitySheet(ChatActivity.this, currentUser.linked_community_id));
-                    }
+                    showDialog(new CommunitySheet(ChatActivity.this, currentUser.linked_community_id));
                     return true;
                 } else if (currentChat != null && currentChat.linked_community_id != 0) {
-                    if (!NilakCommunityActivity.open(ChatActivity.this, currentChat.linked_community_id)) { // Nilak
-                        showDialog(new CommunitySheet(ChatActivity.this, currentChat.linked_community_id));
-                    }
+                    showDialog(new CommunitySheet(ChatActivity.this, currentChat.linked_community_id));
                     return true;
                 }
                 return false;
@@ -28216,12 +28205,6 @@ public class ChatActivity extends BaseFragment implements
             final MessageObject toEdit = messagesDict[0].get(tigiEditMessage.getId()) != null ? messagesDict[0].get(tigiEditMessage.getId()) : tigiEditMessage;
             tigiEditMessage = null;
             startEditingMessageObject(toEdit);
-        }
-        if (isOpen && !backward && nilakReplyMessage != null && chatActivityEnterView != null) {
-            final MessageObject reply = messagesDict[0].get(nilakReplyMessage.getId()) != null ? messagesDict[0].get(nilakReplyMessage.getId()) : nilakReplyMessage;
-            nilakReplyMessage = null;
-            showFieldPanelForReply(reply);
-            chatActivityEnterView.openKeyboard();
         }
         if (isOpen && !backward && tigiCompose != 0 && !tigiComposeStarted && chatActivityEnterView != null) {
             tigiComposeStarted = true;

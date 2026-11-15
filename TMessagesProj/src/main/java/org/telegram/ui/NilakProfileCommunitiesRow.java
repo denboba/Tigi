@@ -91,7 +91,7 @@ public class NilakProfileCommunitiesRow extends LinearLayout {
             final AvatarDrawable avatarDrawable = new AvatarDrawable();
             avatarDrawable.setInfo(fragment.getCurrentAccount(), community);
             avatar.setForUserOrChat(community, avatarDrawable);
-            addTile(avatar, community.title, () -> NilakCommunityActivity.open(fragment, community.id));
+            addTile(avatar, community.title, () -> NilakCommunitySheets.openCommunity(fragment, community.id));
         }
         final ImageView plus = new ImageView(getContext());
         plus.setImageResource(R.drawable.tigi_add_24);

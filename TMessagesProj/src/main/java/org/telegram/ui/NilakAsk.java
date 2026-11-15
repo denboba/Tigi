@@ -1,76 +1,31 @@
 package org.telegram.ui;
 
-import android.os.Bundle;
-import android.text.TextUtils;
-
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
-import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
-
-import org.telegram.messenger.SendMessagesHelper;
-import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.Utilities;
-import org.telegram.tgnet.tl.TL_forum;
-import org.telegram.tgnet.tl.TL_update;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * Ask: questions and answers in a community, built only from Telegram. The Ask board is a group with topics linked to
- * the community; a question is a topic (its title is the question, its first message the details), answers are the
- * messages in the topic. 👍 is the vote, a ✅ from the asker marks the chosen answer, the first #hashtag is the category.
- * People on any Telegram app take part by writing and reacting; Nilak only reads these conventions.
+ * Ask: questions and answers in a community, made only of Telegram. The Ask board is a group with topics linked to the
+ * community: a question is a topic, its answers are the topic's messages, 👍 is the vote and a ✅ from the asker marks
+ * the answer that helped. Everything opens in Telegram's own topic list and topic chat; Nilak finds the board, shows
+ * the newest questions and lets admins add a board in one tap.
  */
 public final class NilakAsk {
 
-    public static final String VOTE = "👍";
-    public static final String CHOSEN = "✅";
-    // Nilak's bot posts anonymous questions on the boards it helps run
+    // Nilak's bot posts anonymous questions on the boards it helps run (it answers /askanon in a private chat)
     public static final String BOT_USERNAME = "NilakAppBot";
-    // the Bot API's ID for a supergroup: -100 followed by its ID
-    private static final long BOT_API_CHANNEL_SHIFT = 1000000000000L;
-    private static final int TOPICS_RELOAD_DELAY = 2500;
-    // the topics Ask reads at a time, newest first
+    // the topics read at a time, newest first
     private static final int MAX_QUESTIONS = 40;
     private static final int GENERAL_TOPIC_ID = 1;
-    private static final Pattern HASHTAG = Pattern.compile("#([\\p{L}\\p{N}_]{2,32})");
-    // Hot: votes and answers, fading with age (hours)
-    private static final double HOT_GRAVITY = 1.5;
-    private static final int HOT_ANSWER_WEIGHT = 2;
-    private static final int HOUR = 3600;
 
     private NilakAsk() {
-    }
-
-    public static final class Question {
-        public TLRPC.TL_forumTopic topic;
-        // the first message of the topic: the details; may be missing for questions made without them
-        public MessageObject details;
-        // -1 until counted
-        public int answers = -1;
-        public String category;
-
-        public int votes() {
-            return details != null ? count(details, VOTE) : 0;
-        }
-
-        public boolean voted() {
-            return details != null && chosenByMe(details, VOTE);
-        }
-
-        public double hot(int now) {
-            final double hours = Math.max(0, now - dateOf(topic)) / (double) HOUR;
-            return (votes() + Math.max(0, answers) * HOT_ANSWER_WEIGHT + 1) / Math.pow(hours + 2, HOT_GRAVITY);
-        }
     }
 
     /** When a question was asked: Telegram leaves some topics without a date, their first message has one. */
@@ -100,9 +55,9 @@ public final class NilakAsk {
         return null;
     }
 
-    /** Questions from the topics Telegram has loaded for the board, newest first (General and hidden topics left out). */
-    public static ArrayList<Question> questionsOf(int account, TLRPC.Chat board, HashMap<Long, Question> known) {
-        final ArrayList<Question> result = new ArrayList<>();
+    /** The board's questions from the topics Telegram has loaded, newest first (General and hidden topics left out). */
+    public static ArrayList<TLRPC.TL_forumTopic> questionsOf(int account, TLRPC.Chat board) {
+        final ArrayList<TLRPC.TL_forumTopic> result = new ArrayList<>();
         final ArrayList<TLRPC.TL_forumTopic> topics = MessagesController.getInstance(account).getTopicsController().getTopics(board.id);
         if (topics == null) {
             return result;
@@ -110,421 +65,17 @@ public final class NilakAsk {
         final ArrayList<TLRPC.TL_forumTopic> sorted = new ArrayList<>(topics);
         Collections.sort(sorted, (a, b) -> Integer.compare(dateOf(b), dateOf(a)));
         for (TLRPC.TL_forumTopic topic : sorted) {
-            if (topic.id == GENERAL_TOPIC_ID || topic.hidden || result.size() >= MAX_QUESTIONS) {
-                continue;
+            if (topic.id != GENERAL_TOPIC_ID && !topic.hidden && result.size() < MAX_QUESTIONS) {
+                result.add(topic);
             }
-            Question question = known.get((long) topic.id);
-            if (question == null) {
-                question = new Question();
-                known.put((long) topic.id, question);
-            }
-            question.topic = topic;
-            result.add(question);
         }
         return result;
     }
 
-    /** Loads the details of the questions (the message after each topic starts) and how many answers each has. */
-    public static void loadDetails(BaseFragment fragment, TLRPC.Chat board, ArrayList<Question> questions, Runnable onChanged) {
-        final int account = fragment.getCurrentAccount();
-        final MessagesController controller = MessagesController.getInstance(account);
-        final TLRPC.TL_channels_getMessages request = new TLRPC.TL_channels_getMessages();
-        request.channel = controller.getInputChannel(board.id);
-        for (Question question : questions) {
-            if (question.details == null) {
-                request.id.add(question.topic.id + 1);
-            }
-        }
-        if (!request.id.isEmpty()) {
-            final int requestId = ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                if (!(response instanceof TLRPC.messages_Messages)) {
-                    return;
-                }
-                final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
-                controller.putUsers(res.users, false);
-                controller.putChats(res.chats, false);
-                for (TLRPC.Message message : res.messages) {
-                    for (Question question : questions) {
-                        if (isInTopic(message, question.topic.id) && message.id == question.topic.id + 1) {
-                            question.details = new MessageObject(account, message, false, false);
-                            question.category = categoryOf(message.message);
-                        }
-                    }
-                }
-                onChanged.run();
-            }));
-            ConnectionsManager.getInstance(account).bindRequestToGuid(requestId, fragment.getClassGuid());
-        }
-        for (Question question : questions) {
-            if (question.answers >= 0) {
-                continue;
-            }
-            final TLRPC.TL_messages_getReplies replies = new TLRPC.TL_messages_getReplies();
-            replies.peer = controller.getInputPeer(-board.id);
-            replies.msg_id = question.topic.id;
-            replies.limit = 1;
-            final int requestId = ConnectionsManager.getInstance(account).sendRequest(replies, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                if (response instanceof TLRPC.messages_Messages) {
-                    final TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
-                    final int total = res instanceof TLRPC.TL_messages_messages ? res.messages.size() : res.count;
-                    // the details message is not an answer
-                    question.answers = Math.max(0, total - 1);
-                    onChanged.run();
-                }
-            }));
-            ConnectionsManager.getInstance(account).bindRequestToGuid(requestId, fragment.getClassGuid());
-        }
-    }
-
-    /** A message written in a topic: a plain message points at the topic, a reply also names it as its top. */
-    public static boolean isInTopic(TLRPC.Message message, int topicId) {
-        final TLRPC.MessageReplyHeader reply = message.reply_to;
-        return reply != null && (reply.reply_to_top_id == topicId || reply.reply_to_msg_id == topicId);
-    }
-
-    public static String categoryOf(String text) {
-        if (TextUtils.isEmpty(text)) {
-            return null;
-        }
-        final Matcher matcher = HASHTAG.matcher(text);
-        return matcher.find() ? matcher.group(1) : null;
-    }
-
-    public static int count(MessageObject message, String emoji) {
-        return TigiFeedBase.countOf(message, ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(emoji));
-    }
-
-    public static boolean chosenByMe(MessageObject message, String emoji) {
-        if (message.messageOwner == null || message.messageOwner.reactions == null) {
-            return false;
-        }
-        for (TLRPC.ReactionCount result : message.messageOwner.reactions.results) {
-            if (result.chosen && result.reaction instanceof TLRPC.TL_reactionEmoji
-                && emoji.equals(((TLRPC.TL_reactionEmoji) result.reaction).emoticon)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** Adds or takes back the person's 👍, the way reactions work in the chat. */
-    public static void toggleVote(BaseFragment fragment, MessageObject message) {
-        final ReactionsLayoutInBubble.VisibleReaction vote = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(VOTE);
-        final boolean added = message.selectReaction(vote, false, false);
-        final ArrayList<ReactionsLayoutInBubble.VisibleReaction> chosen = new ArrayList<>(message.getChoosenReactions());
-        fragment.getSendMessagesHelper().sendReaction(message, chosen, added ? vote : null, false, false, fragment, null,
-            error -> message.selectReaction(vote, false, false));
-    }
-
-    /** The topic's first (service) message, which a message must name to be written in the topic. */
-    public static MessageObject topicStart(int account, long boardId, int topicId) {
-        final TLRPC.TL_messageActionTopicCreate action = new TLRPC.TL_messageActionTopicCreate();
-        final TLRPC.TL_forumTopic topic = MessagesController.getInstance(account).getTopicsController().findTopic(boardId, topicId);
-        action.title = topic != null ? topic.title : "";
-        final TLRPC.TL_messageService message = new TLRPC.TL_messageService();
-        message.action = action;
-        message.peer_id = MessagesController.getInstance(account).getPeer(-boardId);
-        message.dialog_id = -boardId;
-        message.id = topicId;
-        final MessageObject object = new MessageObject(account, message, false, false);
-        // as Telegram does for a topic's first message, so the reply is marked as written in the topic
-        object.isTopicMainMessage = true;
-        return object;
-    }
-
-    /**
-     * Creates a question: a topic with the question as its title, then its details (with the category as a #hashtag) as
-     * the first message, the same as writing them in Telegram. onCreated gets the new topic's ID.
-     */
-    public static void createQuestion(BaseFragment fragment, TLRPC.Chat board, String title, String details, String category,
-                                      Utilities.Callback<Integer> onCreated, Runnable onError) {
-        final int account = fragment.getCurrentAccount();
-        final TL_forum.TL_messages_createForumTopic request = new TL_forum.TL_messages_createForumTopic();
-        request.peer = MessagesController.getInstance(account).getInputPeer(-board.id);
-        request.title = title;
-        request.random_id = Utilities.random.nextLong();
-        ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-            int topicId = 0;
-            if (response instanceof TLRPC.Updates) {
-                final TLRPC.Updates updates = (TLRPC.Updates) response;
-                for (int i = 0; i < updates.updates.size(); i++) {
-                    if (updates.updates.get(i) instanceof TL_update.TL_updateMessageID) {
-                        topicId = ((TL_update.TL_updateMessageID) updates.updates.get(i)).id;
-                    }
-                }
-            }
-            if (topicId == 0) {
-                onError.run();
-                return;
-            }
-            final StringBuilder text = new StringBuilder(details == null ? "" : details.trim());
-            if (!TextUtils.isEmpty(category) && (text.indexOf("#" + category) < 0)) {
-                if (text.length() > 0) {
-                    text.append("\n\n");
-                }
-                text.append('#').append(category);
-            }
-            if (text.length() > 0) {
-                final MessageObject start = topicStart(account, board.id, topicId);
-                final SendMessagesHelper.SendMessageParams params = SendMessagesHelper.SendMessageParams.of(text.toString(), -board.id,
-                    start, start, null, true, null, null, null, true, 0, 0, null, false);
-                fragment.getSendMessagesHelper().sendMessage(params);
-            }
-            MessagesController.getInstance(account).getTopicsController().loadTopics(board.id, false, org.telegram.messenger.TopicsController.LOAD_TYPE_PRELOAD);
-            onCreated.run(topicId);
-        }));
-    }
-
-    /** The answers the asker marked with ✅: only their own ✅ counts, so anyone else's ✅ is just a reaction. */
-    public static void loadChosen(BaseFragment fragment, long boardId, long askerId, ArrayList<MessageObject> answers,
-                                  Utilities.Callback<Integer> onChosen) {
-        final int account = fragment.getCurrentAccount();
-        for (MessageObject answer : answers) {
-            if (count(answer, CHOSEN) <= 0) {
-                continue;
-            }
-            final TLRPC.TL_messages_getMessageReactionsList request = new TLRPC.TL_messages_getMessageReactionsList();
-            request.peer = MessagesController.getInstance(account).getInputPeer(-boardId);
-            request.id = answer.getId();
-            final TLRPC.TL_reactionEmoji reaction = new TLRPC.TL_reactionEmoji();
-            reaction.emoticon = CHOSEN;
-            request.reaction = reaction;
-            request.flags |= 1;
-            request.limit = 50;
-            final int requestId = ConnectionsManager.getInstance(account).sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
-                if (!(response instanceof TLRPC.TL_messages_messageReactionsList)) {
-                    return;
-                }
-                for (TLRPC.MessagePeerReaction peerReaction : ((TLRPC.TL_messages_messageReactionsList) response).reactions) {
-                    if (peerReaction.peer_id != null && MessageObject.getPeerId(peerReaction.peer_id) == askerId) {
-                        onChosen.run(answer.getId());
-                        return;
-                    }
-                }
-            }));
-            ConnectionsManager.getInstance(account).bindRequestToGuid(requestId, fragment.getClassGuid());
-        }
-    }
-
-    /** The asker chooses or un-chooses an answer: their ✅ reaction on it, next to any other reactions they gave. */
-    public static void toggleChosen(BaseFragment fragment, MessageObject answer) {
-        final ReactionsLayoutInBubble.VisibleReaction chosen = ReactionsLayoutInBubble.VisibleReaction.fromEmojicon(CHOSEN);
-        final boolean added = answer.selectReaction(chosen, false, false);
-        final ArrayList<ReactionsLayoutInBubble.VisibleReaction> all = new ArrayList<>(answer.getChoosenReactions());
-        fragment.getSendMessagesHelper().sendReaction(answer, all, added ? chosen : null, false, false, fragment, null,
-            error -> answer.selectReaction(chosen, false, false));
-    }
-
-    public static boolean isMine(int account, TLRPC.Peer from) {
-        return from != null && MessageObject.getPeerId(from) == UserConfig.getInstance(account).getClientUserId();
-    }
-
-    // categories offered when the board has none yet
-    private static final String[] DEFAULT_CATEGORIES = {"question", "study", "technology", "jobs", "personal"};
-    private static final int TITLE_MAX = 128;
-
-    /** Ask the community: the question (the topic's title), details and a category; Post creates it on the board. */
-    public static void showAskSheet(BaseFragment fragment, TLRPC.Chat board, java.util.Collection<String> categories,
-                                    Utilities.Callback<Integer> onCreated) {
-        final android.content.Context context = fragment.getParentActivity();
-        if (context == null || board == null) {
-            return;
-        }
-        final android.widget.LinearLayout column = new android.widget.LinearLayout(context);
-        column.setOrientation(android.widget.LinearLayout.VERTICAL);
-        column.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(10), AndroidUtilities.dp(18), AndroidUtilities.dp(18));
-        final int ink = org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextBlack);
-        final int gray = org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_dialogTextGray3);
-        final int field = org.telegram.ui.ActionBar.Theme.multAlpha(TigiStyle.accent(), 0.08f);
-
-        final android.widget.TextView title = new android.widget.TextView(context);
-        title.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskSheetTitle));
-        title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 20);
-        title.setTypeface(TigiStyle.displayExtraBold());
-        title.setTextColor(ink);
-        column.addView(title);
-        final android.widget.TextView where = new android.widget.TextView(context);
-        where.setText(board.title);
-        where.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 13.5f);
-        where.setTextColor(gray);
-        column.addView(where, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2, 0, 2, 0, 12));
-
-        final android.widget.EditText question = input(context, org.telegram.messenger.R.string.NilakAskQuestionHint, field, ink, gray);
-        question.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(TITLE_MAX)});
-        question.setSingleLine(false);
-        question.setMaxLines(3);
-        column.addView(question, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2));
-        final android.widget.EditText details = input(context, org.telegram.messenger.R.string.NilakAskDetailsHint, field, ink, gray);
-        details.setMinLines(3);
-        details.setGravity(android.view.Gravity.TOP);
-        column.addView(details, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2, 0, 8, 0, 0));
-
-        final android.widget.TextView catLabel = new android.widget.TextView(context);
-        catLabel.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskCategory));
-        catLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 13.5f);
-        catLabel.setTypeface(TigiStyle.displayBold());
-        catLabel.setTextColor(TigiStyle.accent());
-        column.addView(catLabel, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2, 0, 14, 0, 6));
-        final java.util.LinkedHashSet<String> offered = new java.util.LinkedHashSet<>(categories);
-        if (offered.isEmpty()) {
-            offered.addAll(java.util.Arrays.asList(DEFAULT_CATEGORIES));
-        }
-        final String[] picked = {null};
-        final android.widget.LinearLayout chips = new android.widget.LinearLayout(context);
-        chips.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        final ArrayList<android.widget.TextView> chipViews = new ArrayList<>();
-        for (String category : offered) {
-            final android.widget.TextView chip = new android.widget.TextView(context);
-            chip.setText("#" + category);
-            chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 13);
-            chip.setTypeface(TigiStyle.displayBold());
-            chip.setGravity(android.view.Gravity.CENTER);
-            chip.setPadding(AndroidUtilities.dp(12), 0, AndroidUtilities.dp(12), 0);
-            chip.setOnClickListener(v -> {
-                picked[0] = category.equals(picked[0]) ? null : category;
-                for (android.widget.TextView view : chipViews) {
-                    final boolean on = view.getText().toString().equals("#" + picked[0]);
-                    view.setTextColor(on ? 0xFFFFFFFF : TigiStyle.accent());
-                    view.setBackground(on ? TigiStyle.primaryPill(15) : TigiStyle.tintedPill(15));
-                }
-            });
-            chip.setTextColor(TigiStyle.accent());
-            chip.setBackground(TigiStyle.tintedPill(15));
-            chipViews.add(chip);
-            chips.addView(chip, org.telegram.ui.Components.LayoutHelper.createLinear(-2, 30, 0, 0, 6, 0));
-        }
-        final android.widget.HorizontalScrollView chipScroll = new android.widget.HorizontalScrollView(context);
-        chipScroll.setHorizontalScrollBarEnabled(false);
-        chipScroll.addView(chips);
-        column.addView(chipScroll, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2));
-
-        final boolean[] anonymous = {false};
-        final android.widget.LinearLayout anonRow = new android.widget.LinearLayout(context);
-        anonRow.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        anonRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        final android.widget.LinearLayout anonTexts = new android.widget.LinearLayout(context);
-        anonTexts.setOrientation(android.widget.LinearLayout.VERTICAL);
-        final android.widget.TextView anonTitle = new android.widget.TextView(context);
-        anonTitle.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymous));
-        anonTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
-        anonTitle.setTypeface(TigiStyle.displayBold());
-        anonTitle.setTextColor(ink);
-        anonTexts.addView(anonTitle);
-        final android.widget.TextView anonHint = new android.widget.TextView(context);
-        anonHint.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymousHint));
-        anonHint.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 12.5f);
-        anonHint.setTextColor(gray);
-        anonTexts.addView(anonHint);
-        anonRow.addView(anonTexts, org.telegram.ui.Components.LayoutHelper.createLinear(0, -2, 1f));
-        final org.telegram.ui.Components.Switch anonSwitch = new org.telegram.ui.Components.Switch(context);
-        anonSwitch.setColors(org.telegram.ui.ActionBar.Theme.key_switchTrack, org.telegram.ui.ActionBar.Theme.key_switchTrackChecked,
-            org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite, org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite);
-        anonRow.addView(anonSwitch, org.telegram.ui.Components.LayoutHelper.createLinear(37, 20, android.view.Gravity.CENTER_VERTICAL, 12, 0, 4, 0));
-        anonRow.setOnClickListener(v -> {
-            anonymous[0] = !anonymous[0];
-            anonSwitch.setChecked(anonymous[0], true);
-        });
-        column.addView(anonRow, org.telegram.ui.Components.LayoutHelper.createLinear(-1, -2, 0, 16, 0, 0));
-
-        final android.widget.TextView post = new android.widget.TextView(context);
-        post.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskPost));
-        post.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
-        post.setTypeface(TigiStyle.displayBold());
-        post.setTextColor(0xFFFFFFFF);
-        post.setGravity(android.view.Gravity.CENTER);
-        post.setBackground(TigiStyle.primaryPill(23));
-        column.addView(post, org.telegram.ui.Components.LayoutHelper.createLinear(-1, 46, 0, 16, 0, 0));
-        // anything Telegram can send (photos, videos, files, a poll, a voice note) goes in through its own composer
-        final android.widget.TextView attach = new android.widget.TextView(context);
-        attach.setText(org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAddMedia));
-        attach.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 14.5f);
-        attach.setTypeface(TigiStyle.displayBold());
-        attach.setTextColor(TigiStyle.accent());
-        attach.setGravity(android.view.Gravity.CENTER);
-        attach.setBackground(TigiStyle.tintedPill(23));
-        column.addView(attach, org.telegram.ui.Components.LayoutHelper.createLinear(-1, 44, 0, 8, 0, 0));
-
-        final android.widget.ScrollView scroll = new android.widget.ScrollView(context);
-        scroll.addView(column);
-        final org.telegram.ui.ActionBar.BottomSheet.Builder builder = new org.telegram.ui.ActionBar.BottomSheet.Builder(context, true, fragment.getResourceProvider());
-        builder.setCustomView(scroll);
-        final org.telegram.ui.ActionBar.BottomSheet sheet = builder.create();
-        post.setOnClickListener(v -> {
-            final String text = question.getText().toString().trim();
-            if (text.isEmpty()) {
-                AndroidUtilities.shakeView(question);
-                return;
-            }
-            post.setEnabled(false);
-            post.setAlpha(0.6f);
-            if (anonymous[0]) {
-                askAnonymously(fragment, board, text, details.getText().toString(), picked[0], () -> {
-                    sheet.dismiss();
-                    org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.contact_check,
-                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymousSent)).show();
-                });
-                return;
-            }
-            createQuestion(fragment, board, text, details.getText().toString(), picked[0], topicId -> {
-                sheet.dismiss();
-                onCreated.run(topicId);
-            }, () -> {
-                post.setEnabled(true);
-                post.setAlpha(1f);
-                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.error,
-                    org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskFailed)).show();
-            });
-        });
-        attach.setOnClickListener(v -> {
-            final String text = question.getText().toString().trim();
-            if (text.isEmpty()) {
-                AndroidUtilities.shakeView(question);
-                return;
-            }
-            if (anonymous[0]) {
-                // the bot can only post text for someone; attachments come with the person's name
-                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.chats_infotip,
-                    org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskAnonymousTextOnly)).show();
-                return;
-            }
-            attach.setEnabled(false);
-            attach.setAlpha(0.6f);
-            createQuestion(fragment, board, text, details.getText().toString(), picked[0], topicId -> {
-                sheet.dismiss();
-                final Bundle args = new Bundle();
-                args.putInt("tigi_action", ChatActivity.TIGI_ACTION_ATTACH);
-                final ChatActivity chat = org.telegram.ui.Components.Forum.ForumUtilities.getChatActivityForTopic(fragment, board.id,
-                    newTopic(fragment.getCurrentAccount(), board.id, topicId, text), 0, args);
-                if (chat != null) {
-                    fragment.presentFragment(chat);
-                }
-            }, () -> {
-                attach.setEnabled(true);
-                attach.setAlpha(1f);
-                org.telegram.ui.Components.BulletinFactory.of(fragment).createSimpleBulletin(org.telegram.messenger.R.raw.error,
-                    org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.NilakAskFailed)).show();
-            });
-        });
-        fragment.showDialog(sheet);
-        question.requestFocus();
-        AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(question), 300);
-    }
-
-    private static android.widget.EditText input(android.content.Context context, int hint, int background, int ink, int gray) {
-        final android.widget.EditText edit = new android.widget.EditText(context);
-        edit.setHint(org.telegram.messenger.LocaleController.getString(hint));
-        edit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15.5f);
-        edit.setTextColor(ink);
-        edit.setHintTextColor(gray);
-        edit.setPadding(AndroidUtilities.dp(14), AndroidUtilities.dp(12), AndroidUtilities.dp(14), AndroidUtilities.dp(12));
-        edit.setBackground(org.telegram.ui.ActionBar.Theme.createRoundRectDrawable(AndroidUtilities.dp(14), background));
-        edit.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        return edit;
-    }
-
     /**
      * Admin: a new Ask board for the community. A group with topics named after it, where members may create topics
-     * (ask) but group info and pins stay with admins, linked to the community. onDone gets the new board, or null.
+     * (ask) but group info and pins stay with admins, linked to the community; the bot joins as a topic admin so it can
+     * post anonymous questions. onDone gets the new board, or null.
      */
     public static void createBoard(BaseFragment fragment, TLRPC.Chat community, String title, Utilities.Callback<TLRPC.Chat> onDone) {
         final int account = fragment.getCurrentAccount();
@@ -549,7 +100,6 @@ public final class NilakAsk {
                 rights.pin_messages = true;
                 rights.manage_topics = false;
                 controller.setDefaultBannedRole(board.id, rights, true, fragment);
-                // the bot posts anonymous questions as a topic admin
                 addBotToBoard(fragment, board.id);
                 controller.linkCommunity(-board.id, community.id, false, (res, linkError) -> AndroidUtilities.runOnUIThread(() -> {
                     controller.loadFullChat(community.id, 0, true);
@@ -559,69 +109,19 @@ public final class NilakAsk {
         }, ConnectionsManager.RequestFlagFailOnServerErrors);
     }
 
-    /** The bot as a user the app knows, resolved by its username once. */
-    public static void withBot(int account, Utilities.Callback<TLRPC.User> onBot) {
+    /** Makes the bot a board admin that may create topics, so it can post anonymous questions. */
+    private static void addBotToBoard(BaseFragment fragment, long boardId) {
+        final int account = fragment.getCurrentAccount();
         MessagesController.getInstance(account).getUserNameResolver().resolve(BOT_USERNAME, id -> {
             final TLRPC.User bot = id != null ? MessagesController.getInstance(account).getUser(id) : null;
-            if (bot != null) {
-                onBot.run(bot);
+            if (bot == null) {
+                return;
             }
-        });
-    }
-
-    public static boolean isBot(TLRPC.User user) {
-        return user != null && user.bot && BOT_USERNAME.equalsIgnoreCase(org.telegram.messenger.UserObject.getPublicUsername(user));
-    }
-
-    /** Makes the bot a board admin that may create topics, so it can post anonymous questions. */
-    public static void addBotToBoard(BaseFragment fragment, long boardId) {
-        withBot(fragment.getCurrentAccount(), bot -> {
             final TLRPC.TL_chatAdminRights rights = new TLRPC.TL_chatAdminRights();
             rights.manage_topics = true;
             rights.delete_messages = true;
-            MessagesController.getInstance(fragment.getCurrentAccount()).setUserAdminRole(boardId, bot, rights, "Nilak", false,
+            MessagesController.getInstance(account).setUserAdminRole(boardId, bot, rights, "Nilak", false,
                 fragment, true, false, null, null);
         });
-    }
-
-    /** Asks through the bot: it creates the topic under its own name, so members do not see who asked. */
-    public static void askAnonymously(BaseFragment fragment, TLRPC.Chat board, String title, String details, String category, Runnable onSent) {
-        final int account = fragment.getCurrentAccount();
-        withBot(account, bot -> {
-            final StringBuilder text = new StringBuilder("/askanon ").append(-(BOT_API_CHANNEL_SHIFT + board.id))
-                .append('\n').append(title.replace('\n', ' '));
-            final String body = details == null ? "" : details.trim();
-            if (!body.isEmpty() || !TextUtils.isEmpty(category)) {
-                text.append('\n').append(body);
-                if (!TextUtils.isEmpty(category) && !body.contains("#" + category)) {
-                    text.append(body.isEmpty() ? "" : "\n\n").append('#').append(category);
-                }
-            }
-            fragment.getSendMessagesHelper().sendMessage(SendMessagesHelper.SendMessageParams.of(text.toString(), bot.id));
-            // the bot's new topic arrives with the next topics load
-            AndroidUtilities.runOnUIThread(() -> MessagesController.getInstance(account).getTopicsController()
-                .loadTopics(board.id, false, org.telegram.messenger.TopicsController.LOAD_TYPE_PRELOAD), TOPICS_RELOAD_DELAY);
-            onSent.run();
-        });
-    }
-
-    /** The topic just created, as Telegram builds it after its own New Topic screen, until its topic list catches up. */
-    public static TLRPC.TL_forumTopic newTopic(int account, long boardId, int topicId, String title) {
-        final TLRPC.TL_forumTopic known = MessagesController.getInstance(account).getTopicsController().findTopic(boardId, topicId);
-        if (known != null) {
-            return known;
-        }
-        final MessageObject start = topicStart(account, boardId, topicId);
-        final TLRPC.TL_forumTopic topic = new TLRPC.TL_forumTopic();
-        topic.id = topicId;
-        topic.title = title;
-        topic.my = true;
-        topic.topicStartMessage = start.messageOwner;
-        topic.topMessage = start.messageOwner;
-        topic.top_message = topicId;
-        topic.from_id = MessagesController.getInstance(account).getPeer(UserConfig.getInstance(account).getClientUserId());
-        topic.notify_settings = new TLRPC.TL_peerNotifySettings();
-        topic.date = ConnectionsManager.getInstance(account).getCurrentTime();
-        return topic;
     }
 }

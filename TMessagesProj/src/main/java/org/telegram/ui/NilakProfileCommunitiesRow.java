@@ -32,7 +32,8 @@ import java.util.ArrayList;
  */
 public class NilakProfileCommunitiesRow extends LinearLayout {
 
-    private static final int TILE_WIDTH = 84;
+    private static final int TILE_WIDTH = 70;
+    private static final int TILE_ICON_SIZE = 50;
 
     private final BaseFragment fragment;
     private final TextView titleView;
@@ -51,7 +52,26 @@ public class NilakProfileCommunitiesRow extends LinearLayout {
         titleView.setTypeface(TigiStyle.displayBold());
         titleView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         androidx.core.view.ViewCompat.setAccessibilityHeading(titleView, true);
-        addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 16, 6, 16, 6));
+        // The title, with "See all" opening the Communities tab
+        final LinearLayout titleRow = new LinearLayout(context);
+        titleRow.setOrientation(HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(titleView, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+        final TextView seeAllView = new TextView(context);
+        seeAllView.setText(LocaleController.getString(R.string.NilakSeeAll));
+        seeAllView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        seeAllView.setTypeface(TigiStyle.displayBold());
+        seeAllView.setTextColor(TigiStyle.accent());
+        seeAllView.setPadding(dp(8), dp(6), dp(8), dp(6));
+        seeAllView.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), 8, 8));
+        seeAllView.setOnClickListener(v -> {
+            final MainTabsActivity tabs = TigiNavigation.findMainTabs(fragment);
+            if (tabs != null) {
+                tabs.openCommunitiesTab();
+            }
+        });
+        titleRow.addView(seeAllView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+        addView(titleRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 16, 2, 8, 4));
 
         final HorizontalScrollView scroll = new HorizontalScrollView(context);
         scroll.setHorizontalScrollBarEnabled(false);
@@ -87,7 +107,7 @@ public class NilakProfileCommunitiesRow extends LinearLayout {
         }
         for (TLRPC.Chat community : communities) {
             final BackupImageView avatar = new BackupImageView(getContext());
-            avatar.setRoundRadius(dp(18));
+            avatar.setRoundRadius(dp(15));
             final AvatarDrawable avatarDrawable = new AvatarDrawable();
             avatarDrawable.setInfo(fragment.getCurrentAccount(), community);
             avatar.setForUserOrChat(community, avatarDrawable);
@@ -97,8 +117,9 @@ public class NilakProfileCommunitiesRow extends LinearLayout {
         plus.setImageResource(R.drawable.tigi_add_24);
         plus.setScaleType(ImageView.ScaleType.CENTER);
         plus.setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
-        plus.setBackground(Theme.createRoundRectDrawable(dp(18), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
-        addTile(plus, LocaleController.getString(R.string.NilakCommunityNew), () -> NilakCommunitySheets.showNewCommunity(fragment));
+        plus.setBackground(Theme.createRoundRectDrawable(dp(15), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
+        addTile(plus, LocaleController.getString(R.string.Create), () -> NilakCommunitySheets.showNewCommunity(fragment));
+        tiles.getChildAt(tiles.getChildCount() - 1).setContentDescription(LocaleController.getString(R.string.NilakCommunityNew));
     }
 
     private void addTile(View icon, String name, Runnable action) {
@@ -109,13 +130,13 @@ public class NilakProfileCommunitiesRow extends LinearLayout {
         tile.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(14), dp(14)));
         tile.setOnClickListener(v -> action.run());
         icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        tile.addView(icon, LayoutHelper.createLinear(60, 60));
+        tile.addView(icon, LayoutHelper.createLinear(TILE_ICON_SIZE, TILE_ICON_SIZE));
         final TextView label = new TextView(getContext());
         label.setText(name);
-        label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11.5f);
         label.setTextColor(TigiLilac.on() ? TigiLilac.ink() : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
         label.setGravity(Gravity.CENTER);
-        label.setMaxLines(2);
+        label.setMaxLines(1);
         label.setEllipsize(TextUtils.TruncateAt.END);
         tile.addView(label, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
         tile.setContentDescription(name);

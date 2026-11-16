@@ -318,16 +318,22 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         icon.setScaleType(ImageView.ScaleType.CENTER);
         icon.setImageResource(R.drawable.msg_channel);
         icon.setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
-        icon.setBackground(Theme.createRoundRectDrawable(dp(12), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
-        row.addView(icon, LayoutHelper.createLinear(36, 36));
+        icon.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.multAlpha(TigiStyle.accent(), 0.12f)));
+        row.addView(icon, LayoutHelper.createLinear(30, 30));
         final TextView title = new TextView(context);
         title.setText(LocaleController.getString(R.string.NilakManage));
-        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         title.setTypeface(TigiStyle.displayBold());
         title.setTextColor(text);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
-        row.addView(title, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 12, 0, 8, 0));
+        row.addView(title, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 10, 0, 8, 0));
+        // How many channels, groups and communities the person runs
+        manageCountView = new TextView(context);
+        manageCountView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        manageCountView.setTextColor(TigiLilac.on() ? TigiLilac.meta() : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        row.addView(manageCountView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
+        updateManageCount();
         final ImageView arrow = new ImageView(context);
         arrow.setScaleType(ImageView.ScaleType.CENTER);
         arrow.setImageResource(R.drawable.msg_arrowright);
@@ -336,6 +342,16 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         row.addView(arrow, LayoutHelper.createLinear(24, 24));
         row.setContentDescription(title.getText());
         return row;
+    }
+
+    private TextView manageCountView;
+
+    private void updateManageCount() {
+        if (manageCountView == null) {
+            return;
+        }
+        final int count = NilakManageActivity.countManaged(currentAccount);
+        manageCountView.setText(count > 0 ? LocaleController.formatShortNumber(count, null) : "");
     }
 
     private void openAccountSelector() {
@@ -992,41 +1008,17 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             }
             addView(buttons, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 10));
 
-            if (TigiLilac.on()) {
-                // Lilac: the photo centred and larger, the name under it, the numbers on a white card
-                top.removeView(posts);
-                top.removeView(followers);
-                top.removeView(following);
-                top.setGravity(Gravity.CENTER_HORIZONTAL);
-                avatar.setLayoutParams(LayoutHelper.createLinear(100, 100));
-                ((LinearLayout.LayoutParams) top.getLayoutParams()).topMargin = dp(4);
-                nameView.setGravity(Gravity.CENTER);
-                nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
-                nameView.setTypeface(TigiStyle.displayExtraBold());
-                usernameView.setGravity(Gravity.CENTER);
-                aboutView.setGravity(Gravity.CENTER);
-                aboutView.setPadding(dp(16), dp(4), dp(16), 0);
-                final LinearLayout stats = new LinearLayout(context);
-                stats.setOrientation(HORIZONTAL);
-                stats.setGravity(Gravity.CENTER_VERTICAL);
-                stats.setPadding(0, dp(10), 0, dp(10));
-                stats.setBackground(Theme.createRoundRectDrawable(dp(18), TigiLilac.card()));
-                stats.setElevation(dp(1));
-                stats.addView(posts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-                stats.addView(statDivider(context), LayoutHelper.createLinear(1, 28));
-                stats.addView(followers, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-                final View secondDivider = statDivider(context);
-                secondDivider.setVisibility(following.getVisibility());
-                stats.addView(secondDivider, LayoutHelper.createLinear(1, 28));
-                stats.addView(following, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
-                addView(stats, indexOfChild(buttons), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 0));
-            }
+            // The photo with the numbers beside it, name and bio under it (Instagram's compact header)
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            avatar.setLayoutParams(LayoutHelper.createLinear(84, 84, 0, 0, 8, 0));
+            ((LinearLayout.LayoutParams) top.getLayoutParams()).topMargin = dp(4);
+            ((LinearLayout.LayoutParams) buttons.getLayoutParams()).topMargin = dp(12);
 
             // highlights: stories pinned to the profile
             highlights = new HighlightsRow(context);
             addView(highlights, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, -16, 0, -16, 6));
             if (self) {
-                addView(manageRow(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 56, 0, 4, 0, 10));
+                addView(manageRow(context), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 0, 0, 10));
             }
             if (self && org.telegram.messenger.BuildVars.TIGI_COMMUNITIES_TAB) {
                 // the communities the person belongs to (Telegram tells only them)
@@ -1053,12 +1045,6 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
             updateColors();
             bind();
-        }
-
-        private View statDivider(Context context) {
-            final View line = new View(context);
-            line.setBackgroundColor(Theme.multAlpha(TigiStyle.accent(), 0.15f));
-            return line;
         }
 
         private LinearLayout counter(Context context) {
@@ -1165,6 +1151,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         }
 
         private void bindSelf() {
+            updateManageCount();
             TigiIdentity.sync(currentAccount, false);
             final TLRPC.UserFull userFull = getMessagesController().getUserFull(user.id);
             final String about = userFull != null ? userFull.about : null;
@@ -1194,7 +1181,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             final String handle = TextUtils.isEmpty(username) ? null : "@" + username;
             final String line = friends ? (handle != null ? handle + " · " : "") + LocaleController.getString(R.string.NilakFriendsBadge) : handle;
             usernameView.setText(line);
-            usernameView.setVisibility(TextUtils.isEmpty(line) ? GONE : VISIBLE);
+            // The own profile's bar already shows the username
+            usernameView.setVisibility(TextUtils.isEmpty(line) || self && topTitle != null ? GONE : VISIBLE);
             if (self) {
                 bindSelf();
                 return;

@@ -999,6 +999,15 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         viewPager.scrollToPosition(POSITION_HOME);
     }
 
+    /** Nilak: selects the Communities tab when this layout has one. */
+    public void openCommunitiesTab() {
+        if (viewPager == null || POSITION_COMMUNITIES < 0) {
+            return;
+        }
+        selectTab(POSITION_COMMUNITIES, true);
+        viewPager.scrollToPosition(POSITION_COMMUNITIES);
+    }
+
     /** Selects the Chats tab. */
     public void openChatsTab() {
         if (viewPager == null) {

@@ -123,6 +123,18 @@ public class NilakManageActivity extends UniversalFragment {
         }
     }
 
+    /** How many channels, groups and communities the person runs, from the loaded chat list */
+    public static int countManaged(int account) {
+        final MessagesController controller = MessagesController.getInstance(account);
+        int count = 0;
+        for (TLRPC.Dialog dialog : controller.getAllDialogs()) {
+            if (dialog.id < 0 && isManaged(controller.getChat(-dialog.id))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /** Chats the person created or administers and is still in */
     private static boolean isManaged(TLRPC.Chat chat) {
         return chat != null && !ChatObject.isNotInChat(chat) && chat.migrated_to == null && !chat.deactivated

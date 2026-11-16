@@ -10956,6 +10956,7 @@
     <string name="NilakManage">Your channels, groups and bots</string>
     <string name="NilakNewBot">New Bot</string>
     <string name="NilakAllChannelSettings">All channel settings</string>
+    <string name="NilakSeeAll">See all</string>
     <string name="NilakRead">Read</string>
     <string name="NilakReadEmpty">No Barruu from your channels yet. Long posts and Barruu show here.</string>
     <string name="NilakText">Text</string>

@@ -40,8 +40,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 
 /**
- * The Communities tab: the Telegram Communities the person belongs to, each with its newest message and unread
- * count, and below them the newest posts of the communities' channels as Nilak cards.
+ * The Communities tab: a card for each Telegram Community the person belongs to, with its newest message and unread
+ * count, opening to show its chats (and its Ask board's newest question) with Ask, Add chat and Settings; below them
+ * the newest posts of the communities' channels as Nilak cards.
  * Everything comes from Telegram (joined communities, their linked chats); nothing is stored by Nilak.
  */
 public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsActivity.TabFragmentDelegate {
@@ -73,8 +74,6 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
     private TextView emptyText;
     private TextView emptyButton;
     private TextView latestLabel;
-    // newest questions from the communities' Ask boards
-    private LinearLayout questionsCard;
     private int titleOffset;
 
     public NilakCommunitiesActivity(Bundle args) {
@@ -143,7 +142,7 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
 
         listCard = new LinearLayout(context);
         listCard.setOrientation(LinearLayout.VERTICAL);
-        listCard.setPadding(dp(4), dp(4), dp(4), dp(4));
+        // one card per community, each opening to show its chats
         scrollingPart.addView(listCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 0));
 
         emptyCard = new LinearLayout(context);
@@ -178,12 +177,6 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         emptyButton.setOnClickListener(v -> NilakCommunitySheets.showNewCommunity(this));
         emptyCard.addView(emptyButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 44, 0, 16, 0, 0));
         scrollingPart.addView(emptyCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 0, 12, 0));
-
-        questionsCard = new LinearLayout(context);
-        questionsCard.setOrientation(LinearLayout.VERTICAL);
-        questionsCard.setPadding(dp(4), dp(8), dp(4), dp(6));
-        questionsCard.setVisibility(View.GONE);
-        scrollingPart.addView(questionsCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 12, 12, 12, 0));
 
         latestLabel = new TextView(context);
         latestLabel.setText(LocaleController.getString(R.string.NilakCommunitiesLatest));
@@ -264,15 +257,12 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
                 : Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
             button.setColorFilter(new PorterDuffColorFilter(ink, PorterDuff.Mode.SRC_IN));
         }
-        final android.graphics.drawable.Drawable card = Theme.createRoundRectDrawable(dp(cardRadius()), cardColor());
-        listCard.setBackground(card);
         emptyCard.setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
         emptyTitle.setTextColor(ink);
         emptyText.setTextColor(meta);
         emptyButton.setTextColor(0xFFFFFFFF);
         emptyButton.setBackground(TigiStyle.primaryPill(22));
         latestLabel.setTextColor(ink);
-        questionsCard.setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
         bindCommunities();
     }
 
@@ -287,68 +277,17 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         return false;
     }
 
-    private static final int QUESTIONS_SHOWN = 3;
-
-    /** The newest questions across the communities' Ask boards; a tap opens the question. */
+    /** Loads the topics of the communities' Ask boards (once), so each card can show its newest question */
     private void bindQuestions(boolean load) {
-        if (questionsCard == null) {
-            return;
-        }
-        final ArrayList<Object[]> found = new ArrayList<>();
-        // a board linked to several communities is listed once
-        final java.util.HashSet<Long> boards = new java.util.HashSet<>();
-        for (TLRPC.Chat community : communities) {
-            final TLRPC.Chat board = NilakAsk.findBoard(currentAccount, community.id);
-            if (board == null || !boards.add(board.id)) {
-                continue;
-            }
-            if (load && getMessagesController().getTopicsController().getTopics(board.id) == null) {
-                getMessagesController().getTopicsController().loadTopics(board.id);
-            }
-            for (TLRPC.TL_forumTopic question : NilakAsk.questionsOf(currentAccount, board)) {
-                found.add(new Object[]{question, board, community});
+        if (load) {
+            for (TLRPC.Chat community : communities) {
+                final TLRPC.Chat board = NilakAsk.findBoard(currentAccount, community.id);
+                if (board != null && getMessagesController().getTopicsController().getTopics(board.id) == null) {
+                    getMessagesController().getTopicsController().loadTopics(board.id);
+                }
             }
         }
-        Collections.sort(found, (a, b) -> Integer.compare(NilakAsk.dateOf((TLRPC.TL_forumTopic) b[0]), NilakAsk.dateOf((TLRPC.TL_forumTopic) a[0])));
-        questionsCard.removeAllViews();
-        questionsCard.setVisibility(found.isEmpty() ? View.GONE : View.VISIBLE);
-        if (found.isEmpty()) {
-            return;
-        }
-        final TextView header = new TextView(questionsCard.getContext());
-        header.setText(LocaleController.getString(R.string.NilakAskNewQuestions));
-        header.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
-        header.setTypeface(TigiStyle.displayBold());
-        header.setTextColor(TigiStyle.accent());
-        header.setPadding(dp(10), 0, dp(10), dp(4));
-        questionsCard.addView(header);
-        for (int i = 0; i < found.size() && i < QUESTIONS_SHOWN; i++) {
-            final TLRPC.TL_forumTopic question = (TLRPC.TL_forumTopic) found.get(i)[0];
-            final TLRPC.Chat board = (TLRPC.Chat) found.get(i)[1];
-            final TLRPC.Chat community = (TLRPC.Chat) found.get(i)[2];
-            final LinearLayout row = new LinearLayout(questionsCard.getContext());
-            row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(dp(10), dp(8), dp(10), dp(8));
-            row.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(14), dp(14)));
-            // the question in Telegram's own topic chat
-            row.setOnClickListener(v -> org.telegram.ui.Components.Forum.ForumUtilities.openTopic(this, board.id, question, 0));
-            final TextView title = new TextView(questionsCard.getContext());
-            title.setText(question.title);
-            title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
-            title.setTypeface(TigiStyle.displayBold());
-            title.setTextColor(inkColor());
-            title.setMaxLines(2);
-            title.setEllipsize(TextUtils.TruncateAt.END);
-            row.addView(title);
-            final TextView meta = new TextView(questionsCard.getContext());
-            meta.setText(community.title + "  ·  " + LocaleController.stringForMessageListDate(NilakAsk.dateOf(question)));
-            meta.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
-            meta.setTextColor(metaColor());
-            meta.setSingleLine(true);
-            meta.setEllipsize(TextUtils.TruncateAt.END);
-            row.addView(meta, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
-            questionsCard.addView(row);
-        }
+        bindCommunities();
     }
 
     private void bindCommunities() {
@@ -366,15 +305,38 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         }
         final ArrayList<TLRPC.Chat> sorted = new ArrayList<>(communities);
         final HashMap<Long, Integer> dates = new HashMap<>();
+        final HashMap<Long, Integer> unread = new HashMap<>();
         for (TLRPC.Chat community : sorted) {
             final TLRPC.Dialog newest = newestDialog(community.id);
             dates.put(community.id, newest != null ? newest.last_message_date : 0);
+            unread.put(community.id, getMessagesController().getCommunityUnreadCount(community.id).unreadCount);
         }
-        // the community with the newest message first, like the chat list
-        Collections.sort(sorted, (a, b) -> Integer.compare(dates.get(b.id), dates.get(a.id)));
+        // Communities with unread messages first, then the newest message, like the chat list
+        Collections.sort(sorted, (a, b) -> {
+            final int byUnread = Boolean.compare(unread.get(b.id) > 0, unread.get(a.id) > 0);
+            return byUnread != 0 ? byUnread : Integer.compare(dates.get(b.id), dates.get(a.id));
+        });
         for (int i = 0; i < sorted.size(); i++) {
-            listCard.addView(createRow(sorted.get(i), i < sorted.size() - 1), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            listCard.addView(createCard(sorted.get(i), sorted.size()), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, CARD_GAP));
         }
+    }
+
+    private static final int CARD_GAP = 8;
+    private static final String KEY_OPEN = "nilak_community_open_";
+
+    /** Open when the person opened it last time; otherwise open while it has unread messages or is the only one */
+    private boolean isOpen(TLRPC.Chat community, int count) {
+        final android.content.SharedPreferences prefs = MessagesController.getMainSettings(currentAccount);
+        if (prefs.contains(KEY_OPEN + community.id)) {
+            return prefs.getBoolean(KEY_OPEN + community.id, false);
+        }
+        return count == 1 || getMessagesController().getCommunityUnreadCount(community.id).unreadCount > 0;
+    }
+
+    private void toggleOpen(TLRPC.Chat community) {
+        final boolean open = isOpen(community, communities.size());
+        MessagesController.getMainSettings(currentAccount).edit().putBoolean(KEY_OPEN + community.id, !open).apply();
+        bindCommunities();
     }
 
     private TLRPC.Dialog newestDialog(long communityId) {
@@ -389,7 +351,39 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         return newest;
     }
 
-    private View createRow(TLRPC.Chat community, boolean divider) {
+    /** A community's card: its header, and when open its chats and the actions Telegram allows */
+    private View createCard(TLRPC.Chat community, int count) {
+        final Context context = listCard.getContext();
+        final boolean open = isOpen(community, count);
+        final LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(Theme.createRoundRectDrawable(dp(cardRadius()), cardColor()));
+        card.addView(createHeader(community, open), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        if (!open) {
+            return card;
+        }
+        final View line = new View(context);
+        line.setBackgroundColor(TigiLilac.on() ? TigiLilac.inset() : Theme.getColor(Theme.key_divider));
+        card.addView(line, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
+        final TLRPC.Chat board = NilakAsk.findBoard(currentAccount, community.id);
+        final MessagesController.CommunityPeersDialog peers = getMessagesController().buildCommunityPeers(community.id);
+        if (peers != null) {
+            final ArrayList<MessagesController.CommunityPeerDialog> shown = new ArrayList<>(peers.chatsYouAreIn);
+            shown.addAll(peers.chatsYouCanView);
+            for (MessagesController.CommunityPeerDialog peer : shown) {
+                if (peer.chat != null || peer.user != null) {
+                    card.addView(createChatRow(peer, board), LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+                }
+            }
+        }
+        final View actions = createActions(community, board);
+        if (actions != null) {
+            card.addView(actions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        }
+        return card;
+    }
+
+    private View createHeader(TLRPC.Chat community, boolean open) {
         final Context context = listCard.getContext();
         final int ink = inkColor();
         final int meta = metaColor();
@@ -397,18 +391,19 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         final LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10), dp(10), dp(10), dp(10));
-        row.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), dp(16), dp(16)));
+        row.setPadding(dp(12), dp(10), dp(6), dp(10));
+        row.setBackground(Theme.createRadSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), cardRadius(), open ? 0 : cardRadius()));
+        // The community itself opens as Telegram shows it
         row.setOnClickListener(v -> openCommunity(community.id));
         row.setOnLongClickListener(v -> showCommunityOptions(community, v));
 
         final BackupImageView avatar = new BackupImageView(context);
-        avatar.setRoundRadius(dp(16));
+        avatar.setRoundRadius(dp(15));
         final AvatarDrawable avatarDrawable = new AvatarDrawable();
         avatarDrawable.setInfo(currentAccount, community);
         avatar.setForUserOrChat(community, avatarDrawable);
         avatar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        row.addView(avatar, LayoutHelper.createLinear(50, 50));
+        row.addView(avatar, LayoutHelper.createLinear(48, 48));
 
         final LinearLayout texts = new LinearLayout(context);
         texts.setOrientation(LinearLayout.VERTICAL);
@@ -420,21 +415,49 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
         texts.addView(name, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        final TextView preview = new TextView(context);
-        preview.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13.5f);
-        preview.setTextColor(meta);
-        preview.setSingleLine(true);
-        preview.setEllipsize(TextUtils.TruncateAt.END);
-        texts.addView(preview, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+        final TextView subtitle = new TextView(context);
+        subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        subtitle.setTextColor(meta);
+        subtitle.setSingleLine(true);
+        subtitle.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(subtitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
         row.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 12, 0, 8, 0));
 
-        final LinearLayout side = new LinearLayout(context);
-        side.setOrientation(LinearLayout.VERTICAL);
-        side.setGravity(LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT);
-        final TextView time = new TextView(context);
-        time.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-        time.setTextColor(meta);
-        side.addView(time, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+        final MessagesController.UnreadCounts unread = getMessagesController().getCommunityUnreadCount(community.id);
+        final TextView badge = badge(context, unread.unreadCount, !unread.hasUnmutedUnreadDialogs);
+        row.addView(badge, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 22, Gravity.CENTER_VERTICAL, 0, 0, 2, 0));
+
+        // The arrow opens and closes the card
+        final ImageView arrow = new ImageView(context);
+        arrow.setScaleType(ImageView.ScaleType.CENTER);
+        arrow.setImageResource(R.drawable.arrow_more);
+        arrow.setRotation(open ? 180 : 0);
+        arrow.setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
+        arrow.setBackground(Theme.createSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.12f), Theme.RIPPLE_MASK_CIRCLE_20DP));
+        arrow.setContentDescription(LocaleController.getString(open ? R.string.NilakHideChats : R.string.NilakShowChats));
+        arrow.setOnClickListener(v -> toggleOpen(community));
+        row.addView(arrow, LayoutHelper.createLinear(40, 40, Gravity.CENTER_VERTICAL));
+
+        final TLRPC.ChatFull info = getMessagesController().getChatFull(community.id);
+        final int chats = info != null && info.linked_peers != null ? info.linked_peers.size() : 0;
+        final TLRPC.Dialog newest = newestDialog(community.id);
+        final CharSequence summary = newest != null ? summary(newest, true) : null;
+        if (open || TextUtils.isEmpty(summary)) {
+            // Open: what is inside; closed: the newest message, as in the chat list
+            String text = chats > 0 ? LocaleController.formatPluralString("CommunityWithChats", chats) : LocaleController.getString(R.string.Community);
+            if (community.participants_count > 0) {
+                text += " · " + LocaleController.formatPluralStringComma("Members", community.participants_count);
+            }
+            subtitle.setText(text);
+        } else {
+            subtitle.setText(summary);
+        }
+        row.setContentDescription(community.title + ", " + subtitle.getText()
+            + (unread.unreadCount > 0 ? ", " + LocaleController.formatPluralString("NewMessages", unread.unreadCount) : ""));
+        return row;
+    }
+
+    private TextView badge(Context context, int count, boolean muted) {
         final TextView badge = new TextView(context);
         badge.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
         badge.setTypeface(AndroidUtilities.bold());
@@ -442,47 +465,176 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         badge.setGravity(Gravity.CENTER);
         badge.setMinWidth(dp(22));
         badge.setPadding(dp(6), 0, dp(6), 0);
-        side.addView(badge, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 22, 0, 4, 0, 0));
+        if (count > 0) {
+            badge.setText(LocaleController.formatShortNumber(count, null));
+            badge.setBackground(Theme.createRoundRectDrawable(dp(11), muted ? Theme.multAlpha(metaColor(), 0.55f) : TigiStyle.accent()));
+        } else {
+            badge.setVisibility(View.GONE);
+        }
+        return badge;
+    }
+
+    /** One chat of an open community: its photo, newest message (the newest question for the Ask board) and unread */
+    private View createChatRow(MessagesController.CommunityPeerDialog peer, TLRPC.Chat board) {
+        final Context context = listCard.getContext();
+        final LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(20), dp(7), dp(14), dp(7));
+        row.setBackground(Theme.createSelectorDrawable(Theme.multAlpha(TigiStyle.accent(), 0.10f), Theme.RIPPLE_MASK_ALL));
+        row.setOnClickListener(v -> openPeer(peer));
+
+        final BackupImageView avatar = new BackupImageView(context);
+        avatar.setRoundRadius(dp(18));
+        final AvatarDrawable avatarDrawable = new AvatarDrawable();
+        if (peer.chat != null) {
+            avatarDrawable.setInfo(currentAccount, peer.chat);
+            avatar.setForUserOrChat(peer.chat, avatarDrawable);
+        } else {
+            avatarDrawable.setInfo(currentAccount, peer.user);
+            avatar.setForUserOrChat(peer.user, avatarDrawable);
+        }
+        avatar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(avatar, LayoutHelper.createLinear(36, 36));
+
+        final LinearLayout texts = new LinearLayout(context);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        final TextView name = new TextView(context);
+        name.setText(peer.chat != null ? peer.chat.title : UserObject.getUserName(peer.user));
+        name.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14.5f);
+        name.setTypeface(TigiStyle.displayBold());
+        name.setTextColor(inkColor());
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(name, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        final TextView preview = new TextView(context);
+        preview.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+        preview.setTextColor(metaColor());
+        preview.setSingleLine(true);
+        preview.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(preview, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 1, 0, 0));
+        row.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, 12, 0, 8, 0));
+
+        final LinearLayout side = new LinearLayout(context);
+        side.setOrientation(LinearLayout.VERTICAL);
+        side.setGravity(LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT);
+        final TextView time = new TextView(context);
+        time.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11.5f);
+        time.setTextColor(metaColor());
+        side.addView(time, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+        final TLRPC.Dialog dialog = peer.dialog;
+        final int unread = dialog != null ? dialog.unread_count : 0;
+        side.addView(badge(context, unread, getMessagesController().isDialogMuted(peer.dialogId, 0)), LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 20, 0, 3, 0, 0));
         row.addView(side, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
 
-        final TLRPC.Dialog newest = newestDialog(community.id);
-        final CharSequence summary = newest != null ? summary(newest) : null;
-        if (!TextUtils.isEmpty(summary)) {
-            preview.setText(summary);
-        } else {
-            final TLRPC.ChatFull info = getMessagesController().getChatFull(community.id);
-            final int chats = info != null && info.linked_peers != null ? info.linked_peers.size() : 0;
-            preview.setText(chats > 0 ? LocaleController.formatPluralString("CommunityWithChats", chats) : LocaleController.getString(R.string.Community));
+        int date = dialog != null ? dialog.last_message_date : 0;
+        CharSequence text = dialog != null ? summary(dialog, false) : null;
+        if (board != null && peer.chat != null && peer.chat.id == board.id) {
+            // The Ask board: its newest question
+            final ArrayList<TLRPC.TL_forumTopic> questions = NilakAsk.questionsOf(currentAccount, board);
+            if (!questions.isEmpty()) {
+                text = "“" + questions.get(0).title + "”";
+                date = NilakAsk.dateOf(questions.get(0));
+            }
         }
-        time.setText(newest != null && newest.last_message_date > 0 ? LocaleController.stringForMessageListDate(newest.last_message_date) : "");
-        final MessagesController.UnreadCounts unread = getMessagesController().getCommunityUnreadCount(community.id);
-        if (unread.unreadCount > 0) {
-            badge.setText(LocaleController.formatShortNumber(unread.unreadCount, null));
-            badge.setBackground(Theme.createRoundRectDrawable(dp(11), unread.hasUnmutedUnreadDialogs ? TigiStyle.accent() : Theme.multAlpha(meta, 0.55f)));
-            badge.setVisibility(View.VISIBLE);
-        } else {
-            badge.setVisibility(View.INVISIBLE);
+        if (TextUtils.isEmpty(text)) {
+            text = LocaleController.getString(ChatObject.isChannelAndNotMegaGroup(peer.chat) ? R.string.AccDescrChannel : R.string.AccDescrGroup);
         }
-        row.setContentDescription(community.title + (summary != null ? ", " + summary : "")
-            + (unread.unreadCount > 0 ? ", " + LocaleController.formatPluralString("NewMessages", unread.unreadCount) : ""));
+        preview.setText(text);
+        time.setText(date > 0 ? LocaleController.stringForMessageListDate(date) : "");
+        row.setContentDescription(name.getText() + ", " + text + (unread > 0 ? ", " + LocaleController.formatPluralString("NewMessages", unread) : ""));
+        return row;
+    }
 
-        if (!divider) {
-            return row;
+    /** Ask, Add chat and Settings under an open community, each only where Telegram allows it */
+    private View createActions(TLRPC.Chat community, TLRPC.Chat board) {
+        final Context context = listCard.getContext();
+        final LinearLayout actions = new LinearLayout(context);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(dp(14), dp(4), dp(14), dp(12));
+        if (board != null) {
+            addAction(actions, R.drawable.msg_topics, LocaleController.getString(R.string.NilakAskShort), () -> openChat(board));
+        } else if (ChatObject.canAddChatToCommunity(community)) {
+            addAction(actions, R.drawable.msg_topics, LocaleController.getString(R.string.NilakAskAddBoard), () -> addBoard(community));
         }
-        final LinearLayout wrap = new LinearLayout(context);
-        wrap.setOrientation(LinearLayout.VERTICAL);
-        wrap.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        final View line = new View(context);
-        line.setBackgroundColor(TigiLilac.on() ? TigiLilac.inset() : Theme.getColor(Theme.key_divider));
-        wrap.addView(line, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1, 72, 0, 10, 0));
-        return wrap;
+        if (ChatObject.canAddChatToCommunity(community)) {
+            addAction(actions, R.drawable.msg_groups_create, LocaleController.getString(R.string.CommunityMenuAddChat), () ->
+                org.telegram.ui.community.CommunityUtils.showChatsToAddToCommunity(addChatProgress, this, currentAccount, community));
+        }
+        if (ChatObject.hasAdminRights(community)) {
+            addAction(actions, R.drawable.msg_settings, LocaleController.getString(R.string.CommunityMenuSettings), () -> openSettings(community));
+        }
+        return actions.getChildCount() > 0 ? actions : null;
+    }
+
+    private final org.telegram.ui.ActionBar.AlertDialog[] addChatProgress = new org.telegram.ui.ActionBar.AlertDialog[1];
+
+    private void addAction(LinearLayout actions, int icon, String text, Runnable onClick) {
+        final TextView button = new TextView(actions.getContext());
+        button.setText(text);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
+        button.setTypeface(TigiStyle.displayBold());
+        button.setTextColor(TigiStyle.accent());
+        button.setGravity(Gravity.CENTER);
+        button.setSingleLine(true);
+        button.setEllipsize(TextUtils.TruncateAt.END);
+        button.setPadding(dp(6), 0, dp(6), 0);
+        final android.graphics.drawable.Drawable drawable = androidx.core.content.ContextCompat.getDrawable(actions.getContext(), icon).mutate();
+        drawable.setColorFilter(new PorterDuffColorFilter(TigiStyle.accent(), PorterDuff.Mode.SRC_IN));
+        drawable.setBounds(0, 0, dp(ACTION_ICON_SIZE), dp(ACTION_ICON_SIZE));
+        button.setCompoundDrawablesRelative(drawable, null, null, null);
+        button.setCompoundDrawablePadding(dp(4));
+        button.setBackground(Theme.createSimpleSelectorRoundRectDrawable(dp(10), Theme.multAlpha(TigiStyle.accent(), 0.10f), Theme.multAlpha(TigiStyle.accent(), 0.20f)));
+        button.setOnClickListener(v -> onClick.run());
+        actions.addView(button, LayoutHelper.createLinear(0, 34, 1f, actions.getChildCount() > 0 ? 6 : 0, 0, 0, 0));
+    }
+
+    private static final int ACTION_ICON_SIZE = 18;
+
+    /** Opens a community's chat as Telegram's community list does: topic groups in their topic list */
+    private void openPeer(MessagesController.CommunityPeerDialog peer) {
+        if (peer.chat != null) {
+            openChat(peer.chat);
+        } else {
+            presentFragment(ChatActivity.of(peer.user.id));
+        }
+    }
+
+    private void openChat(TLRPC.Chat chat) {
+        final Bundle args = new Bundle();
+        args.putLong("chat_id", chat.id);
+        if (chat.forum && !chat.monoforum && !ChatObject.areTabsEnabled(chat)) {
+            presentFragment(new TopicsFragment(args));
+        } else {
+            presentFragment(new ChatActivity(args));
+        }
+    }
+
+    private void openSettings(TLRPC.Chat community) {
+        final Bundle args = new Bundle();
+        args.putLong("community_id", community.id);
+        presentFragment(new org.telegram.ui.community.CommunityEditActivity(args));
+    }
+
+    private void addBoard(TLRPC.Chat community) {
+        NilakAsk.createBoard(this, community, LocaleController.formatString(R.string.NilakAskBoardTitle, community.title), board -> {
+            if (isDead()) {
+                return;
+            }
+            if (board == null) {
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakAskBoardFailed)).show();
+            } else {
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.getString(R.string.NilakAskBoardAdded)).show();
+                bindQuestions(true);
+            }
+        });
     }
 
     /** "General · Sara: Great to be here!" for the newest message in one of the community's chats. */
-    private CharSequence summary(TLRPC.Dialog dialog) {
+    private CharSequence summary(TLRPC.Dialog dialog, boolean withChatName) {
         final ArrayList<MessageObject> last = getMessagesController().dialogMessage.get(dialog.id);
         final MessageObject message = last != null && !last.isEmpty() ? last.get(0) : null;
-        final String chatName = chatName(dialog.id);
+        final String chatName = withChatName ? chatName(dialog.id) : null;
         if (message == null) {
             return chatName;
         }
@@ -527,25 +679,10 @@ public class NilakCommunitiesActivity extends TigiFeedBase implements MainTabsAc
         final org.telegram.ui.Components.ItemOptions options = org.telegram.ui.Components.ItemOptions.makeOptions(this, anchor);
         options.add(R.drawable.msg_openin, LocaleController.getString(R.string.Open), () -> openCommunity(community.id));
         if (NilakAsk.findBoard(currentAccount, community.id) == null && ChatObject.canAddChatToCommunity(community)) {
-            options.add(R.drawable.msg_topics, LocaleController.getString(R.string.NilakAskAddBoard), () ->
-                NilakAsk.createBoard(this, community, LocaleController.formatString(R.string.NilakAskBoardTitle, community.title), board -> {
-                    if (isDead()) {
-                        return;
-                    }
-                    if (board == null) {
-                        BulletinFactory.of(this).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.NilakAskBoardFailed)).show();
-                    } else {
-                        BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.getString(R.string.NilakAskBoardAdded)).show();
-                        bindQuestions(true);
-                    }
-                }));
+            options.add(R.drawable.msg_topics, LocaleController.getString(R.string.NilakAskAddBoard), () -> addBoard(community));
         }
         if (ChatObject.hasAdminRights(community)) {
-            options.add(R.drawable.msg_settings, LocaleController.getString(R.string.CommunityMenuSettings), () -> {
-                final Bundle args = new Bundle();
-                args.putLong("community_id", community.id);
-                presentFragment(new org.telegram.ui.community.CommunityEditActivity(args));
-            });
+            options.add(R.drawable.msg_settings, LocaleController.getString(R.string.CommunityMenuSettings), () -> openSettings(community));
         }
         options.show();
         return true;

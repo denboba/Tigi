@@ -131,8 +131,6 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
     private View reactionAnchor;
     private android.view.ViewTreeObserver.OnPreDrawListener anchorFollower;
     private View pickerScrim;
-    // The eye in front of a post's view count (dp)
-    private static final int VIEWS_ICON_SIZE = 18;
     // How long the reaction bar waits for the channel's allowed reactions before opening anyway
     private static final long PICKER_INFO_WAIT_MS = 1500;
     private FeedPost pendingPickerPost;
@@ -1922,8 +1920,6 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
         private final ImageView commentButton;
         private final ImageView shareButton;
         private TextView shareCountView;
-        private TextView viewsCountView;
-        private android.graphics.drawable.Drawable viewsIcon;
         private ImageView saveButton;
         private final LinearLayout chipsRow;
         private final android.widget.HorizontalScrollView chipsScroll;
@@ -2176,19 +2172,8 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             // how many times the post was shared (Telegram counts forwards)
             shareCountView = makeCountView(context);
             actions.addView(shareCountView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 0, 0, 12, 0));
-            // How many people saw the post (Telegram's view count), next to save on the far side; it gives way first
-            // when the row is narrow
-            viewsCountView = new TextView(context);
-            viewsCountView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-            viewsCountView.setTextColor(metaColor());
-            viewsCountView.setSingleLine(true);
-            viewsCountView.setEllipsize(TextUtils.TruncateAt.END);
-            viewsCountView.setGravity(Gravity.CENTER_VERTICAL | (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT));
-            viewsIcon = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.msg_views).mutate();
-            viewsIcon.setColorFilter(new PorterDuffColorFilter(metaColor(), PorterDuff.Mode.SRC_IN));
-            viewsIcon.setBounds(0, 0, dp(VIEWS_ICON_SIZE), dp(VIEWS_ICON_SIZE));
-            viewsCountView.setCompoundDrawablePadding(dp(4));
-            actions.addView(viewsCountView, LayoutHelper.createLinear(0, 48, 1f, 0, 0, 4, 0));
+            // save on the far side, Instagram-style
+            actions.addView(new View(context), LayoutHelper.createLinear(0, 48, 1f));
             saveButton = new ImageView(context);
             saveButton.setScaleType(ImageView.ScaleType.CENTER);
             saveButton.setOnClickListener(v -> {
@@ -2600,10 +2585,6 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             final boolean reactionsOn = like != null;
             heartButton.setAlpha(reactionsOn ? 1f : 0.32f);
             heartCountView.setAlpha(reactionsOn ? 1f : 0.32f);
-            final int views = message.messageOwner.views;
-            viewsCountView.setText(views > 0 ? LocaleController.formatShortNumber(views, null) : "");
-            viewsCountView.setCompoundDrawablesRelative(views > 0 ? viewsIcon : null, null, null, null);
-            viewsCountView.setContentDescription(views > 0 ? LocaleController.formatPluralStringComma("Views", views) : null);
             if (shareCountView != null) {
                 final int shares = message.messageOwner.forwards;
                 shareCountView.setText(shares > 0 ? LocaleController.formatShortNumber(shares, null) : "");

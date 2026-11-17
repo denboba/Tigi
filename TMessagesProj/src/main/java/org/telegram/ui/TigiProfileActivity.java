@@ -124,6 +124,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         getNotificationCenter().addObserver(this, NotificationCenter.messagesDeleted);
         getNotificationCenter().addObserver(this, NotificationCenter.userInfoDidLoad);
         getNotificationCenter().addObserver(this, NotificationCenter.storiesListUpdated);
+        getNotificationCenter().addObserver(this, NotificationCenter.storiesUpdated);
+        getNotificationCenter().addObserver(this, NotificationCenter.groupCallUpdated);
         if (chat != null) {
             getMessagesController().loadFullChat(chatId, classGuid, false);
             loadCount();
@@ -138,6 +140,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         getNotificationCenter().removeObserver(this, NotificationCenter.messagesDeleted);
         getNotificationCenter().removeObserver(this, NotificationCenter.userInfoDidLoad);
         getNotificationCenter().removeObserver(this, NotificationCenter.storiesListUpdated);
+        getNotificationCenter().removeObserver(this, NotificationCenter.storiesUpdated);
+        getNotificationCenter().removeObserver(this, NotificationCenter.groupCallUpdated);
         if (pinnedStories != null && pinnedLink >= 0) {
             pinnedStories.unlink(pinnedLink);
         }
@@ -346,6 +350,14 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
 
     private TextView manageCountView;
 
+    /** Who on this profile is live: the person (live story), else their channel (live story or live stream); 0 if none */
+    private long liveDialogId() {
+        if (user != null && TigiLive.hasLiveStory(currentAccount, user.id)) {
+            return user.id;
+        }
+        return chatId != 0 && TigiLive.isLive(currentAccount, -chatId) ? -chatId : 0;
+    }
+
     private void updateManageCount() {
         if (manageCountView == null) {
             return;
@@ -444,6 +456,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             final TLRPC.ChatFull full = (TLRPC.ChatFull) args[0];
             if (full != null && full.id == chatId && header != null) {
                 header.bind();
+            }
+        } else if (id == NotificationCenter.storiesUpdated || id == NotificationCenter.groupCallUpdated) {
+            // Someone here went live or stopped, or the live's viewer count changed
+            if (header != null) {
+                header.avatar.bind();
+                header.bindWatchLive();
             }
         } else if (id == NotificationCenter.storiesListUpdated) {
             if (args.length > 0 && args[0] == pinnedStories && header != null) {
@@ -890,6 +908,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         private final TextView messageButton;
         private final TextView shareButton;
         private final ImageView infoButton;
+        private final TextView watchLiveButton;
         private final TextView postsTab;
         private final TextView reelsTab;
         private final TextView savedTab;
@@ -913,7 +932,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             avatar = new StoryRingAvatar(context);
             avatar.setOnClickListener(v -> {
                 final long dialogId = user != null ? user.id : -chatId;
-                if (getMessagesController().getStoriesController().hasStories(dialogId)) {
+                if (liveDialogId() != 0) {
+                    TigiLive.watch(TigiProfileActivity.this, liveDialogId());
+                } else if (getMessagesController().getStoriesController().hasStories(dialogId)) {
                     openStories();
                 } else {
                     openPhotos();
@@ -1006,6 +1027,12 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
                 // Settings and Telegram's profile are in the top bar
                 infoButton.setVisibility(GONE);
             }
+            // While live: Watch live, above the other buttons
+            watchLiveButton = button(context);
+            watchLiveButton.setTextColor(0xFFFFFFFF);
+            watchLiveButton.setOnClickListener(v -> TigiLive.watch(TigiProfileActivity.this, liveDialogId()));
+            watchLiveButton.setVisibility(GONE);
+            addView(watchLiveButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 38, 0, 12, 0, 0));
             addView(buttons, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 10));
 
             // The photo with the numbers beside it, name and bio under it (Instagram's compact header)
@@ -1061,6 +1088,27 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             box.addView(value);
             box.addView(label);
             return box;
+        }
+
+        /** "● Watch live", with the viewer count of a channel's live stream when Telegram has it */
+        private void bindWatchLive() {
+            final long liveId = liveDialogId();
+            watchLiveButton.setVisibility(liveId != 0 ? VISIBLE : GONE);
+            if (liveId == 0) {
+                return;
+            }
+            String text = "● " + LocaleController.getString(R.string.NilakWatchLive);
+            final TLRPC.Chat liveChat = liveId < 0 ? getMessagesController().getChat(-liveId) : null;
+            if (liveChat != null && !TigiLive.hasLiveStory(currentAccount, liveId) && TigiLive.isLive(liveChat)) {
+                // "LIVE · 1.2K": the count after the dot
+                final String badge = TigiLive.badgeText(currentAccount, liveChat);
+                final int dot = badge.indexOf('·');
+                if (dot > 0) {
+                    text += " " + badge.substring(dot);
+                }
+            }
+            watchLiveButton.setText(text);
+            watchLiveButton.setBackground(Theme.createRoundRectDrawable(dp(10), TigiLive.color()));
         }
 
         private TextView button(Context context) {
@@ -1172,6 +1220,7 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         void bind() {
             final TLRPC.ChatFull full = getMessagesController().getChatFull(chatId);
             avatar.bind();
+            bindWatchLive();
             bindCover();
             highlights.bind();
             nameView.setText(user != null ? UserObject.getUserName(user) : chat.title);
@@ -1362,6 +1411,8 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
         private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private boolean hasStories;
         private boolean unread;
+        private boolean live;
+        private final TextView liveTag;
 
         StoryRingAvatar(Context context) {
             super(context);
@@ -1369,6 +1420,9 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             imageView = new BackupImageView(context);
             imageView.setRoundRadius(dp(38));
             addView(imageView, LayoutHelper.createFrame(76, 76, Gravity.CENTER));
+            liveTag = TigiStoriesRow.liveTag(context);
+            liveTag.setVisibility(GONE);
+            addView(liveTag, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 18, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
             ringPaint.setStyle(Paint.Style.STROKE);
             ringPaint.setStrokeWidth(dp(2.5f));
         }
@@ -1385,17 +1439,23 @@ public class TigiProfileActivity extends BaseFragment implements NotificationCen
             final long dialogId = user != null ? user.id : -chatId;
             hasStories = getMessagesController().getStoriesController().hasStories(dialogId);
             unread = hasStories && getMessagesController().getStoriesController().hasUnreadStories(dialogId);
-            setContentDescription((user != null ? UserObject.getUserName(user) : chat.title) + (hasStories ? ", " + LocaleController.getString(R.string.TigiProfileStories) : ""));
+            live = liveDialogId() != 0;
+            liveTag.setVisibility(live ? VISIBLE : GONE);
+            setContentDescription((user != null ? UserObject.getUserName(user) : chat.title)
+                + (live ? ", " + LocaleController.getString(R.string.TigiLiveBadge) : hasStories ? ", " + LocaleController.getString(R.string.TigiProfileStories) : ""));
             invalidate();
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            if (!hasStories) {
+            if (!hasStories && !live) {
                 return;
             }
-            if (unread) {
+            if (live) {
+                ringPaint.setShader(null);
+                ringPaint.setColor(TigiLive.color());
+            } else if (unread) {
                 ringPaint.setShader(new LinearGradient(0, getHeight(), getWidth(), 0, TigiStyle.RING_START, TigiStyle.RING_END, Shader.TileMode.CLAMP));
             } else {
                 ringPaint.setShader(null);

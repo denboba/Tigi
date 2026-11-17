@@ -207,8 +207,22 @@ public class TigiPosting {
      * answer is the real one (Telegram's local "premium only" setting can be stale). A refusal is explained.
      */
     public static void openStoryRecorder(org.telegram.ui.ActionBar.BaseFragment fragment) {
+        openStoryRecorder(fragment, false);
+    }
+
+    /**
+     * With `live`, the camera opens on its Live tab, where Telegram's own screen picks who goes live (the person or
+     * one of their channels) and checks it, so no story check runs first.
+     */
+    public static void openStoryRecorder(org.telegram.ui.ActionBar.BaseFragment fragment, boolean live) {
         final int account = fragment.getCurrentAccount();
         if (fragment.getParentActivity() == null) {
+            return;
+        }
+        if (live) {
+            final org.telegram.ui.Stories.recorder.StoryRecorder recorder = org.telegram.ui.Stories.recorder.StoryRecorder.getInstance(fragment.getParentActivity(), account);
+            recorder.open(null);
+            recorder.selectLiveMode();
             return;
         }
         final org.telegram.tgnet.tl.TL_stories.TL_stories_canSendStory req = new org.telegram.tgnet.tl.TL_stories.TL_stories_canSendStory();

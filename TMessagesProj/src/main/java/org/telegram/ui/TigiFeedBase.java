@@ -2001,11 +2001,11 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
             liveBadge.setGravity(Gravity.CENTER);
             liveBadge.setPadding(dp(8), 0, dp(8), 0);
             liveBadge.setMinHeight(dp(24));
-            liveBadge.setBackground(Theme.createRoundRectDrawable(dp(6), 0xFFE53935));
+            liveBadge.setBackground(Theme.createRoundRectDrawable(dp(6), TigiLive.color()));
             liveBadge.setVisibility(GONE);
             liveBadge.setOnClickListener(v -> {
                 if (post != null) {
-                    TigiLive.join(TigiFeedBase.this, post.chat);
+                    TigiLive.watch(TigiFeedBase.this, -post.chat.id);
                 }
             });
             headerRow.addView(liveBadge, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 24, Gravity.CENTER_VERTICAL, 6, 0, 0, 0));
@@ -2387,7 +2387,7 @@ public abstract class TigiFeedBase extends BaseFragment implements NotificationC
                 nameView.setText(post.chat.title);
             }
             timeView.setText(LocaleController.stringForMessageListDate(post.date));
-            if (TigiLive.isLive(post.chat)) {
+            if (TigiLive.isLive(currentAccount, -post.chat.id)) {
                 liveBadge.setText(TigiLive.badgeText(currentAccount, post.chat));
                 liveBadge.setContentDescription(LocaleController.getString(R.string.TigiLiveJoin));
                 liveBadge.setVisibility(VISIBLE);

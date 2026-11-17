@@ -123,6 +123,11 @@ public class StoryModeTabs extends FrameLayout implements FlashViews.Invertable 
         }
     }
 
+    /** Nilak: selects a mode as a tap on its tab does */
+    public void selectMode(int newMode) {
+        switchModeInternal(newMode);
+    }
+
     public void switchMode(int newMode) {
         if (toMode == newMode) return;
         toMode = newMode;

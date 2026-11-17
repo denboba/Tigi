@@ -80,6 +80,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
             return false;
         }
         getNotificationCenter().addObserver(this, NotificationCenter.groupCallUpdated);
+        getNotificationCenter().addObserver(this, NotificationCenter.storiesUpdated);
         getNotificationCenter().addObserver(this, NotificationCenter.updateInterfaces);
         getNotificationCenter().addObserver(this, NotificationCenter.didLoadSponsoredMessages);
         return true;
@@ -87,8 +88,8 @@ public class ChannelFeedActivity extends TigiFeedBase {
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.groupCallUpdated || id == NotificationCenter.updateInterfaces) {
-            // live started, ended or its viewer count changed; joined or left the channel
+        if (id == NotificationCenter.groupCallUpdated || id == NotificationCenter.updateInterfaces || id == NotificationCenter.storiesUpdated) {
+            // live started, ended or its viewer count changed (live stream or live story); joined or left the channel
             updateJoinButton();
             return;
         }
@@ -104,6 +105,7 @@ public class ChannelFeedActivity extends TigiFeedBase {
     @Override
     public void onFragmentDestroy() {
         getNotificationCenter().removeObserver(this, NotificationCenter.groupCallUpdated);
+        getNotificationCenter().removeObserver(this, NotificationCenter.storiesUpdated);
         getNotificationCenter().removeObserver(this, NotificationCenter.updateInterfaces);
         getNotificationCenter().removeObserver(this, NotificationCenter.didLoadSponsoredMessages);
         if (requestId != 0) {
@@ -175,9 +177,9 @@ public class ChannelFeedActivity extends TigiFeedBase {
         liveButton.setTextColor(0xFFFFFFFF);
         liveButton.setGravity(Gravity.CENTER);
         liveButton.setPadding(dp(10), 0, dp(10), 0);
-        liveButton.setBackground(Theme.createRoundRectDrawable(dp(8), 0xFFE53935));
+        liveButton.setBackground(Theme.createRoundRectDrawable(dp(8), TigiLive.color()));
         liveButton.setContentDescription(LocaleController.getString(R.string.TigiLiveJoin));
-        liveButton.setOnClickListener(v -> TigiLive.join(this, chat));
+        liveButton.setOnClickListener(v -> TigiLive.watch(this, -chatId));
         row.addView(liveButton, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30, Gravity.CENTER_VERTICAL, 6, 0, 0, 0));
 
         joinButton = new TextView(context);
@@ -235,9 +237,11 @@ public class ChannelFeedActivity extends TigiFeedBase {
         if (current != null) {
             chat = current;
         }
-        if (TigiLive.isLive(chat)) {
-            // loads the viewer count for the badge
-            getMessagesController().getGroupCall(chatId, true);
+        if (TigiLive.isLive(currentAccount, -chatId)) {
+            if (TigiLive.isLive(chat)) {
+                // loads the viewer count for the badge
+                getMessagesController().getGroupCall(chatId, true);
+            }
             liveButton.setText(TigiLive.badgeText(currentAccount, chat));
             liveButton.setVisibility(View.VISIBLE);
         } else {

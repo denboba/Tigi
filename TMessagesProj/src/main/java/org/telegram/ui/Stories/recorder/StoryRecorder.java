@@ -4640,6 +4640,13 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
         containerViewBackAnimator.start();
     }
 
+    /** Nilak: opens on the Live tab, as a tap on it does */
+    public void selectLiveMode() {
+        if (modeSwitcherView != null) {
+            modeSwitcherView.selectMode(MODE_LIVE);
+        }
+    }
+
     public StoryRecorder setMode(int mode) {
         if (this.mode == mode)
             return this;

@@ -3,74 +3,60 @@ package org.telegram.ui;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.ChatObject;
-import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.voip.VoIPHelper;
 
-import java.util.ArrayList;
-
 /**
- * Tigi Live, built only on what Telegram offers: a channel's video chat / live stream (GroupCallActivity + VoIPService).
- * Starting goes through Telegram's own dialog (start now, schedule, or "start with" another app over RTMP); in the call
- * the host turns the camera on, sees the viewer count and ends it with Telegram's confirmation. Telegram has no
- * one-to-many live video for personal accounts, so Live is offered for channels the user can manage calls in.
+ * Nilak Live, built only on what Telegram offers. Going live is Telegram's live story (its camera's Live tab: live as
+ * the person or one of their channels, who can watch, comments); watching is Telegram's story viewer. A channel's
+ * live stream / video chat (GroupCallActivity + VoIPService) counts as live too, and joins through Telegram's call.
  */
 public class TigiLive {
 
-    /** Channels where the user may start a live stream (owner, or admin with the "manage video chats" right). */
-    public static ArrayList<TLRPC.Chat> liveChannels(int account) {
-        final MessagesController controller = MessagesController.getInstance(account);
-        final ArrayList<TLRPC.Chat> out = new ArrayList<>();
-        final ArrayList<TLRPC.Dialog> dialogs = controller.getAllDialogs();
-        for (int i = 0; i < dialogs.size(); i++) {
-            final TLRPC.Dialog dialog = dialogs.get(i);
-            if (dialog == null || !DialogObject.isChatDialog(dialog.id)) {
-                continue;
-            }
-            final TLRPC.Chat chat = controller.getChat(-dialog.id);
-            if (chat != null && ChatObject.isChannelAndNotMegaGroup(chat) && !ChatObject.isCommunity(chat) && !ChatObject.isNotInChat(chat) && ChatObject.canManageCalls(chat) && !out.contains(chat)) {
-                out.add(chat);
-            }
-        }
-        // the channel the user posts to most recently comes first
-        final long last = TigiPosting.lastChannel(account);
-        for (int i = 0; i < out.size(); i++) {
-            if (out.get(i).id == last) {
-                out.add(0, out.remove(i));
-                break;
-            }
-        }
-        return out;
-    }
-
+    /** Go live: Telegram's camera on its Live tab, live as the person or one of their channels */
     public static void start(BaseFragment fragment) {
         if (fragment == null || fragment.getParentActivity() == null || !BuildVars.TIGI_LIVE) {
             return;
         }
-        TigiCreateSheet.pickFrom(fragment, liveChannels(fragment.getCurrentAccount()), chat -> goLive(fragment, chat));
+        TigiPosting.openStoryRecorder(fragment, true);
     }
 
-    static void goLive(BaseFragment fragment, TLRPC.Chat chat) {
-        if (fragment == null || fragment.getParentActivity() == null || chat == null) {
+    /** True while the person or channel streams a live story */
+    public static boolean hasLiveStory(int account, long dialogId) {
+        return BuildVars.TIGI_LIVE && dialogId != 0 && MessagesController.getInstance(account).getStoriesController().hasLiveStory(dialogId);
+    }
+
+    /** Live in any way: a live story, or a channel's live stream / video chat */
+    public static boolean isLive(int account, long dialogId) {
+        if (hasLiveStory(account, dialogId)) {
+            return true;
+        }
+        return dialogId < 0 && isLive(MessagesController.getInstance(account).getChat(-dialogId));
+    }
+
+    /** Opens what is live: the live story in Telegram's story viewer, else the channel's live stream */
+    public static void watch(BaseFragment fragment, long dialogId) {
+        if (fragment == null || fragment.getParentActivity() == null) {
             return;
         }
-        if (!ChatObject.canManageCalls(chat)) {
-            BulletinFactory.of(fragment).createSimpleBulletin(R.raw.error, LocaleController.getString(R.string.TigiLiveNoRights)).show();
+        if (hasLiveStory(fragment.getCurrentAccount(), dialogId)) {
+            fragment.getOrCreateStoryViewer().open(fragment.getParentActivity(), dialogId, (did, messageId, storyId, type, holder) -> false);
             return;
         }
-        final AccountInstance accountInstance = AccountInstance.getInstance(fragment.getCurrentAccount());
-        final ChatObject.Call call = MessagesController.getInstance(fragment.getCurrentAccount()).getGroupCall(chat.id, false);
-        if (call != null) {
-            // already live: go back into it
-            VoIPHelper.startCall(chat, null, null, false, fragment.getParentActivity(), fragment, accountInstance);
-        } else {
-            VoIPHelper.showGroupCallAlert(fragment, chat, null, false, accountInstance);
+        final TLRPC.Chat chat = dialogId < 0 ? MessagesController.getInstance(fragment.getCurrentAccount()).getChat(-dialogId) : null;
+        if (isLive(chat)) {
+            join(fragment, chat);
         }
+    }
+
+    /** Telegram's live colour, the same as on its chat list and story rings */
+    public static int color() {
+        return Theme.getColor(Theme.key_stories_circle_live2);
     }
 
     /** True while the channel has a live stream / video chat going on. */
@@ -88,7 +74,7 @@ public class TigiLive {
 
     /** "LIVE" or "LIVE · 1.2K" when the viewer count is known. */
     public static String badgeText(int account, TLRPC.Chat chat) {
-        final ChatObject.Call call = MessagesController.getInstance(account).getGroupCall(chat.id, false);
+        final ChatObject.Call call = isLive(chat) ? MessagesController.getInstance(account).getGroupCall(chat.id, false) : null;
         final int viewers = call != null && call.call != null ? call.call.participants_count : 0;
         final String live = LocaleController.getString(R.string.TigiLiveBadge);
         return viewers > 0 ? live + " · " + LocaleController.formatShortNumber(viewers, null) : live;

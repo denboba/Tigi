@@ -74,13 +74,16 @@ public class TigiStoriesRow extends HorizontalScrollView {
                 }
             }
         }
-        // unread first, keeping Telegram's order within each group
+        // Who is live first, then unread, keeping Telegram's order within each group
+        final ArrayList<Long> live = new ArrayList<>();
         final ArrayList<Long> unread = new ArrayList<>();
         final ArrayList<Long> seen = new ArrayList<>();
         for (int i = 0; i < peerIds.size(); i++) {
-            (controller.hasUnreadStories(peerIds.get(i)) ? unread : seen).add(peerIds.get(i));
+            final long did = peerIds.get(i);
+            (TigiLive.hasLiveStory(account, did) ? live : controller.hasUnreadStories(did) ? unread : seen).add(did);
         }
         peerIds.clear();
+        peerIds.addAll(live);
         peerIds.addAll(unread);
         peerIds.addAll(seen);
 
@@ -97,7 +100,7 @@ public class TigiStoriesRow extends HorizontalScrollView {
             if (peer == null) {
                 continue;
             }
-            items.addView(createItem(peer, did, i < unread.size()), LayoutHelper.createLinear(76, LayoutHelper.WRAP_CONTENT));
+            items.addView(createItem(peer, did, i < live.size() + unread.size()), LayoutHelper.createLinear(76, LayoutHelper.WRAP_CONTENT));
         }
         setVisibility(items.getChildCount() > 0 ? VISIBLE : GONE);
     }
@@ -149,14 +152,18 @@ public class TigiStoriesRow extends HorizontalScrollView {
         item.setGravity(Gravity.CENTER_HORIZONTAL);
         item.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_ROUNDRECT_6DP));
 
+        final boolean live = TigiLive.hasLiveStory(fragment.getCurrentAccount(), did);
         final FrameLayout avatarFrame = new FrameLayout(context);
-        avatarFrame.addView(new RingView(context, unread), LayoutHelper.createFrame(66, 66, Gravity.CENTER));
+        avatarFrame.addView(new RingView(context, unread, live), LayoutHelper.createFrame(66, 66, Gravity.CENTER));
         final BackupImageView avatar = new BackupImageView(context);
         avatar.setRoundRadius(dp(28));
         final AvatarDrawable avatarDrawable = new AvatarDrawable();
         avatarDrawable.setInfo(fragment.getCurrentAccount(), peer);
         avatar.setForUserOrChat(peer, avatarDrawable);
         avatarFrame.addView(avatar, LayoutHelper.createFrame(56, 56, Gravity.CENTER));
+        if (live) {
+            avatarFrame.addView(liveTag(context), LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 16, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        }
         item.addView(avatarFrame, LayoutHelper.createLinear(66, 66, Gravity.CENTER_HORIZONTAL, 0, 2, 0, 0));
 
         final String name = DialogObject.getDialogTitle(peer);
@@ -170,7 +177,8 @@ public class TigiStoriesRow extends HorizontalScrollView {
         nameView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         item.addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 4, 4, 4, 0));
 
-        item.setContentDescription(LocaleController.formatString(unread ? R.string.TigiStoryUnread : R.string.TigiStorySeen, name));
+        item.setContentDescription(live ? name + ", " + LocaleController.getString(R.string.TigiLiveBadge)
+            : LocaleController.formatString(unread ? R.string.TigiStoryUnread : R.string.TigiStorySeen, name));
         item.setOnClickListener(v -> open(did));
         return item;
     }
@@ -186,14 +194,35 @@ public class TigiStoriesRow extends HorizontalScrollView {
         fragment.getOrCreateStoryViewer().open(fragment.getParentActivity(), null, new ArrayList<>(peerIds), position, null, null, (dialogId, messageId, storyId, type, holder) -> false, false);
     }
 
+    /** The LIVE tag on a live person's photo, in Telegram's live colour */
+    static TextView liveTag(Context context) {
+        final TextView tag = new TextView(context);
+        tag.setText(LocaleController.getString(R.string.TigiLiveBadge));
+        tag.setTextColor(0xFFFFFFFF);
+        tag.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 9);
+        tag.setTypeface(org.telegram.messenger.AndroidUtilities.bold());
+        tag.setGravity(Gravity.CENTER);
+        tag.setIncludeFontPadding(false);
+        tag.setPadding(dp(5), 0, dp(5), 0);
+        final android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setColor(TigiLive.color());
+        background.setCornerRadius(dp(5));
+        background.setStroke(dp(1.5f), TigiLilac.on() ? TigiLilac.pageTop() : Theme.getColor(Theme.key_windowBackgroundWhite));
+        tag.setBackground(background);
+        tag.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return tag;
+    }
+
     private static class RingView extends View {
 
         private final boolean unread;
+        private final boolean live;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        RingView(Context context, boolean unread) {
+        RingView(Context context, boolean unread, boolean live) {
             super(context);
             this.unread = unread;
+            this.live = live;
             paint.setStyle(Paint.Style.STROKE);
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
@@ -201,16 +230,18 @@ public class TigiStoriesRow extends HorizontalScrollView {
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
-            if (unread) {
+            if (unread && !live) {
                 paint.setShader(new LinearGradient(0, h, w, 0, new int[]{TigiStyle.RING_START, TigiStyle.RING_END}, null, Shader.TileMode.CLAMP));
             }
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
-            final float stroke = unread ? dp(2.5f) : dp(1.2f);
+            final float stroke = unread || live ? dp(2.5f) : dp(1.2f);
             paint.setStrokeWidth(stroke);
-            if (!unread) {
+            if (live) {
+                paint.setColor(TigiLive.color());
+            } else if (!unread) {
                 paint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon), 0.5f));
             }
             canvas.drawCircle(getWidth() / 2f, getHeight() / 2f, getWidth() / 2f - stroke / 2f, paint);
